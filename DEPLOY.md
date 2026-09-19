@@ -12,7 +12,7 @@
 ## Things that don't come from the Blueprint automatically
 
 - **`SESSION_SECRET`**: `generateValue: true` makes Render create a random one on first deploy — good, don't overwrite it with the value from your local `.env`. If you ever need to force-logout everyone (e.g. suspected compromise), rotate it in the dashboard.
-- **CSP on the frontend**: the `<meta http-equiv="Content-Security-Policy">` in `index.html` still has `connect-src ... http://localhost:8787` hardcoded for local dev. Update it to your real backend URL before relying on it in production — a `<meta>` CSP is also weaker than a real header (can't do `frame-ancestors`), so if you want the stronger version, move it into `render.yaml`'s `headers:` block for the frontend service instead (see the commented-out shape already there for other headers).
+- **CSP on the frontend**: `render.yaml` already sets the real header version (with `frame-ancestors`, which a `<meta>` tag can't do) alongside the `<meta>` tag in `index.html` (kept for local dev / defense-in-depth). Both use a `*.onrender.com` wildcard for `connect-src` so they don't need editing per-deploy — tighten to your exact backend origin later if you want a stricter policy.
 - **Custom domain / HTTPS**: Render terminates TLS for you automatically on `*.onrender.com` and on custom domains you attach — no action needed, but if you add a custom domain, update `FRONTEND_ORIGIN`/`VITE_API_URL` again.
 
 ## Sanity checks after deploy
