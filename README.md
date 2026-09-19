@@ -1,0 +1,106 @@
+# AniNest 🪺
+
+Your anime home base — a comic-book styled site to discover trending, top-rated, and seasonal anime, search and filter, watch official trailers, and save favorites to an account.
+
+```
+AniNest/
+  frontend/         Vite + vanilla JS SPA (the UI)
+  backend/          Express API (auth, favorites, anime-data proxy/cache)
+    src/app.js        Express app assembly (importable, for tests)
+    src/server.js     Thin entrypoint: listen() + signal handling
+    test/             Integration test suite (node:test)
+  render.yaml       One-click deploy blueprint for Render
+  DEPLOY.md         Deployment steps + what to double-check after deploying
+```
+
+## Testing
+
+```bash
+cd backend
+npm test
+```
+
+17 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, and rate limiting. Deliberately does *not* hit the live Jikan/AniList APIs (would make the suite flaky and burn shared rate-limit budget) — see the comment at the top of `backend/test/api.test.js`.
+
+## Running it locally
+
+Two processes, two terminals:
+
+```bash
+# Terminal 1 — backend (http://localhost:8787)
+cd backend
+npm install
+cp .env.example .env   # then edit SESSION_SECRET
+npm run dev
+
+# Terminal 2 — frontend (http://localhost:5173)
+cd frontend
+npm install
+npm run dev
+```
+
+Open the frontend URL. The frontend talks to the backend via `VITE_API_URL` (`frontend/.env`, defaults to `http://localhost:8787`).
+
+## Features
+
+- **Home** — hero spotlight, trending-now rail, this-season grid, all-time top-rated rail, genre tiles, "Feeling Lucky" random anime.
+- **Browse** — search, filter by genre/type/status, sort, pagination.
+- **Details** — synopsis, stats, genres, official YouTube trailer, recommendations, "Where to Watch" (official platforms only).
+- **Accounts** — register/login, favorites saved server-side and synced across devices.
+
+## Why a backend at all?
+
+Two reasons:
+
+1. **Rate limits, solved structurally.** Jikan (the free MyAnimeList API) allows roughly 60 requests/minute — *shared across everyone using it, worldwide*. If the browser called Jikan directly, every visitor to the site burned through that budget individually. Now the backend is the only thing that ever calls Jikan, caches every response for several minutes, and serves all visitors from that shared cache — so traffic no longer multiplies API calls 1:1 with visitors.
+2. **A second data source as a safety net.** [AniList](https://anilist.co)'s GraphQL API is also free and keyless, with a much higher limit (~90 req/min) and separate uptime from MyAnimeList. `backend/src/lib/animeSource.js` tries Jikan first (it has richer MAL-curated data, including legit "where to watch" links) and transparently falls back to AniList — reshaped into the same data format — if Jikan is slow, rate-limited, or its own connection to MyAnimeList is having a bad day (which does happen; Jikan is a volunteer-run proxy, not a guaranteed-uptime service).
+
+You can watch which source served a request in the backend's console logs (`[animeSource] primary failed... falling back to AniList`).
+
+## Security
+
+This was built with the assumption it might be exposed publicly, so:
+
+**Backend**
+- Passwords hashed with bcrypt (cost 12); never logged or returned in any response.
+- Sessions are opaque random tokens in an **httpOnly** cookie (`aninest_sid`) — JavaScript can never read it, so it can't be stolen via XSS the way a `localStorage` JWT could. Only the token's **SHA-256 hash** is stored in the database, so a leaked DB dump can't be replayed as a live session.
+- **CSRF**: double-submit cookie pattern — a separate, readable `aninest_csrf` cookie must be echoed back as an `x-csrf-token` header on every mutating request, compared with `crypto.timingSafeEqual` (not `===`, which leaks comparison timing).
+- **Login** returns the same generic error for "no such account" and "wrong password" (prevents account enumeration), and always runs a bcrypt comparison either way so response timing doesn't leak which case it was.
+- **Rate limiting**: 120 req/min per IP globally, 10 req/15min per IP on `/api/auth/*` (blunts brute-force and registration spam). Limits are env-overridable (`RATE_LIMIT`, `AUTH_RATE_LIMIT`) so the test suite can raise them without touching production defaults.
+- Optional **Turnstile bot-check** on registration (`backend/src/lib/turnstile.js`) — off by default (no-ops without `TURNSTILE_SECRET_KEY` set), so it doesn't get in the way locally but is one env var away from blocking scripted mass-registration in production.
+- **Input validation** via `zod` schemas on every write endpoint; SQLite access is exclusively through parameterized prepared statements (no string-built SQL, ever). The favorites `image` field is specifically re-parsed through `new URL()` and stored as its normalized `.toString()`, not the raw client input — closes a stored-XSS path where a URL can contain a raw `"` and still pass a naive `.url()` check.
+- A logged-in user is capped at 500 favorites — a defensive limit against DB bloat from a scripted client, not a normal-use restriction.
+- **CORS** locked to the configured frontend origin only, credentials explicitly enabled.
+- Security headers via `helmet` (HSTS, X-Content-Type-Options, X-Frame-Options, etc.), request bodies capped at 10kb, generic error responses (no stack traces or internal messages ever reach a client).
+- Favorites/account endpoints check `req.user.id` server-side on every request — there's no way to read or modify another account's data by guessing an ID.
+- `unhandledRejection`/`uncaughtException` handlers and a `SIGTERM`/`SIGINT` graceful-shutdown path (closes the DB cleanly, finishes in-flight requests) — without these, an unexpected error crashes the process silently with no trace, and a PaaS redeploy can drop in-flight requests.
+
+**Frontend**
+- All dynamic content is HTML-escaped before being inserted into the page — including URLs going into `src`/`href`/`style` attributes, not just visible text (an early version of this app only escaped visible text, which left an attribute-breakout XSS gap via the favorites `image` field; fixed and covered by a regression test now).
+- A baseline Content-Security-Policy is set via `<meta>` in `index.html`; the deployed version additionally sets it as a real HTTP response header (`render.yaml`), which is the only way to get `frame-ancestors` (clickjacking protection) — a `<meta>` CSP can't do that directive at all.
+- No secrets, API keys, or tokens live in frontend code — the browser never talks to Jikan/AniList directly, only to our own backend. The Turnstile *site* key (if configured) is the one exception, and it's meant to be public.
+
+**Verified, not just written** — `backend/test/api.test.js` (`npm test`) actually exercises SQL injection attempts, the XSS-via-image-URL path, CSRF bypass attempts, oversized/malformed payloads, and rate-limit enforcement, in addition to the normal auth/favorites flows.
+
+**What's deliberately not included** (would need real infrastructure to do properly — happy to add if you want them):
+- Email verification / password reset (needs an SMTP or transactional-email provider).
+- Two-factor auth.
+- Account lockout after N failed logins (rate limiting covers the same threat at a smaller scale).
+- A production-grade multi-instance session store (the current SQLite-backed store is perfect for one server; a horizontally-scaled deployment would want Redis instead — see DEPLOY.md).
+
+## Ideas for later (UI & features)
+
+Implemented in this pass: skeleton loading cards, accessible focus rings, account menu, "log in to save" prompts. Further ideas, roughly in order of bang-for-buck:
+
+- **Watch status** beyond a plain favorite — Watching / Plan to Watch / Completed / Dropped, like a mini tracker.
+- **Character & voice-actor lists** on the details page (Jikan has `/anime/{id}/characters`).
+- **"Continue browsing"** — remember scroll position / recently viewed anime in the account.
+- **Compare mode** — pick two anime, see genres/scores side by side (fun, on-brand for a comic UI).
+- **Rating-aware filters** — a min-score slider on Browse.
+- **PWA install** — offline-friendly shell, "Add to Home Screen" for the comic aesthetic on mobile.
+- **Real-time "airing today"** ticker on Home using Jikan's schedules endpoint.
+- **Public profile pages** (`/u/username`) showing someone's favorites list, if you ever want a social angle.
+
+## Data sources
+
+[Jikan](https://jikan.moe) (primary) and [AniList](https://anilist.co) (fallback) — both free, keyless, third-party APIs. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.

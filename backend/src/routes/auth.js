@@ -1,0 +1,93 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { db } from '../lib/db.js';
+import {
+  hashPassword, verifyPassword, createSession, destroySession, SESSION_COOKIE, SESSION_MAX_AGE_MS,
+} from '../lib/auth.js';
+import { verifyTurnstile } from '../lib/turnstile.js';
+
+export const authRouter = Router();
+
+const cookieOpts = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  path: '/',
+  maxAge: SESSION_MAX_AGE_MS,
+});
+
+const registerSchema = z.object({
+  username: z.string().trim().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only.'),
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(8).max(200).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Must include a letter and a number.'),
+  turnstileToken: z.string().max(4000).optional(),
+});
+
+authRouter.post('/register', async (req, res, next) => {
+  try {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
+    }
+    const { username, email, password, turnstileToken } = parsed.data;
+
+    const humanCheck = await verifyTurnstile(turnstileToken, req.ip);
+    if (!humanCheck) return res.status(400).json({ error: 'Bot check failed — please try again.' });
+
+    const passwordHash = await hashPassword(password);
+
+    let userId;
+    try {
+      const info = db.prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)')
+        .run(username, email, passwordHash);
+      userId = info.lastInsertRowid;
+    } catch (err) {
+      if (String(err.message).includes('UNIQUE')) {
+        return res.status(409).json({ error: 'That username or email is already registered.' });
+      }
+      throw err;
+    }
+
+    const { token } = createSession(userId);
+    res.cookie(SESSION_COOKIE, token, cookieOpts());
+    const created = db.prepare('SELECT created_at FROM users WHERE id = ?').get(userId);
+    res.status(201).json({ user: { id: userId, username, email, createdAt: created.created_at } });
+  } catch (err) { next(err); }
+});
+
+const loginSchema = z.object({
+  identifier: z.string().trim().min(1).max(254),
+  password: z.string().min(1).max(200),
+});
+
+authRouter.post('/login', async (req, res, next) => {
+  try {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
+    const { identifier, password } = parsed.data;
+
+    const user = db.prepare('SELECT * FROM users WHERE email = ? OR username = ?')
+      .get(identifier.toLowerCase(), identifier);
+
+    // Same generic message whether the account doesn't exist or the password
+    // is wrong, and we always run bcrypt.compare (against a dummy hash if no
+    // user was found) so response timing doesn't reveal which case it was.
+    const dummyHash = '$2a$12$C6UzMDM.H6dfI/f/IKcEeOoRTvVCjMxNzO7RCUEuHpB7Zr8/2ZLBW';
+    const ok = await verifyPassword(password, user?.password_hash || dummyHash);
+    if (!user || !ok) return res.status(401).json({ error: 'Invalid username/email or password.' });
+
+    const { token } = createSession(user.id);
+    res.cookie(SESSION_COOKIE, token, cookieOpts());
+    res.json({ user: { id: user.id, username: user.username, email: user.email, createdAt: user.created_at } });
+  } catch (err) { next(err); }
+});
+
+authRouter.post('/logout', (req, res) => {
+  destroySession(req.cookies?.[SESSION_COOKIE]);
+  res.clearCookie(SESSION_COOKIE, { path: '/' });
+  res.status(204).end();
+});
+
+authRouter.get('/me', (req, res) => {
+  res.json({ user: req.user || null });
+});

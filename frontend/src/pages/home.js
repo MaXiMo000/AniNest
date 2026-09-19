@@ -1,0 +1,129 @@
+import { Api, imageOf } from '../lib/api.js';
+import { cardRail, cardGrid, loadingHTML, errorHTML, escapeHtml, genreGradient, wireRetry } from '../lib/ui.js';
+import { navigate } from '../lib/router.js';
+
+const FEATURED_GENRES = [
+  { id: 1, name: 'Action' }, { id: 22, name: 'Romance' }, { id: 4, name: 'Comedy' },
+  { id: 8, name: 'Drama' }, { id: 10, name: 'Fantasy' }, { id: 24, name: 'Sci-Fi' },
+  { id: 7, name: 'Mystery' }, { id: 14, name: 'Horror' }, { id: 27, name: 'Shounen' },
+  { id: 25, name: 'Shoujo' }, { id: 36, name: 'Slice of Life' }, { id: 30, name: 'Sports' },
+];
+
+function heroHTML(anime, isAiring) {
+  const bg = escapeHtml(imageOf(anime));
+  const id = Number(anime.mal_id) || 0;
+  const score = anime.score ? anime.score.toFixed(1) : '—';
+  return `
+    <section class="hero">
+      <div class="hero-bg" style="background-image:url('${bg}')"></div>
+      <div class="hero-speedlines"></div>
+      <div class="hero-gradient"></div>
+      <div class="hero-content">
+        <img class="hero-poster" src="${bg}" alt="" />
+        <div class="hero-info">
+          <span class="hero-tag">${isAiring ? '🔥 AIRING NOW' : '✨ SPOTLIGHT'}</span>
+          <h1 class="hero-title">${escapeHtml(anime.title)}</h1>
+          <div class="hero-meta">
+            <span class="chip">★ ${score}</span>
+            <span class="chip">${escapeHtml(anime.type || '')}</span>
+            <span class="chip">${anime.episodes ? anime.episodes + ' episodes' : 'Ongoing'}</span>
+          </div>
+          <p class="hero-synopsis">${escapeHtml((anime.synopsis || 'No synopsis yet — mysterious, like a good plot twist.').slice(0, 260))}</p>
+          <div class="hero-actions">
+            <button class="btn-pow btn-pow--pink" data-open="${id}">▶ VIEW DETAILS</button>
+            <button class="btn-pow btn-pow--outline" id="lucky-btn">🎲 FEELING LUCKY</button>
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
+function sectionFallback() {
+  return `<div class="empty-state" style="padding:30px 10px">📡 This section couldn't load right now (the anime API may be busy). <button class="chip" id="retry-section">🔄 Retry section</button></div>`;
+}
+
+// Each data source is fetched independently so one flaky endpoint (Jikan's
+// upstream MyAnimeList connection can be unreliable) doesn't blank the whole
+// page — sections that fail just show their own small retry prompt.
+export async function renderHome(root) {
+  root.innerHTML = loadingHTML('SUMMONING ANIME');
+
+  const [airingRes, seasonRes, topRes] = await Promise.allSettled([
+    Api.topAnime(1, 'airing'),
+    Api.seasonNow(1),
+    Api.topAnime(1),
+  ]);
+
+  const airing = airingRes.status === 'fulfilled' ? airingRes.value.data : null;
+  const seasonNow = seasonRes.status === 'fulfilled' ? seasonRes.value.data : null;
+  const topAnime = topRes.status === 'fulfilled' ? topRes.value.data : null;
+
+  if (!airing && !seasonNow && !topAnime) {
+    root.innerHTML = errorHTML('Couldn’t reach the anime dimension right now (the free API may be temporarily down). Try again shortly!');
+    wireRetry(root, () => renderHome(root));
+    return;
+  }
+
+  const heroSource = airing || topAnime || seasonNow;
+  const heroPick = heroSource?.[Math.floor(Math.random() * Math.min(5, heroSource.length))];
+
+  root.innerHTML = `
+    ${heroPick ? heroHTML(heroPick, heroSource === airing) : ''}
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">🔥 Trending Now</h2>
+        <span class="section-sub">Top airing series this week</span>
+      </div>
+      ${airing ? cardRail(airing.slice(0, 14)) : sectionFallback()}
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">🍁 This Season</h2>
+        <a href="#/browse?sort=season" class="chip">See all →</a>
+      </div>
+      ${seasonNow ? cardGrid(seasonNow.slice(0, 12)) : sectionFallback()}
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">🏆 All-Time Top Rated</h2>
+        <a href="#/browse?sort=top" class="chip">See all →</a>
+      </div>
+      ${topAnime ? cardRail(topAnime.slice(0, 14)) : sectionFallback()}
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">🎭 Browse by Genre</h2>
+      </div>
+      <div class="genre-grid">
+        ${FEATURED_GENRES.map((g) => `
+          <a class="genre-tile" style="background:${genreGradient(g.id)}" href="#/browse?genre=${g.id}">${escapeHtml(g.name)}</a>
+        `).join('')}
+      </div>
+    </section>
+  `;
+
+  root.querySelectorAll('[data-open]').forEach((btn) => {
+    btn.addEventListener('click', () => navigate(`#/anime/${btn.dataset.open}`));
+  });
+  root.querySelectorAll('#retry-section').forEach((btn) => {
+    btn.addEventListener('click', () => renderHome(root));
+  });
+  const luckyBtn = root.querySelector('#lucky-btn');
+  if (luckyBtn) {
+    luckyBtn.addEventListener('click', async () => {
+      luckyBtn.textContent = '🎲 ROLLING...';
+      luckyBtn.disabled = true;
+      try {
+        const { data } = await Api.randomAnime();
+        navigate(`#/anime/${data.mal_id}`);
+      } catch {
+        luckyBtn.textContent = '🎲 FEELING LUCKY';
+        luckyBtn.disabled = false;
+      }
+    });
+  }
+}

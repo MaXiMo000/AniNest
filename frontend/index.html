@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AniNest — Your Anime Home Base</title>
+  <meta name="description" content="Discover trending, top-rated, and seasonal anime. A comic-book styled anime explorer." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪺</text></svg>" />
+  <!-- Dev-friendly baseline CSP. A <meta> CSP can't set frame-ancestors (that's
+       done via a real header in render.yaml for the deployed site instead).
+       connect-src includes localhost (dev) and a *.onrender.com wildcard so this
+       keeps working after a Render deploy without editing this file per-deploy —
+       tighten it to the exact backend origin if you move off Render. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; connect-src 'self' http://localhost:8787 https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="fx-layer" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="#/" class="brand">
+        <span class="brand-bolt">🪺</span><span class="brand-text">ANI<span class="brand-accent">NEST</span></span>
+      </a>
+
+      <form id="search-form" class="search-form" role="search">
+        <input id="search-input" type="text" placeholder="Search anime... (e.g. Naruto, Frieren)" autocomplete="off" />
+        <button type="submit" class="btn-pow btn-pow--sm">GO!</button>
+      </form>
+
+      <nav class="main-nav">
+        <a href="#/" data-route="/">Home</a>
+        <a href="#/browse" data-route="/browse">Browse</a>
+        <a href="#/browse?sort=top" data-route="/browse?sort=top">Top&nbsp;Rated</a>
+        <a href="#/browse?sort=season" data-route="/browse?sort=season">This&nbsp;Season</a>
+        <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Favorites <span id="fav-count" class="fav-count">0</span></a>
+        <span id="auth-area" class="auth-area"></span>
+      </nav>
+
+      <button id="nav-toggle" class="nav-toggle" aria-label="Toggle menu">☰</button>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p><span class="brand-bolt">🪺</span> AniNest — built for fans, by a fan. Data from <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>.</p>
+      <p class="footer-note">Trailers via YouTube. For full episodes, please support the creators on official platforms like Crunchyroll, HIDIVE, or Netflix.</p>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
