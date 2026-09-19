@@ -757,6 +757,20 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   color: #fff;
 }
 
+/* ===================== Reviews ===================== */
+.review-card {
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.review-mine { border-color: var(--pink); }
+.review-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.review-date { font-size: 0.75rem; color: var(--muted); font-weight: 700; }
+.review-body { margin: 10px 0 0; line-height: 1.6; font-weight: 500; }
+
 /* ===================== Responsive ===================== */
 @media (max-width: 860px) {
   .main-nav { display: none; }

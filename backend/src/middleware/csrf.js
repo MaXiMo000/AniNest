@@ -20,14 +20,23 @@ import crypto from 'node:crypto';
 export const CSRF_COOKIE = 'aninest_csrf';
 export const CSRF_HEADER = 'x-csrf-token';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 export function ensureCsrfCookie(req, res, next) {
   let token = req.cookies?.[CSRF_COOKIE];
   if (!token) {
     token = crypto.randomBytes(24).toString('hex');
     res.cookie(CSRF_COOKIE, token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // Same reasoning as the session cookie (see auth.js's cookieOpts):
+      // frontend and backend are different *sites* under onrender.com (a
+      // public suffix), so SameSite=Lax never sends this cookie back on
+      // cross-site fetch() calls in production — every request looked like
+      // a brand-new client, generating a fresh token each time and making
+      // every mutating request fail with "Invalid or missing CSRF token."
+      // regardless of what the frontend sent.
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
       path: '/',
     });
     req.cookies[CSRF_COOKIE] = token;

@@ -1,6 +1,8 @@
 import { Api, imageOf } from '../lib/api.js';
 import { cardRail, loadingHTML, errorHTML, escapeHtml, wireRetry, showToast } from '../lib/ui.js';
 import { Favorites } from '../lib/store.js';
+import { Reviews } from '../lib/reviewsApi.js';
+import { Auth } from '../lib/authStore.js';
 import { navigate } from '../lib/router.js';
 
 function fmtDate(x) {
@@ -44,12 +46,116 @@ function watchBoxHTML(a) {
     </div>`;
 }
 
+function reviewCardHTML(r, isMine) {
+  const date = new Date(r.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  return `
+    <div class="review-card ${isMine ? 'review-mine' : ''}">
+      <div class="review-head">
+        <span class="badge-score small">${r.rating}</span>
+        <strong>${escapeHtml(r.username)}</strong>
+        <span class="review-date">${escapeHtml(date)}${isMine ? ' · you' : ''}</span>
+      </div>
+      ${r.body ? `<p class="review-body">${escapeHtml(r.body)}</p>` : ''}
+    </div>`;
+}
+
+function reviewFormHTML(myReview) {
+  const options = Array.from({ length: 10 }, (_, i) => 10 - i)
+    .map((n) => `<option value="${n}" ${myReview?.rating === n ? 'selected' : ''}>${n} / 10</option>`).join('');
+  return `
+    <div class="watch-box">
+      <h3>${myReview ? '✏️ Edit Your Review' : '✍️ Write a Review'}</h3>
+      <form id="review-form">
+        <div class="form-field">
+          <label for="review-rating">Your Rating</label>
+          <select id="review-rating">${options}</select>
+        </div>
+        <div class="form-field">
+          <label for="review-body">Your Thoughts (optional)</label>
+          <textarea id="review-body" rows="3" maxlength="2000" style="width:100%;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600;resize:vertical">${escapeHtml(myReview?.body || '')}</textarea>
+        </div>
+        <div class="hero-actions">
+          <button type="submit" class="btn-pow btn-pow--pink">${myReview ? 'UPDATE REVIEW' : 'POST REVIEW'}</button>
+          ${myReview ? '<button type="button" id="review-delete" class="btn-pow btn-pow--outline">DELETE</button>' : ''}
+        </div>
+      </form>
+    </div>`;
+}
+
+function reviewLoginPromptHTML() {
+  return `
+    <div class="watch-box">
+      <h3>💬 Got thoughts on this one?</h3>
+      <p style="color:var(--muted);font-weight:600;margin:0 0 12px">Log in to leave a rating and review.</p>
+      <div class="hero-actions">
+        <a href="#/login" class="btn-pow btn-pow--pink">LOG IN</a>
+        <a href="#/register" class="btn-pow btn-pow--outline">SIGN UP</a>
+      </div>
+    </div>`;
+}
+
+function reviewsSectionHTML(reviewsData) {
+  const { reviews, average, count } = reviewsData;
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">💬 Community Reviews</h2>
+        <span class="section-sub">${count ? `★ ${average} average from ${count} review${count === 1 ? '' : 's'}` : 'No reviews yet — be the first!'}</span>
+      </div>
+      <div id="review-form-area">${Auth.get().user ? reviewFormHTML(reviewsData.myReview) : reviewLoginPromptHTML()}</div>
+      <div id="review-list">${reviews.length ? reviews.map((r) => reviewCardHTML(r, r.username === Auth.get().user?.username)).join('') : ''}</div>
+    </section>`;
+}
+
+async function reloadReviews(root, malId, animeTitle) {
+  const reviewsData = await Reviews.list(malId).catch(() => ({ reviews: [], average: null, count: 0, myReview: null }));
+  const section = root.querySelector('#reviews-section');
+  if (!section) return;
+  section.outerHTML = reviewsSectionHTML(reviewsData).replace('<section class="section">', '<section class="section" id="reviews-section">');
+  wireReviewForm(root, malId, animeTitle);
+}
+
+function wireReviewForm(root, malId, animeTitle) {
+  const form = root.querySelector('#review-form');
+  form?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const rating = Number(root.querySelector('#review-rating').value);
+    const body = root.querySelector('#review-body').value.trim();
+    const submitBtn = form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    try {
+      await Reviews.submit(malId, rating, body);
+      showToast('Review saved!');
+      await reloadReviews(root, malId, animeTitle);
+    } catch (err) {
+      if (err.status === 401) {
+        showToast('Log in to save your review!');
+        navigate('#/login');
+        return;
+      }
+      showToast(err.message || 'Something went wrong — try again.');
+      submitBtn.disabled = false;
+    }
+  });
+
+  root.querySelector('#review-delete')?.addEventListener('click', async () => {
+    try {
+      await Reviews.remove(malId);
+      showToast('Review deleted.');
+      await reloadReviews(root, malId, animeTitle);
+    } catch {
+      showToast('Something went wrong — try again.');
+    }
+  });
+}
+
 export async function renderDetails(root, id) {
   root.innerHTML = loadingHTML('LOADING EPISODE DATA');
   try {
-    const [{ data: a }, recRes] = await Promise.all([
+    const [{ data: a }, recRes, reviewsData] = await Promise.all([
       Api.fullById(id),
       Api.recommendations(id).catch(() => ({ data: [] })),
+      Reviews.list(id).catch(() => ({ reviews: [], average: null, count: 0, myReview: null })),
     ]);
 
     const img = escapeHtml(imageOf(a));
@@ -92,6 +198,8 @@ export async function renderDetails(root, id) {
         <div class="info-box"><div class="k">Members</div><div class="v">${a.members ? a.members.toLocaleString() : '—'}</div></div>
       </div>
 
+      ${reviewsSectionHTML(reviewsData).replace('<section class="section">', '<section class="section" id="reviews-section">')}
+
       ${recs.length ? `
       <section class="section">
         <div class="section-head"><h2 class="section-title">🔀 If You Like This</h2></div>
@@ -114,6 +222,8 @@ export async function renderDetails(root, id) {
         ? (result.isFav ? `Added "${a.title}" to favorites!` : 'Removed from favorites.')
         : 'Something went wrong — try again.');
     });
+
+    wireReviewForm(root, a.mal_id, a.title);
   } catch (err) {
     console.error(err);
     root.innerHTML = errorHTML('Couldn’t load this anime — it might not exist, or the API is rate-limited. Try again shortly!');

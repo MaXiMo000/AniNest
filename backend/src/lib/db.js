@@ -52,8 +52,20 @@ await db.executeMultiple(`
     UNIQUE(user_id, mal_id)
   );
 
+  CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL,
+    body TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, mal_id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
+  CREATE INDEX IF NOT EXISTS idx_reviews_mal_id ON reviews(mal_id);
 `);
 
 export default db;

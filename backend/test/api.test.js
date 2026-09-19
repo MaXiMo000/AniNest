@@ -298,6 +298,86 @@ test('favorites normalizes a URL that contains a raw quote instead of storing it
   assert.ok(!stored.includes('"'), `stored image URL must not contain a raw quote, got: ${stored}`);
 });
 
+test('reviews require auth to write but not to read', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const post = await agent.post('/api/reviews', { csrf: true, body: { mal_id: 1, rating: 8 } });
+  assert.equal(post.status, 401);
+  const del = await agent.delete('/api/reviews/1', { csrf: true });
+  assert.equal(del.status, 401);
+  const get = await agent.get('/api/reviews/1');
+  assert.equal(get.status, 200);
+  assert.deepEqual(get.json, { reviews: [], average: null, count: 0, myReview: null });
+});
+
+test('reviews CRUD lifecycle, aggregate score, and one-review-per-user-per-anime', async () => {
+  const author = makeAgent();
+  await author.get('/api/health');
+  const authorUser = uniqueUser();
+  await author.post('/api/auth/register', { csrf: true, body: authorUser });
+
+  const create = await author.post('/api/reviews', { csrf: true, body: { mal_id: 777, rating: 9, body: 'Loved it.' } });
+  assert.equal(create.status, 201);
+
+  const afterCreate = await author.get('/api/reviews/777');
+  assert.equal(afterCreate.json.count, 1);
+  assert.equal(afterCreate.json.average, 9);
+  assert.equal(afterCreate.json.reviews[0].username, authorUser.username);
+  assert.equal(afterCreate.json.myReview.rating, 9);
+
+  // A second reviewer, so the average is meaningfully checked (9 + 5) / 2 = 7.
+  const reviewer2 = makeAgent();
+  await reviewer2.get('/api/health');
+  const user2 = uniqueUser();
+  await reviewer2.post('/api/auth/register', { csrf: true, body: user2 });
+  await reviewer2.post('/api/reviews', { csrf: true, body: { mal_id: 777, rating: 5 } });
+
+  const afterSecond = await author.get('/api/reviews/777');
+  assert.equal(afterSecond.json.count, 2);
+  assert.equal(afterSecond.json.average, 7);
+
+  // Re-reviewing the same anime updates in place rather than adding a row.
+  await author.post('/api/reviews', { csrf: true, body: { mal_id: 777, rating: 3, body: 'Changed my mind.' } });
+  const afterUpdate = await author.get('/api/reviews/777');
+  assert.equal(afterUpdate.json.count, 2, 'updating an existing review must not create a second row');
+  assert.equal(afterUpdate.json.myReview.rating, 3);
+
+  const del = await author.delete('/api/reviews/777', { csrf: true });
+  assert.equal(del.status, 204);
+  const afterDelete = await author.get('/api/reviews/777');
+  assert.equal(afterDelete.json.count, 1, 'deleting must only remove the caller\'s own review');
+});
+
+test('reviews reject a rating out of range and an overlong body', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const tooHigh = await agent.post('/api/reviews', { csrf: true, body: { mal_id: 5, rating: 11 } });
+  assert.equal(tooHigh.status, 400);
+  const tooLow = await agent.post('/api/reviews', { csrf: true, body: { mal_id: 5, rating: 0 } });
+  assert.equal(tooLow.status, 400);
+  const overlong = await agent.post('/api/reviews', { csrf: true, body: { mal_id: 5, rating: 5, body: 'x'.repeat(2001) } });
+  assert.equal(overlong.status, 400);
+});
+
+test('reviews escape a malicious body when it comes back out (defense in depth)', async () => {
+  // The frontend also escapes on render, but a review body is exactly the
+  // kind of user-controlled text worth confirming isn't mangled or stripped
+  // by the storage layer itself — it should round-trip byte-for-byte, and
+  // it's the frontend's job (already covered) to escape it on display.
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const payload = '<img src=x onerror=alert(1)> & "quotes"';
+  await agent.post('/api/reviews', { csrf: true, body: { mal_id: 9001, rating: 6, body: payload } });
+  const res = await agent.get('/api/reviews/9001');
+  assert.equal(res.json.reviews[0].body, payload);
+});
+
 test('anime routes validate the id param without needing the upstream API', async () => {
   const agent = makeAgent();
   const res = await agent.get('/api/anime/not-a-number/full');

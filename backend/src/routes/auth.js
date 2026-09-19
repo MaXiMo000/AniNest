@@ -7,10 +7,21 @@ import {
 
 export const authRouter = Router();
 
+const isProd = process.env.NODE_ENV === 'production';
 const cookieOpts = () => ({
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  // Frontend and backend are deployed on different hostnames under
+  // onrender.com — a registered public suffix, which makes them genuinely
+  // different *sites* for cookie purposes, not just different origins.
+  // SameSite=Lax cookies are never sent on cross-site fetch() calls (only
+  // same-site requests or top-level navigations), so with Lax here the
+  // session cookie silently never round-trips in production: every request
+  // looks like a fresh, logged-out client. SameSite=None (which requires
+  // Secure) is the correct setting for a legitimately cross-site
+  // frontend+API split like this one. Local dev keeps Lax since
+  // localhost:5173/localhost:8787 differ only by port, which IS same-site.
+  secure: isProd,
+  sameSite: isProd ? 'none' : 'lax',
   path: '/',
   maxAge: SESSION_MAX_AGE_MS,
 });
