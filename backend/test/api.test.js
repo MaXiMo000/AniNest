@@ -53,8 +53,17 @@ after(async () => {
 
 // Minimal cookie jar so requests behave like a real browser session across
 // calls (needed for the session cookie + CSRF double-submit cookie).
+//
+// Deliberately mirrors the frontend's actual mechanism, not the simplest
+// thing that would pass: the CSRF token is captured from the x-csrf-token
+// *response header* (csrfToken below), not read out of the cookie jar. In
+// production, frontend and backend are different hostnames, so frontend JS
+// can never read a cookie the backend set (real same-origin-policy
+// behavior, not a bug) — the header is the only channel that actually
+// works there, so it's the only channel this suite trusts too.
 function makeAgent() {
   const jar = new Map();
+  let csrfToken = null;
 
   function cookieHeader() {
     return [...jar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
@@ -67,13 +76,15 @@ function makeAgent() {
       const eq = pair.indexOf('=');
       jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
     }
+    const headerToken = res.headers.get('x-csrf-token');
+    if (headerToken) csrfToken = headerToken;
   }
 
   async function request(method, path, { body, headers = {}, csrf = false } = {}) {
     const finalHeaders = { ...headers };
     if (body !== undefined) finalHeaders['Content-Type'] = 'application/json';
     if (cookieHeader()) finalHeaders.Cookie = cookieHeader();
-    if (csrf) finalHeaders['x-csrf-token'] = jar.get('aninest_csrf') || '';
+    if (csrf) finalHeaders['x-csrf-token'] = csrfToken || '';
 
     const res = await fetch(baseUrl + path, {
       method,
@@ -91,6 +102,7 @@ function makeAgent() {
     post: (p, opts) => request('POST', p, opts),
     delete: (p, opts) => request('DELETE', p, opts),
     jar,
+    getCsrfToken: () => csrfToken,
   };
 }
 
@@ -108,10 +120,15 @@ test('health check', async () => {
   assert.equal(res.json.ok, true);
 });
 
-test('GET sets a readable CSRF cookie', async () => {
+test('GET sets a CSRF cookie and exposes the matching token via response header', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');
   assert.ok(agent.jar.get('aninest_csrf'), 'expected aninest_csrf cookie to be set');
+  // These must be the same token — the frontend only ever sees the header
+  // (the cookie is httpOnly and, in production, a different hostname's
+  // cookie besides), and the server's later check compares against the
+  // cookie, so a mismatch here would silently break every mutating request.
+  assert.equal(agent.getCsrfToken(), agent.jar.get('aninest_csrf'));
 });
 
 test('mutating request without CSRF header is rejected', async () => {

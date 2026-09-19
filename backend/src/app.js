@@ -35,6 +35,10 @@ export function createApp() {
     credentials: true,
     methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'x-csrf-token'],
+    // Custom response headers are invisible to frontend JS by default even
+    // within an allowed CORS origin — this is what lets the frontend read
+    // the CSRF token from the x-csrf-token response header (see csrf.js).
+    exposedHeaders: ['x-csrf-token'],
   }));
 
   app.use(cookieParser());

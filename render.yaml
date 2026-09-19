@@ -62,7 +62,13 @@ services:
         value: nosniff
       - path: /*
         name: Referrer-Policy
-        value: no-referrer
+        # no-referrer breaks the YouTube trailer embeds (Error 153) — YouTube's
+        # player validates the embedding page's origin via the Referer header,
+        # and rejects the request outright when none is sent at all.
+        # strict-origin-when-cross-origin still gives solid privacy (only the
+        # bare origin leaks cross-site, nothing on downgrade to HTTP) while
+        # sending enough for YouTube to work.
+        value: strict-origin-when-cross-origin
       - path: /*
         name: Permissions-Policy
         value: geolocation=(), microphone=(), camera=()

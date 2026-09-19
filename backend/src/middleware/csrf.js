@@ -1,27 +1,38 @@
 import crypto from 'node:crypto';
 
-// Double-submit-cookie CSRF defense: a random token is set as a *readable*
-// (non-httpOnly) cookie; the frontend echoes it back in a custom header on
-// every mutating request. A cross-site page can trigger a request that
-// carries the cookie automatically, but it cannot read the cookie's value
-// (blocked by same-origin policy) to also set the matching header — so the
-// two won't match unless the request actually originated from our own
-// frontend JS. Combined with SameSite=Lax cookies and a locked-down CORS
-// origin, this covers CSRF without needing server-side token storage.
+// Double-submit-cookie CSRF defense: a random token is set as a cookie; the
+// frontend echoes it back in a custom header on every mutating request, and
+// the server checks the two match. A cross-site page can trigger a request
+// that carries the cookie automatically, but it can't produce the matching
+// header without first learning the token value.
+//
+// The frontend learns that value from THIS response header, not by reading
+// the cookie via `document.cookie` — frontend and backend are deployed as
+// genuinely different hostnames (aninest-frontend/-backend.onrender.com),
+// so a cookie set by the backend is invisible to frontend-origin JS no
+// matter its httpOnly flag; that's normal same-origin-policy cookie scoping,
+// not a bug to route around with a shared cookie domain (onrender.com is a
+// registered public suffix — browsers block exactly that trick anyway).
+// Handing the token over via a response header instead still preserves the
+// security property: this header is only readable by JS if CORS exposes it
+// AND the request's origin matches our allowlist, so a malicious third-party
+// page still can't learn the token even though it can trigger the request.
 export const CSRF_COOKIE = 'aninest_csrf';
 export const CSRF_HEADER = 'x-csrf-token';
 
 export function ensureCsrfCookie(req, res, next) {
-  if (!req.cookies?.[CSRF_COOKIE]) {
-    const token = crypto.randomBytes(24).toString('hex');
+  let token = req.cookies?.[CSRF_COOKIE];
+  if (!token) {
+    token = crypto.randomBytes(24).toString('hex');
     res.cookie(CSRF_COOKIE, token, {
-      httpOnly: false,
+      httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
     });
     req.cookies[CSRF_COOKIE] = token;
   }
+  res.set(CSRF_HEADER, token);
   next();
 }
 
