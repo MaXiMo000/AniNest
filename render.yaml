@@ -1,7 +1,7 @@
 services:
   - name: aninest-backend
     type: web
-    runtime: node
+    env: node
     plan: free
     rootDir: backend
     buildCommand: npm ci
@@ -12,6 +12,8 @@ services:
       mountPath: /var/data
       sizeGB: 1
     envVars:
+      - key: NODE_VERSION
+        value: '24'
       - key: NODE_ENV
         value: production
       - key: SESSION_SECRET
@@ -32,11 +34,13 @@ services:
 
   - name: aninest-frontend
     type: web
-    runtime: static
+    env: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
     envVars:
+      - key: NODE_VERSION
+        value: '24'
       # Same story in reverse: point this at the backend's real URL once
       # it's deployed.
       - key: VITE_API_URL
@@ -47,21 +51,29 @@ services:
         sync: false
     headers:
       - path: /*
-        headers:
-          - key: X-Frame-Options
-            value: DENY
-          - key: X-Content-Type-Options
-            value: nosniff
-          - key: Referrer-Policy
-            value: no-referrer
-          - key: Permissions-Policy
-            value: geolocation=(), microphone=(), camera=()
-          # The real header version of index.html's <meta> CSP — this one
-          # can (and does) add frame-ancestors, which a <meta> tag cannot.
-          # Update connect-src's onrender.com wildcard to your exact backend
-          # origin once you're on a final domain, for a tighter policy.
-          - key: Content-Security-Policy
-            value: "default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; connect-src 'self' https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
-    routes:
+        name: X-Frame-Options
+        value: DENY
       - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: Permissions-Policy
+        value: geolocation=(), microphone=(), camera=()
+      # The real header version of index.html's <meta> CSP — this one can
+      # (and does) add frame-ancestors, which a <meta> tag cannot. Update
+      # connect-src's onrender.com wildcard to your exact backend origin
+      # once you're on a final domain, for a tighter policy.
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; connect-src 'self' https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+    # Not strictly required — this app uses hash-based routing (#/browse,
+    # #/anime/123), so the browser only ever requests / from the server and
+    # everything after the # is handled client-side. Kept anyway as a safe
+    # default in case that ever changes to path-based routing.
+    routes:
+      - type: rewrite
+        source: /*
         destination: /index.html
