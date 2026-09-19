@@ -304,6 +304,14 @@ test('anime routes validate the id param without needing the upstream API', asyn
   assert.equal(res.status, 400);
 });
 
+test('schedule route rejects an invalid day without needing the upstream API', async () => {
+  const agent = makeAgent();
+  const bad = await agent.get('/api/anime/schedule?day=someday');
+  assert.equal(bad.status, 400);
+  const missing = await agent.get('/api/anime/schedule');
+  assert.equal(missing.status, 400);
+});
+
 // This process's authLimiter was created with AUTH_RATE_LIMIT=1000 (see top
 // of file) so the many other tests above don't trip each other's shared
 // 127.0.0.1 bucket. That means we can't cheaply prove "the 11th request

@@ -43,6 +43,14 @@ animeRouter.get('/search', asyncRoute(async (req, res) => {
   res.json(await animeSource.search({ q, genres: genresParam, type, status, order_by: orderBy, sort, page }));
 }));
 
+const VALID_SCHEDULE_DAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+
+animeRouter.get('/schedule', asyncRoute(async (req, res) => {
+  const day = String(req.query.day || '').toLowerCase();
+  if (!VALID_SCHEDULE_DAYS.has(day)) return res.status(400).json({ error: 'day must be a lowercase weekday name.' });
+  res.json(await animeSource.schedule(day));
+}));
+
 animeRouter.get('/genres', asyncRoute(async (_req, res) => {
   res.json(await animeSource.genres());
 }));

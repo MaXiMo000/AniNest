@@ -41,6 +41,18 @@ export function topAnime(page = 1, filter) {
   );
 }
 
+const VALID_SCHEDULE_DAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+
+// No AniList fallback here: AniList's equivalent (querying airingSchedules
+// within a date range) returns individual episode air-times rather than a
+// clean "everything that airs on Tuesdays" grouping, and mapping between the
+// two isn't worth it for one feature — if Jikan is down, this section just
+// shows the same per-section retry prompt every other section already uses.
+export function schedule(day) {
+  if (!VALID_SCHEDULE_DAYS.has(day)) return Promise.reject(new Error('Invalid schedule day.'));
+  return cached(`schedule:${day}`, TTL.list, () => jikanGet('/schedules', { filter: day, sfw: true }));
+}
+
 export function seasonNow(page = 1) {
   return withFallback(
     `season:${page}`,

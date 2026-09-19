@@ -28,6 +28,7 @@ function qs(params) {
 export const Api = {
   topAnime: (page = 1, filter) => cachedGet(`top:${page}:${filter || ''}`, `/api/anime/top${qs({ page, filter })}`),
   seasonNow: (page = 1) => cachedGet(`season:${page}`, `/api/anime/season/now${qs({ page })}`),
+  schedule: (day) => cachedGet(`schedule:${day}`, `/api/anime/schedule${qs({ day })}`),
   search: (params) => apiGet(`/api/anime/search${qs(params)}`), // never cache search — results are query-specific and often one-shot
   genres: () => cachedGet('genres', '/api/anime/genres'),
   fullById: (id) => cachedGet(`full:${id}`, `/api/anime/${id}/full`),
