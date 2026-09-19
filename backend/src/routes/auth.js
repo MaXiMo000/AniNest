@@ -38,9 +38,11 @@ authRouter.post('/register', async (req, res, next) => {
 
     let userId;
     try {
-      const info = db.prepare('INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)')
-        .run(username, email, passwordHash);
-      userId = info.lastInsertRowid;
+      const info = await db.execute({
+        sql: 'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+        args: [username, email, passwordHash],
+      });
+      userId = Number(info.lastInsertRowid);
     } catch (err) {
       if (String(err.message).includes('UNIQUE')) {
         return res.status(409).json({ error: 'That username or email is already registered.' });
@@ -48,10 +50,10 @@ authRouter.post('/register', async (req, res, next) => {
       throw err;
     }
 
-    const { token } = createSession(userId);
+    const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
-    const created = db.prepare('SELECT created_at FROM users WHERE id = ?').get(userId);
-    res.status(201).json({ user: { id: userId, username, email, createdAt: created.created_at } });
+    const created = await db.execute({ sql: 'SELECT created_at FROM users WHERE id = ?', args: [userId] });
+    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at } });
   } catch (err) { next(err); }
 });
 
@@ -66,8 +68,11 @@ authRouter.post('/login', async (req, res, next) => {
     if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
     const { identifier, password } = parsed.data;
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ? OR username = ?')
-      .get(identifier.toLowerCase(), identifier);
+    const result = await db.execute({
+      sql: 'SELECT * FROM users WHERE email = ? OR username = ?',
+      args: [identifier.toLowerCase(), identifier],
+    });
+    const user = result.rows[0];
 
     // Same generic message whether the account doesn't exist or the password
     // is wrong, and we always run bcrypt.compare (against a dummy hash if no
@@ -76,16 +81,19 @@ authRouter.post('/login', async (req, res, next) => {
     const ok = await verifyPassword(password, user?.password_hash || dummyHash);
     if (!user || !ok) return res.status(401).json({ error: 'Invalid username/email or password.' });
 
-    const { token } = createSession(user.id);
+    const userId = Number(user.id);
+    const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
-    res.json({ user: { id: user.id, username: user.username, email: user.email, createdAt: user.created_at } });
+    res.json({ user: { id: userId, username: user.username, email: user.email, createdAt: user.created_at } });
   } catch (err) { next(err); }
 });
 
-authRouter.post('/logout', (req, res) => {
-  destroySession(req.cookies?.[SESSION_COOKIE]);
-  res.clearCookie(SESSION_COOKIE, { path: '/' });
-  res.status(204).end();
+authRouter.post('/logout', async (req, res, next) => {
+  try {
+    await destroySession(req.cookies?.[SESSION_COOKIE]);
+    res.clearCookie(SESSION_COOKIE, { path: '/' });
+    res.status(204).end();
+  } catch (err) { next(err); }
 });
 
 authRouter.get('/me', (req, res) => {

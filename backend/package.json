@@ -12,6 +12,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",

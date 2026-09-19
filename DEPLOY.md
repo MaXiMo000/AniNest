@@ -3,11 +3,18 @@
 `render.yaml` at the repo root defines both services as a Blueprint, so the easiest path is:
 
 1. Push this repo to GitHub.
-2. In the Render dashboard: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and creates both services.
-3. **First deploy will fail to talk cross-service** — that's expected. Render assigns each service's `*.onrender.com` URL only after it exists, so `FRONTEND_ORIGIN` (on the backend) and `VITE_API_URL` (on the frontend) are placeholders in `render.yaml` until you fill in the real ones:
+2. **Create a free database at [turso.tech](https://turso.tech) first** — Render's free-tier web services can't attach a persistent disk at all (confirmed directly: the Blueprint validator rejects a `disk:` block on the free plan), so the database lives on Turso instead. After signing up:
+   ```bash
+   turso db create aninest
+   turso db show aninest --url        # -> TURSO_DATABASE_URL
+   turso db tokens create aninest     # -> TURSO_AUTH_TOKEN
+   ```
+3. In the Render dashboard: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and creates both services, prompting for the `sync: false` values before creating anything:
+   - `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` — paste the values from step 2.
+   - `TURNSTILE_SECRET_KEY` / `VITE_TURNSTILE_SITE_KEY` — leave both blank unless you've set up a free Cloudflare Turnstile key. Skipping them just means registration has no bot-check for now.
+4. **First deploy will fail to talk cross-service** — that's expected. Render assigns each service's `*.onrender.com` URL only after it exists, so `FRONTEND_ORIGIN` (on the backend) and `VITE_API_URL` (on the frontend) are placeholders in `render.yaml` until you fill in the real ones:
    - Open **aninest-backend → Environment**, set `FRONTEND_ORIGIN` to the actual frontend URL Render assigned.
    - Open **aninest-frontend → Environment**, set `VITE_API_URL` to the actual backend URL Render assigned, then trigger a manual redeploy of the frontend (env vars are baked in at build time for a static site, so changing one requires a rebuild).
-4. Confirm `aninest-backend`'s disk is attached (Render creates it from the `disk:` block automatically) — this is what makes your SQLite data (accounts, favorites, sessions) survive redeploys. **Without it, every deploy wipes the database.**
 
 ## Things that don't come from the Blueprint automatically
 
@@ -22,8 +29,20 @@ curl https://aninest-backend.onrender.com/api/health
 # {"ok":true}
 ```
 
-Then open the frontend URL, register a real account, favorite something, and reload — if it's still there, the disk is mounted correctly.
+Then open the frontend URL, register a real account, favorite something, and reload — if it's still there, Turso is wired up correctly. To check directly:
 
-## Scaling beyond one instance
+```bash
+turso db shell aninest "SELECT username FROM users"
+```
 
-The current setup (SQLite + a persistent disk) works for a single backend instance, which is what Render's free/starter web service plans give you. If you ever move to a plan that autoscales to multiple instances, SQLite-on-disk stops working (each instance would have its own disk) — at that point, migrate to Render's managed Postgres instead. That's a real migration (swapping `node:sqlite` calls for a Postgres client), not a config change — ask for it explicitly when you're ready to scale, no need to do it preemptively for personal use.
+## Why Turso instead of Render's own disk/Postgres
+
+Three real constraints ruled those out for a $0/mo personal deployment:
+
+- **Render disks** require a paid instance type (Starter, ~$7/mo and up) — not available on the free plan at all, which is what surfaced this whole detour.
+- **Render's free Postgres** expires after a fixed trial window and gets deleted — fine for a demo, not for an app meant to keep accounts around indefinitely.
+- **Turso** is free with no expiry for this scale, and since it's SQLite-compatible, the backend's code didn't need a rewrite — `backend/src/lib/db.js` uses the same `@libsql/client` library and the same SQL for both local file mode (dev/tests) and remote Turso mode (production), switching automatically based on whether `TURSO_DATABASE_URL` is set.
+
+## Scaling beyond personal use
+
+Turso itself scales fine (it's a real managed database, not a workaround) — if you outgrow its free tier, that's a Turso plan upgrade, not an app rewrite. The one thing that *would* need code changes is dropping SQLite's dialect entirely for Postgres (different `AUTOINCREMENT`/`datetime()` syntax, etc.) — only worth doing if you specifically want Postgres for other reasons, not something scaling alone forces.

@@ -6,11 +6,17 @@ import { requireAuth } from '../middleware/session.js';
 export const favoritesRouter = Router();
 favoritesRouter.use(requireAuth);
 
-favoritesRouter.get('/', (req, res) => {
-  const rows = db.prepare('SELECT mal_id, title, image, score, type, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC')
-    .all(req.user.id);
-  res.json({ favorites: rows });
-});
+function asyncRoute(fn) {
+  return (req, res, next) => fn(req, res, next).catch(next);
+}
+
+favoritesRouter.get('/', asyncRoute(async (req, res) => {
+  const result = await db.execute({
+    sql: 'SELECT mal_id, title, image, score, type, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC',
+    args: [req.user.id],
+  });
+  res.json({ favorites: result.rows });
+}));
 
 // Re-parsing through `new URL()` and storing its normalized .toString() (not
 // the raw client input) closes a stored-XSS path: a string can contain a raw
@@ -39,28 +45,31 @@ const addSchema = z.object({
 
 const MAX_FAVORITES_PER_USER = 500;
 
-favoritesRouter.post('/', (req, res) => {
+favoritesRouter.post('/', asyncRoute(async (req, res) => {
   const parsed = addSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
   const { mal_id: malId, title, image, score, type } = parsed.data;
 
-  const { count } = db.prepare('SELECT COUNT(*) AS count FROM favorites WHERE user_id = ?').get(req.user.id);
-  if (count >= MAX_FAVORITES_PER_USER) {
+  const countResult = await db.execute({ sql: 'SELECT COUNT(*) AS count FROM favorites WHERE user_id = ?', args: [req.user.id] });
+  if (Number(countResult.rows[0].count) >= MAX_FAVORITES_PER_USER) {
     return res.status(429).json({ error: `You've hit the ${MAX_FAVORITES_PER_USER}-favorite limit.` });
   }
 
-  db.prepare(`
-    INSERT INTO favorites (user_id, mal_id, title, image, score, type)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(user_id, mal_id) DO NOTHING
-  `).run(req.user.id, malId, title, image || null, score ?? null, type || null);
+  await db.execute({
+    sql: `
+      INSERT INTO favorites (user_id, mal_id, title, image, score, type)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, mal_id) DO NOTHING
+    `,
+    args: [req.user.id, malId, title, image || null, score ?? null, type || null],
+  });
 
   res.status(201).json({ ok: true });
-});
+}));
 
-favoritesRouter.delete('/:malId', (req, res) => {
+favoritesRouter.delete('/:malId', asyncRoute(async (req, res) => {
   const malId = Number(req.params.malId);
   if (!Number.isInteger(malId) || malId <= 0) return res.status(400).json({ error: 'Invalid anime id.' });
-  db.prepare('DELETE FROM favorites WHERE user_id = ? AND mal_id = ?').run(req.user.id, malId);
+  await db.execute({ sql: 'DELETE FROM favorites WHERE user_id = ? AND mal_id = ?', args: [req.user.id, malId] });
   res.status(204).end();
-});
+}));

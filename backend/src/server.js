@@ -5,8 +5,9 @@ import { db } from './lib/db.js';
 const PORT = process.env.PORT || 8787;
 const app = createApp();
 
-setInterval(pruneExpiredSessions, 60 * 60 * 1000).unref();
-pruneExpiredSessions();
+const runPruneExpiredSessions = () => pruneExpiredSessions().catch((err) => console.error('pruneExpiredSessions failed:', err));
+setInterval(runPruneExpiredSessions, 60 * 60 * 1000).unref();
+runPruneExpiredSessions();
 
 const server = app.listen(PORT, () => {
   console.log(`AniNest backend listening on http://localhost:${PORT}`);

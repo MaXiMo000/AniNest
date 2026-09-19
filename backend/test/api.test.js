@@ -42,9 +42,13 @@ before(async () => {
 after(async () => {
   await new Promise((resolve) => server.close(resolve));
   db.close();
-  fs.rmSync(process.env.DB_PATH, { force: true });
-  fs.rmSync(process.env.DB_PATH + '-wal', { force: true });
-  fs.rmSync(process.env.DB_PATH + '-shm', { force: true });
+  // On Windows, the native libSQL binding can hold its file handle open for
+  // a moment after close() returns — deleting the temp DB is disposable
+  // best-effort cleanup (the OS temp dir sweeps it eventually regardless),
+  // so a lingering lock here shouldn't fail the whole test run.
+  for (const suffix of ['', '-wal', '-shm']) {
+    try { fs.rmSync(process.env.DB_PATH + suffix, { force: true }); } catch { /* best effort */ }
+  }
 });
 
 // Minimal cookie jar so requests behave like a real browser session across

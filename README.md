@@ -41,6 +41,13 @@ npm run dev
 
 Open the frontend URL. The frontend talks to the backend via `VITE_API_URL` (`frontend/.env`, defaults to `http://localhost:8787`).
 
+## Database
+
+The backend talks to SQLite either way, via [`@libsql/client`](https://github.com/tursodatabase/libsql-client-ts) — same SQL, same code, two modes:
+
+- **Local file** (default): no config needed, lives at `backend/data/aninest.db`. Fine for local dev, or a host with a real persistent disk.
+- **Remote [Turso](https://turso.tech)** (free, SQLite-compatible): set `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN` and local mode is ignored entirely. This is what production uses — **a free-tier Render web service can't attach a persistent disk at all** (confirmed the hard way: Render's own Blueprint validator rejects a `disk:` block on the free plan), so a local SQLite file would just evaporate on every restart. Turso sidesteps that without needing a paid Render plan.
+
 ## Features
 
 - **Home** — hero spotlight, trending-now rail, this-season grid, all-time top-rated rail, genre tiles, "Feeling Lucky" random anime.
@@ -68,7 +75,7 @@ This was built with the assumption it might be exposed publicly, so:
 - **Login** returns the same generic error for "no such account" and "wrong password" (prevents account enumeration), and always runs a bcrypt comparison either way so response timing doesn't leak which case it was.
 - **Rate limiting**: 120 req/min per IP globally, 10 req/15min per IP on `/api/auth/*` (blunts brute-force and registration spam). Limits are env-overridable (`RATE_LIMIT`, `AUTH_RATE_LIMIT`) so the test suite can raise them without touching production defaults.
 - Optional **Turnstile bot-check** on registration (`backend/src/lib/turnstile.js`) — off by default (no-ops without `TURNSTILE_SECRET_KEY` set), so it doesn't get in the way locally but is one env var away from blocking scripted mass-registration in production.
-- **Input validation** via `zod` schemas on every write endpoint; SQLite access is exclusively through parameterized prepared statements (no string-built SQL, ever). The favorites `image` field is specifically re-parsed through `new URL()` and stored as its normalized `.toString()`, not the raw client input — closes a stored-XSS path where a URL can contain a raw `"` and still pass a naive `.url()` check.
+- **Input validation** via `zod` schemas on every write endpoint; every database query passes values as bound `args`, never string-concatenated into the SQL — no injection surface, whether the DB is a local file or the same client talking to Turso. The favorites `image` field is specifically re-parsed through `new URL()` and stored as its normalized `.toString()`, not the raw client input — closes a stored-XSS path where a URL can contain a raw `"` and still pass a naive `.url()` check.
 - A logged-in user is capped at 500 favorites — a defensive limit against DB bloat from a scripted client, not a normal-use restriction.
 - **CORS** locked to the configured frontend origin only, credentials explicitly enabled.
 - Security headers via `helmet` (HSTS, X-Content-Type-Options, X-Frame-Options, etc.), request bodies capped at 10kb, generic error responses (no stack traces or internal messages ever reach a client).

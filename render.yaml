@@ -7,10 +7,6 @@ services:
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /api/health
-    disk:
-      name: aninest-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: '24'
@@ -18,8 +14,16 @@ services:
         value: production
       - key: SESSION_SECRET
         generateValue: true
-      - key: DB_PATH
-        value: /var/data/aninest.db
+      # Render's free web service plan can't attach a persistent disk at
+      # all, so the database lives on Turso (free, SQLite-compatible)
+      # instead — see backend/src/lib/db.js. Get these from `turso db show`
+      # / `turso db tokens create` after creating a free database at
+      # turso.tech. sync: false means Render prompts for them in the
+      # dashboard rather than storing them in this file.
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       # Set this to the deployed frontend's real URL after its first deploy
       # (Render assigns the .onrender.com URL on creation, so this is a
       # one-time manual edit in the dashboard, not knowable ahead of time).

@@ -20,41 +20,47 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-export function createSession(userId) {
+export async function createSession(userId) {
   const token = crypto.randomBytes(32).toString('hex');
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)')
-    .run(tokenHash, userId, expiresAt);
+  await db.execute({
+    sql: 'INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
+    args: [tokenHash, userId, expiresAt],
+  });
   return { token, expiresAt };
 }
 
-export function destroySession(token) {
+export async function destroySession(token) {
   if (!token) return;
-  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+  await db.execute({ sql: 'DELETE FROM sessions WHERE token_hash = ?', args: [hashToken(token)] });
 }
 
-export function destroyAllSessionsForUser(userId) {
-  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+export async function destroyAllSessionsForUser(userId) {
+  await db.execute({ sql: 'DELETE FROM sessions WHERE user_id = ?', args: [userId] });
 }
 
-export function getUserForToken(token) {
+export async function getUserForToken(token) {
   if (!token) return null;
-  const row = db.prepare(`
-    SELECT s.expires_at, u.id, u.username, u.email, u.created_at
-    FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ?
-  `).get(hashToken(token));
+  const result = await db.execute({
+    sql: `
+      SELECT s.expires_at, u.id, u.username, u.email, u.created_at
+      FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.token_hash = ?
+    `,
+    args: [hashToken(token)],
+  });
+  const row = result.rows[0];
   if (!row) return null;
   if (new Date(row.expires_at).getTime() < Date.now()) {
-    db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+    await db.execute({ sql: 'DELETE FROM sessions WHERE token_hash = ?', args: [hashToken(token)] });
     return null;
   }
-  return { id: row.id, username: row.username, email: row.email, createdAt: row.created_at };
+  return { id: Number(row.id), username: row.username, email: row.email, createdAt: row.created_at };
 }
 
-export function pruneExpiredSessions() {
-  db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+export async function pruneExpiredSessions() {
+  await db.execute("DELETE FROM sessions WHERE expires_at < datetime('now')");
 }
 
 export const SESSION_COOKIE = 'aninest_sid';

@@ -1,19 +1,30 @@
-import { DatabaseSync } from 'node:sqlite';
+import { createClient } from '@libsql/client';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// On a host with an ephemeral filesystem (e.g. a Render web service with no
-// disk attached), anything written here vanishes on the next deploy/restart.
-// DB_PATH lets ops point this at a mounted persistent disk in production;
-// it defaults to a local file for plain `npm run dev`.
-const dbPath = process.env.DB_PATH || path.join(__dirname, '..', '..', 'data', 'aninest.db');
 
-export const db = new DatabaseSync(dbPath);
-db.exec('PRAGMA journal_mode = WAL');
-db.exec('PRAGMA foreign_keys = ON');
+// Two modes, same client library and same SQL everywhere else in the app:
+//  - Local file (dev, tests, or any host with real persistent disk): set
+//    DB_PATH, or let it default to backend/data/aninest.db.
+//  - Remote Turso (recommended for hosts with no persistent disk, e.g. a
+//    free-tier Render web service, which can't attach one at all): set
+//    TURSO_DATABASE_URL + TURSO_AUTH_TOKEN and this ignores DB_PATH entirely.
+const isRemote = Boolean(process.env.TURSO_DATABASE_URL);
+const localPath = process.env.DB_PATH || path.join(__dirname, '..', '..', 'data', 'aninest.db');
+// Windows paths (C:\...) need forward slashes in a file: URL — backslashes
+// and the drive-letter colon otherwise confuse the URL parser.
+const localFileUrl = `file:${localPath.replace(/\\/g, '/')}`;
 
-db.exec(`
+export const db = createClient(
+  isRemote
+    ? { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN }
+    : { url: localFileUrl },
+);
+
+await db.execute('PRAGMA foreign_keys = ON');
+
+await db.executeMultiple(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
