@@ -4,6 +4,7 @@ import { db } from '../lib/db.js';
 import {
   hashPassword, verifyPassword, createSession, destroySession, SESSION_COOKIE, SESSION_MAX_AGE_MS,
 } from '../lib/auth.js';
+import { verifyTurnstile } from '../lib/turnstile.js';
 
 export const authRouter = Router();
 
@@ -30,6 +31,7 @@ const registerSchema = z.object({
   username: z.string().trim().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only.'),
   email: z.string().trim().toLowerCase().email().max(254),
   password: z.string().min(8).max(200).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Must include a letter and a number.'),
+  turnstileToken: z.string().max(4000).optional(),
 });
 
 authRouter.post('/register', async (req, res, next) => {
@@ -38,7 +40,10 @@ authRouter.post('/register', async (req, res, next) => {
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
     }
-    const { username, email, password } = parsed.data;
+    const { username, email, password, turnstileToken } = parsed.data;
+
+    const humanCheck = await verifyTurnstile(turnstileToken, req.ip);
+    if (!humanCheck) return res.status(400).json({ error: 'Bot check failed — please try again.' });
 
     const passwordHash = await hashPassword(password);
 

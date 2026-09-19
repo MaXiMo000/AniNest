@@ -196,6 +196,45 @@ export async function anilistByMalId(malId) {
   return { full, recommendations };
 }
 
+const WEEKDAY_INDEX = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+
+// Fallback for "what airs on weekday X". AniList has no direct equivalent of
+// Jikan's /schedules?filter=monday, so this queries individual episode
+// air-times over the next ~8 days (airingSchedules) and buckets each one by
+// weekday, converted to JST — the anime industry's usual scheduling
+// timezone and what Jikan's own /schedules groups by — so results line up
+// with what the primary source would show for the same day.
+export async function anilistSchedule(day) {
+  const targetDay = WEEKDAY_INDEX[day];
+  if (targetDay === undefined) return { data: [] };
+
+  const now = Math.floor(Date.now() / 1000);
+  const weekAhead = now + 8 * 24 * 3600;
+  const data = await gql(`
+    query($from: Int, $to: Int) {
+      Page(page: 1, perPage: 50) {
+        airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) {
+          airingAt
+          media { ${MEDIA_FIELDS} }
+        }
+      }
+    }
+  `, { from: now, to: weekAhead });
+
+  const seen = new Set();
+  const results = [];
+  for (const sched of data.Page.airingSchedules) {
+    const jstDate = new Date((sched.airingAt + 9 * 3600) * 1000);
+    if (jstDate.getUTCDay() !== targetDay) continue;
+    const media = sched.media;
+    if (!media?.idMal || seen.has(media.idMal)) continue;
+    seen.add(media.idMal);
+    const normalized = normalizeAniListMedia(media);
+    if (normalized) results.push(normalized);
+  }
+  return { data: results };
+}
+
 export async function anilistRandomish() {
   const page = 1 + Math.floor(Math.random() * 15);
   const data = await gql(`

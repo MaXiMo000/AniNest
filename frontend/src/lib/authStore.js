@@ -23,8 +23,8 @@ export const Auth = {
     }
     return state.user;
   },
-  async register(username, email, password) {
-    const { user } = await apiPost('/api/auth/register', { username, email, password });
+  async register(username, email, password, turnstileToken) {
+    const { user } = await apiPost('/api/auth/register', { username, email, password, turnstileToken });
     set({ user });
     return user;
   },
