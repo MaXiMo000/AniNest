@@ -11,7 +11,6 @@
    ```
 3. In the Render dashboard: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and creates both services, prompting for the `sync: false` values before creating anything:
    - `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` — paste the values from step 2.
-   - `TURNSTILE_SECRET_KEY` / `VITE_TURNSTILE_SITE_KEY` — leave both blank unless you've set up a free Cloudflare Turnstile key. Skipping them just means registration has no bot-check for now.
 4. **First deploy will fail to talk cross-service** — that's expected. Render assigns each service's `*.onrender.com` URL only after it exists, so `FRONTEND_ORIGIN` (on the backend) and `VITE_API_URL` (on the frontend) are placeholders in `render.yaml` until you fill in the real ones:
    - Open **aninest-backend → Environment**, set `FRONTEND_ORIGIN` to the actual frontend URL Render assigned.
    - Open **aninest-frontend → Environment**, set `VITE_API_URL` to the actual backend URL Render assigned, then trigger a manual redeploy of the frontend (env vars are baked in at build time for a static site, so changing one requires a rebuild).

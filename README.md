@@ -74,7 +74,6 @@ This was built with the assumption it might be exposed publicly, so:
 - **CSRF**: double-submit cookie pattern — a separate, readable `aninest_csrf` cookie must be echoed back as an `x-csrf-token` header on every mutating request, compared with `crypto.timingSafeEqual` (not `===`, which leaks comparison timing).
 - **Login** returns the same generic error for "no such account" and "wrong password" (prevents account enumeration), and always runs a bcrypt comparison either way so response timing doesn't leak which case it was.
 - **Rate limiting**: 120 req/min per IP globally, 10 req/15min per IP on `/api/auth/*` (blunts brute-force and registration spam). Limits are env-overridable (`RATE_LIMIT`, `AUTH_RATE_LIMIT`) so the test suite can raise them without touching production defaults.
-- Optional **Turnstile bot-check** on registration (`backend/src/lib/turnstile.js`) — off by default (no-ops without `TURNSTILE_SECRET_KEY` set), so it doesn't get in the way locally but is one env var away from blocking scripted mass-registration in production.
 - **Input validation** via `zod` schemas on every write endpoint; every database query passes values as bound `args`, never string-concatenated into the SQL — no injection surface, whether the DB is a local file or the same client talking to Turso. The favorites `image` field is specifically re-parsed through `new URL()` and stored as its normalized `.toString()`, not the raw client input — closes a stored-XSS path where a URL can contain a raw `"` and still pass a naive `.url()` check.
 - A logged-in user is capped at 500 favorites — a defensive limit against DB bloat from a scripted client, not a normal-use restriction.
 - **CORS** locked to the configured frontend origin only, credentials explicitly enabled.
@@ -85,7 +84,7 @@ This was built with the assumption it might be exposed publicly, so:
 **Frontend**
 - All dynamic content is HTML-escaped before being inserted into the page — including URLs going into `src`/`href`/`style` attributes, not just visible text (an early version of this app only escaped visible text, which left an attribute-breakout XSS gap via the favorites `image` field; fixed and covered by a regression test now).
 - A baseline Content-Security-Policy is set via `<meta>` in `index.html`; the deployed version additionally sets it as a real HTTP response header (`render.yaml`), which is the only way to get `frame-ancestors` (clickjacking protection) — a `<meta>` CSP can't do that directive at all.
-- No secrets, API keys, or tokens live in frontend code — the browser never talks to Jikan/AniList directly, only to our own backend. The Turnstile *site* key (if configured) is the one exception, and it's meant to be public.
+- No secrets, API keys, or tokens live in frontend code — the browser never talks to Jikan/AniList directly, only to our own backend.
 
 **Verified, not just written** — `backend/test/api.test.js` (`npm test`) actually exercises SQL injection attempts, the XSS-via-image-URL path, CSRF bypass attempts, oversized/malformed payloads, and rate-limit enforcement, in addition to the normal auth/favorites flows.
 
