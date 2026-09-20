@@ -13,10 +13,29 @@ const listeners = new Set();
 
 function notify() { listeners.forEach((fn) => fn()); }
 
+// Accepts either an already-normalized favorites row (has a top-level
+// `image` string) or a raw anime object from the Jikan/AniList proxy (has
+// `images.webp/jpg`) - the detail page and the library page each have a
+// different shape on hand when they call setStatus().
+function toEntry(anime, status) {
+  const image = anime.image !== undefined
+    ? anime.image
+    : (anime.images?.webp?.image_url || anime.images?.jpg?.image_url || '');
+  return {
+    mal_id: Number(anime.mal_id),
+    title: anime.title,
+    image: image || '',
+    score: anime.score ?? null,
+    type: anime.type || null,
+    status,
+  };
+}
+
 export const Favorites = {
   all() { return Object.fromEntries(byId); },
   count() { return byId.size; },
   has(id) { return byId.has(Number(id)); },
+  getStatus(id) { return byId.get(Number(id))?.status || null; },
   isLoaded() { return loaded; },
 
   async loadFromServer() {
@@ -52,13 +71,10 @@ export const Favorites = {
       }
     }
 
-    const entry = {
-      mal_id: id,
-      title: anime.title,
-      image: anime.images?.webp?.image_url || anime.images?.jpg?.image_url || '',
-      score: anime.score ?? null,
-      type: anime.type || null,
-    };
+    // No `status` argument here on purpose: toEntry()'s `status` property
+    // is then `undefined`, which JSON.stringify drops entirely - so a plain
+    // heart-toggle never sends a `status` key and can't clobber one.
+    const entry = toEntry(anime);
     byId.set(id, entry);
     notify();
     try {
@@ -68,6 +84,31 @@ export const Favorites = {
       byId.delete(id);
       notify();
       return { ok: false, isFav: false };
+    }
+  },
+
+  // Sets (or, with status: null, clears) the watch-status "mini tracker"
+  // field on an anime. Unlike toggle(), this always saves the anime as a
+  // favorite too if it wasn't one already - status is metadata on a
+  // favorites row, not a separate list, so tracking something implicitly
+  // saves it. Returns { ok, needsLogin } rather than throwing.
+  async setStatus(anime, status) {
+    if (!Auth.get().user) return { ok: false, needsLogin: true };
+
+    const id = Number(anime.mal_id);
+    const prev = byId.get(id);
+    const entry = toEntry(anime, status);
+    if (!entry.image && prev?.image) entry.image = prev.image;
+
+    byId.set(id, entry);
+    notify();
+    try {
+      await apiPost('/api/favorites', entry);
+      return { ok: true };
+    } catch {
+      if (prev) byId.set(id, prev); else byId.delete(id);
+      notify();
+      return { ok: false };
     }
   },
 

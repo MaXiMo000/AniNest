@@ -270,6 +270,38 @@ test('favorites CRUD lifecycle for a logged-in user', async () => {
   assert.equal(listAfterDelete.json.favorites.length, 0);
 });
 
+test('favorites: watch status can be set, changed, and cleared without wiping other fields', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  await agent.post('/api/favorites', {
+    csrf: true,
+    body: { mal_id: 777, title: 'Mob Psycho 100', image: 'https://cdn.myanimelist.net/images/x.jpg', score: 8.5, type: 'TV', status: 'watching' },
+  });
+  let list = await agent.get('/api/favorites');
+  assert.equal(list.json.favorites[0].status, 'watching');
+
+  // A plain heart re-toggle (no `status` key at all) must not clobber it.
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 777, title: 'Mob Psycho 100' } });
+  list = await agent.get('/api/favorites');
+  assert.equal(list.json.favorites[0].status, 'watching', 'status must survive an update that omits the field entirely');
+
+  // Changing it explicitly does update it.
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 777, title: 'Mob Psycho 100', status: 'completed' } });
+  list = await agent.get('/api/favorites');
+  assert.equal(list.json.favorites[0].status, 'completed');
+
+  // Explicit null clears it back to "no status" (still a plain favorite).
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 777, title: 'Mob Psycho 100', status: null } });
+  list = await agent.get('/api/favorites');
+  assert.equal(list.json.favorites[0].status, null);
+
+  const invalid = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 777, title: 'Mob Psycho 100', status: 'binge-watching' } });
+  assert.equal(invalid.status, 400);
+});
+
 test('favorites rejects a javascript: URL for the image field', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');

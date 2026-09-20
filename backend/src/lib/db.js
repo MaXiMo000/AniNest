@@ -68,4 +68,17 @@ await db.executeMultiple(`
   CREATE INDEX IF NOT EXISTS idx_reviews_mal_id ON reviews(mal_id);
 `);
 
+// SQLite has no "ADD COLUMN IF NOT EXISTS" — this is the idempotent
+// equivalent, safe to run on every boot against both a fresh DB and one
+// that already has the column. `favorites` predates the watch-status
+// feature, so this is a real migration, not part of the CREATE TABLE above.
+async function ensureColumn(table, column, ddl) {
+  try {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  } catch (err) {
+    if (!String(err.message).includes('duplicate column')) throw err;
+  }
+}
+await ensureColumn('favorites', 'status', 'TEXT');
+
 export default db;

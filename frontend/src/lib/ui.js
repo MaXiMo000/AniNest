@@ -2,6 +2,15 @@ import { imageOf } from './api.js';
 import { Favorites } from './store.js';
 import { navigate } from './router.js';
 
+// Shared between the detail page (setting a status) and the library page
+// (filtering/displaying by it) so both use identical labels/emoji.
+export const WATCH_STATUSES = [
+  { value: 'watching', emoji: '👀', label: 'Watching' },
+  { value: 'plan_to_watch', emoji: '📌', label: 'Plan to Watch' },
+  { value: 'completed', emoji: '✅', label: 'Completed' },
+  { value: 'dropped', emoji: '❌', label: 'Dropped' },
+];
+
 export function escapeHtml(str = '') {
   return String(str)
     .replace(/&/g, '&amp;')
