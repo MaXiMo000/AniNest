@@ -52,7 +52,7 @@ function reviewCardHTML(r, isMine) {
     <div class="review-card ${isMine ? 'review-mine' : ''}">
       <div class="review-head">
         <span class="badge-score small">${r.rating}</span>
-        <strong>${escapeHtml(r.username)}</strong>
+        <a href="#/u/${encodeURIComponent(r.username)}"><strong>${escapeHtml(r.username)}</strong></a>
         <span class="review-date">${escapeHtml(date)}${isMine ? ' · you' : ''}</span>
       </div>
       ${r.body ? `<p class="review-body">${escapeHtml(r.body)}</p>` : ''}

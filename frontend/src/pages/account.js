@@ -17,6 +17,7 @@ export function renderAccount(root) {
       ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
       <div class="hero-actions" style="justify-content:center;margin-top:20px">
         <a href="#/favorites" class="btn-pow btn-pow--blue">💖 My Favorites (${Favorites.count()})</a>
+        <a href="#/u/${encodeURIComponent(user.username)}" class="btn-pow btn-pow--outline">👤 View Public Profile</a>
         <button id="logout-btn" class="btn-pow btn-pow--outline">🚪 Log Out</button>
       </div>
     </div>
