@@ -24,6 +24,9 @@ process.env.SESSION_SECRET = 'test-secret-not-for-production';
 // return 429 once exceeded?) is verified separately below with its own
 // tightly-scoped limit.
 process.env.AUTH_RATE_LIMIT = '1000';
+// Same reasoning for the general limiter (default 120/min) - the suite as a
+// whole now makes well over that from one shared IP within its run time.
+process.env.RATE_LIMIT = '1000';
 
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/lib/db.js');
@@ -580,4 +583,31 @@ test('leaderboard ranks the higher streak first and stays sorted regardless of o
   const idxB = board.json.leaderboard.findIndex((r) => r.username === userB.username);
   assert.ok(idxB !== -1, 'expected the higher-streak player to appear in the top 20');
   assert.ok(idxA === -1 || idxB < idxA, 'the higher streak must rank above the lower one');
+});
+
+test('aggregate recommendations require auth', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const res = await agent.get('/api/recommendations/mine');
+  assert.equal(res.status, 401);
+});
+
+// Deliberately stops short of a real aggregation: with 3+ favorites the
+// route calls out to animeSource.recommendations() per seed, which hits
+// live Jikan/AniList (see the file header comment for why that's excluded
+// from this suite). Fewer than 3 favorites short-circuits before any of
+// that, which is exactly the boundary this test can verify safely.
+test('aggregate recommendations short-circuit below the minimum seed count, without hitting the anime API', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 111, title: 'Seed One' } });
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 222, title: 'Seed Two' } });
+
+  const res = await agent.get('/api/recommendations/mine');
+  assert.equal(res.status, 200);
+  assert.equal(res.json.recommendations.length, 0);
+  assert.equal(res.json.basedOn.length, 2);
 });

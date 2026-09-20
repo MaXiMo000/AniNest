@@ -16,6 +16,7 @@ import { reviewsRouter } from './routes/reviews.js';
 import { usersRouter } from './routes/users.js';
 import { clientErrorsRouter } from './routes/clientErrors.js';
 import { gamesRouter } from './routes/games.js';
+import { recommendationsRouter } from './routes/recommendations.js';
 
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
@@ -72,6 +73,7 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/client-errors', clientErrorsRouter);
   app.use('/api/games', gamesRouter);
+  app.use('/api/recommendations', recommendationsRouter);
 
   app.use((req, res) => res.status(404).json({ error: 'Not found.' }));
 
