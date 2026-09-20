@@ -97,11 +97,15 @@ This was built with the assumption it might be exposed publicly, so:
 
 **Verified, not just written** — `backend/test/api.test.js` (`npm test`) actually exercises SQL injection attempts, the XSS-via-image-URL path, CSRF bypass attempts, oversized/malformed payloads, and rate-limit enforcement, in addition to the normal auth/favorites flows.
 
-**What's deliberately not included** (would need real infrastructure to do properly — happy to add if you want them):
+**Logging**: structured JSON logs via `pino`/`pino-http` (one line per request: method, path, status, duration, request id), not scattered `console.log`. Frontend errors (`window.onerror`/`unhandledrejection`) are relayed to a public `POST /api/client-errors` and logged through the same stream, so a frontend bug shows up next to backend errors instead of only in a browser console nobody's watching. Render aggregates one service's stdout into one place already, which is what "centralized" means at this scale; a real alerting tool (Sentry, etc.) would need its own account and isn't wired up.
+
+**What's deliberately not included** (would need real infrastructure/an external account to do properly — happy to add if you want them):
 - Email verification / password reset (needs an SMTP or transactional-email provider).
 - Two-factor auth.
 - Account lockout after N failed logins (rate limiting covers the same threat at a smaller scale).
 - A production-grade multi-instance session store (the current SQLite-backed store is perfect for one server; a horizontally-scaled deployment would want Redis instead — see DEPLOY.md).
+- **Redis for the anime-data cache** — the current in-memory cache is genuinely fine for a single free-tier instance (nothing to be inconsistent with), but it does reset on every cold start/redeploy. Would help, but needs an external free Redis (e.g. Upstash) since Render's free tier has none.
+- **Real error tracking/alerting** (Sentry or similar) — logs tell you an error happened if you go looking; they don't page anyone. Needs the user's own account + DSN.
 
 ## Ideas for later (UI & features)
 
