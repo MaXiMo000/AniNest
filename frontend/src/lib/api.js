@@ -33,11 +33,13 @@ export const Api = {
   genres: () => cachedGet('genres', '/api/anime/genres'),
   fullById: (id) => cachedGet(`full:${id}`, `/api/anime/${id}/full`),
   recommendations: (id) => cachedGet(`recs:${id}`, `/api/anime/${id}/recommendations`),
+  characters: (id) => cachedGet(`chars:${id}`, `/api/anime/${id}/characters`),
   randomAnime: () => apiGet('/api/anime/random'),
 };
 
 export function imageOf(anime) {
   return (
+    anime?.image || // already-flat shape (favorites/recently-viewed rows), not Jikan/AniList's nested one
     anime?.images?.webp?.large_image_url ||
     anime?.images?.jpg?.large_image_url ||
     anime?.images?.webp?.image_url ||

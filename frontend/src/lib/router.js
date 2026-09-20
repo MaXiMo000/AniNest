@@ -28,9 +28,30 @@ export function currentPath() {
   return parseHash().path;
 }
 
+// Scroll-position memory for the browser's own Back/Forward buttons (not
+// for ordinary link clicks, which should still land at the top of a fresh
+// page). `restoreHash` is set by the `popstate` listener below - it fires
+// before `hashchange` on a real back/forward navigation, and never fires
+// for a plain link click or navigate() call.
+const scrollPositions = new Map();
+let restoreHash = null;
+
+function saveScrollForOldHash(e) {
+  try {
+    const oldHash = new URL(e.oldURL).hash.slice(1) || '/';
+    scrollPositions.set(oldHash, window.scrollY);
+  } catch { /* malformed oldURL - nothing worth restoring for */ }
+}
+
 async function dispatch() {
   const { path, params } = parseHash();
-  window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  const fullHash = window.location.hash.slice(1) || '/';
+  const isRestoring = restoreHash === fullHash;
+  restoreHash = null;
+
+  if (!isRestoring) {
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  }
   document.body.classList.remove('nav-open');
   highlightNav(path, params);
 
@@ -40,6 +61,13 @@ async function dispatch() {
       const namedParams = {};
       r.paramNames.forEach((name, i) => { namedParams[name] = decodeURIComponent(match[i + 1]); });
       await r.handler({ params, path: namedParams });
+      if (isRestoring) {
+        const savedY = scrollPositions.get(fullHash);
+        // Wait a frame so the just-rendered page has its real layout height
+        // before we scroll into it (images are still loading async, but a
+        // rough restore beats none).
+        if (savedY != null) requestAnimationFrame(() => window.scrollTo({ top: savedY, behavior: 'auto' }));
+      }
       return;
     }
   }
@@ -56,6 +84,10 @@ function highlightNav(path, params) {
 }
 
 export function startRouter() {
+  window.addEventListener('hashchange', saveScrollForOldHash);
+  window.addEventListener('popstate', () => {
+    restoreHash = window.location.hash.slice(1) || '/';
+  });
   window.addEventListener('hashchange', dispatch);
   dispatch();
 }
