@@ -410,6 +410,22 @@ test('reviews escape a malicious body when it comes back out (defense in depth)'
   assert.equal(res.json.reviews[0].body, payload);
 });
 
+test('client error reports are accepted (public, no auth) and validated', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const ok = await agent.post('/api/client-errors', {
+    csrf: true,
+    body: { message: 'TypeError: boom', stack: 'at renderHome (home.js:42)', url: 'http://localhost:5173/#/' },
+  });
+  assert.equal(ok.status, 204);
+
+  const missingMessage = await agent.post('/api/client-errors', { csrf: true, body: { stack: 'no message field' } });
+  assert.equal(missingMessage.status, 400);
+
+  const emptyMessage = await agent.post('/api/client-errors', { csrf: true, body: { message: '' } });
+  assert.equal(emptyMessage.status, 400);
+});
+
 test('anime routes validate the id param without needing the upstream API', async () => {
   const agent = makeAgent();
   const res = await agent.get('/api/anime/not-a-number/full');

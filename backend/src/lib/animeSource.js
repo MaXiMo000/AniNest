@@ -1,6 +1,7 @@
 import { jikanGet } from './jikan.js';
 import { anilistTopAnime, anilistSeasonNow, anilistSearch, anilistByMalId, anilistRandomish, anilistSchedule, anilistCharacters } from './anilist.js';
 import { cached } from './cache.js';
+import { logger } from './logger.js';
 
 const TTL = {
   list: 10 * 60 * 1000,
@@ -27,7 +28,7 @@ async function withFallback(key, ttl, primaryName, primary, fallbackName, fallba
     try {
       return await primary();
     } catch (err) {
-      console.warn(`[animeSource] ${primaryName} failed for ${key}: ${err.message}. Falling back to ${fallbackName}.`);
+      logger.warn({ err, key, primaryName, fallbackName }, `${primaryName} failed, falling back to ${fallbackName}`);
       return fallback();
     }
   });
@@ -162,7 +163,7 @@ export async function randomAnime() {
     if (!data) throw new Error('No anime available from AniList right now.');
     return { data };
   } catch (err) {
-    console.warn(`[animeSource] random via AniList failed: ${err.message}. Falling back to Jikan.`);
+    logger.warn({ err }, 'random via AniList failed, falling back to Jikan');
     return jikanGet('/random/anime');
   }
 }

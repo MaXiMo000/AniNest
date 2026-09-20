@@ -8,6 +8,8 @@
 // is skipped entirely rather than blocking registration. Get free keys at
 // https://dash.cloudflare.com/?to=/:account/turnstile
 
+import { logger } from './logger.js';
+
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 export function isTurnstileEnabled() {
@@ -27,7 +29,7 @@ export async function verifyTurnstile(token, remoteIp) {
     const data = await res.json();
     return data.success === true;
   } catch (err) {
-    console.error('[turnstile] verification request failed:', err.message);
+    logger.error({ err }, 'turnstile verification request failed');
     return false; // fail closed — an unverifiable request is treated as a failed check
   }
 }

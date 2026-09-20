@@ -3,7 +3,9 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import pinoHttp from 'pino-http';
 
+import { logger } from './lib/logger.js';
 import { attachUser } from './middleware/session.js';
 import { ensureCsrfCookie, verifyCsrf } from './middleware/csrf.js';
 import { generalLimiter, authLimiter } from './middleware/rateLimits.js';
@@ -12,6 +14,7 @@ import { favoritesRouter } from './routes/favorites.js';
 import { animeRouter } from './routes/anime.js';
 import { reviewsRouter } from './routes/reviews.js';
 import { usersRouter } from './routes/users.js';
+import { clientErrorsRouter } from './routes/clientErrors.js';
 
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
@@ -45,6 +48,13 @@ export function createApp() {
 
   app.use(cookieParser());
   app.use(express.json({ limit: '10kb' }));
+  // One structured log line per request (method, path, status, duration,
+  // an auto-generated request id) - skips /api/health so Render's own
+  // uptime pings don't drown out everything else in the log stream.
+  app.use(pinoHttp({
+    logger,
+    autoLogging: { ignore: (req) => req.url === '/api/health' },
+  }));
   app.use(generalLimiter);
   app.use(attachUser);
   app.use(ensureCsrfCookie);
@@ -59,13 +69,15 @@ export function createApp() {
   app.use('/api/anime', animeRouter);
   app.use('/api/reviews', reviewsRouter);
   app.use('/api/users', usersRouter);
+  app.use('/api/client-errors', clientErrorsRouter);
 
   app.use((req, res) => res.status(404).json({ error: 'Not found.' }));
 
   // Centralized error handler: never leak stack traces or internal error
-  // strings to clients — log them server-side and return a generic message.
+  // strings to clients — log them server-side (via the same structured
+  // logger/request id as everything else) and return a generic message.
   app.use((err, req, res, _next) => {
-    console.error(err);
+    (req.log || logger).error({ err }, 'unhandled request error');
     const status = err.status && err.status < 500 ? err.status : 502;
     res.status(status).json({ error: status < 500 ? err.message : 'Upstream anime data source is unavailable right now.' });
   });

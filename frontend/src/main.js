@@ -16,6 +16,9 @@ import { renderCompare } from './pages/compare.js';
 import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { Auth } from './lib/authStore.js';
+import { installGlobalErrorReporting } from './lib/errorReporter.js';
+
+installGlobalErrorReporting();
 
 const app = document.getElementById('app');
 const authArea = document.getElementById('auth-area');
