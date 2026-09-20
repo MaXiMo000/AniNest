@@ -5,7 +5,7 @@ import { navigate } from '../lib/router.js';
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_LABEL = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', sunday: 'Sun' };
 
-function todayName() {
+export function todayName() {
   // JS getDay(): 0=Sunday..6=Saturday — map to our lowercase weekday keys.
   return DAYS[(new Date().getDay() + 6) % 7];
 }

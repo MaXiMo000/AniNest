@@ -6,6 +6,8 @@
   <title>AniNest — Your Anime Home Base</title>
   <meta name="description" content="Discover trending, top-rated, and seasonal anime. A comic-book styled anime explorer." />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪺</text></svg>" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
+  <meta name="theme-color" content="#120c22" />
   <!-- Dev-friendly baseline CSP. A <meta> CSP can't set frame-ancestors (that's
        done via a real header in render.yaml for the deployed site instead).
        connect-src includes localhost (dev) and a *.onrender.com wildcard so this
@@ -38,6 +40,7 @@
         <a href="#/browse?sort=season" data-route="/browse?sort=season">This&nbsp;Season</a>
         <a href="#/schedule" data-route="/schedule">📅 Schedule</a>
         <a href="#/games" data-route="/games">🎮 Games</a>
+        <a href="#/compare" data-route="/compare">⚖️ Compare</a>
         <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Favorites <span id="fav-count" class="fav-count">0</span></a>
         <span id="auth-area" class="auth-area"></span>
       </nav>
@@ -52,6 +55,7 @@
     <div class="footer-inner">
       <p><span class="brand-bolt">🪺</span> AniNest — built for fans, by a fan. Data from <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a> &amp; <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>.</p>
       <p class="footer-note">Trailers via YouTube. For full episodes, please support the creators on official platforms like Crunchyroll, HIDIVE, or Netflix.</p>
+      <button id="install-btn" class="btn-pow btn-pow--sm" style="margin-top:14px" hidden>📲 Install App</button>
     </div>
   </footer>
 
