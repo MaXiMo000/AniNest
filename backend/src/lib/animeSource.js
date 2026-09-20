@@ -1,5 +1,5 @@
 import { jikanGet } from './jikan.js';
-import { anilistTopAnime, anilistSeasonNow, anilistSearch, anilistByMalId, anilistRandomish, anilistSchedule } from './anilist.js';
+import { anilistTopAnime, anilistSeasonNow, anilistSearch, anilistByMalId, anilistRandomish, anilistSchedule, anilistCharacters } from './anilist.js';
 import { cached } from './cache.js';
 
 const TTL = {
@@ -63,13 +63,25 @@ export function seasonNow(page = 1) {
   );
 }
 
-export function search({ q, genres, type, status, order_by: orderBy, sort, page = 1 }) {
-  const key = `search:${q || ''}:${genres || ''}:${type || ''}:${status || ''}:${orderBy || ''}:${sort || ''}:${page}`;
+// Applied locally after fetching, rather than pushed into each upstream's
+// own query syntax - Jikan has a native `min_score` param but AniList's
+// equivalent filter works on a 0-100 `averageScore` scale, and translating
+// between the two consistently is more complexity than it's worth when a
+// simple post-filter behaves identically regardless of which source served
+// the page. Trade-off: a filtered page can come back with fewer than the
+// usual ~20 results.
+function filterByMinScore(result, minScore) {
+  if (!minScore) return result;
+  return { ...result, data: (result.data || []).filter((a) => (a.score || 0) >= minScore) };
+}
+
+export function search({ q, genres, type, status, order_by: orderBy, sort, page = 1, minScore }) {
+  const key = `search:${q || ''}:${genres || ''}:${type || ''}:${status || ''}:${orderBy || ''}:${sort || ''}:${page}:${minScore || ''}`;
   return withFallback(
     key,
     TTL.list,
-    'AniList', () => anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page }),
-    'Jikan', () => jikanGet('/anime', { q, genres, type, status, order_by: orderBy, sort, page, sfw: true }),
+    'AniList', async () => filterByMinScore(await anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page }), minScore),
+    'Jikan', async () => filterByMinScore(await jikanGet('/anime', { q, genres, type, status, order_by: orderBy, sort, page, sfw: true }), minScore),
   );
 }
 
@@ -110,6 +122,37 @@ export function recommendations(id) {
       return { data: result?.recommendations || [] };
     },
     'Jikan', () => jikanGet(`/anime/${id}/recommendations`),
+  );
+}
+
+const CHARACTERS_LIMIT = 12;
+
+// Jikan's characters payload has a very different shape from AniList's -
+// normalize it down to the same { character: {name, image}, role,
+// voiceActors: [{name, image}] } shape anilistCharacters() already returns,
+// so the frontend never needs to know which source served a given request.
+function normalizeJikanCharacters(list) {
+  return list.slice(0, CHARACTERS_LIMIT).map((c) => ({
+    character: {
+      name: c.character?.name || 'Unknown',
+      image: c.character?.images?.jpg?.image_url || c.character?.images?.webp?.image_url || '',
+    },
+    role: c.role || null,
+    voiceActors: (c.voice_actors || [])
+      .filter((va) => va.language === 'Japanese')
+      .map((va) => ({ name: va.person?.name || 'Unknown', image: va.person?.images?.jpg?.image_url || '' })),
+  }));
+}
+
+export function characters(id) {
+  return withFallback(
+    `chars:${id}`,
+    TTL.detail,
+    'AniList', async () => ({ data: await anilistCharacters(Number(id)) }),
+    'Jikan', async () => {
+      const res = await jikanGet(`/anime/${id}/characters`);
+      return { data: normalizeJikanCharacters(res.data || []) };
+    },
   );
 }
 

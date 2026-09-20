@@ -40,7 +40,9 @@ animeRouter.get('/search', asyncRoute(async (req, res) => {
   const status = ALLOWED_STATUS.has(req.query.status) ? req.query.status : undefined;
   const orderBy = ALLOWED_ORDER_BY.has(req.query.order_by) ? req.query.order_by : undefined;
   const sort = req.query.sort === 'asc' ? 'asc' : 'desc';
-  res.json(await animeSource.search({ q, genres: genresParam, type, status, order_by: orderBy, sort, page }));
+  const minScoreRaw = Number(req.query.min_score);
+  const minScore = Number.isFinite(minScoreRaw) && minScoreRaw > 0 && minScoreRaw <= 10 ? minScoreRaw : undefined;
+  res.json(await animeSource.search({ q, genres: genresParam, type, status, order_by: orderBy, sort, page, minScore }));
 }));
 
 const VALID_SCHEDULE_DAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
@@ -69,4 +71,10 @@ animeRouter.get('/:id/recommendations', asyncRoute(async (req, res) => {
   const id = parseAnimeId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
   res.json(await animeSource.recommendations(id));
+}));
+
+animeRouter.get('/:id/characters', asyncRoute(async (req, res) => {
+  const id = parseAnimeId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
+  res.json(await animeSource.characters(id));
 }));

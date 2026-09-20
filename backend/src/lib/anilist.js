@@ -235,6 +235,30 @@ export async function anilistSchedule(day) {
   return { data: results };
 }
 
+const CHARACTERS_LIMIT = 12;
+
+export async function anilistCharacters(malId) {
+  const data = await gql(`
+    query($idMal: Int) {
+      Media(idMal: $idMal, type: ANIME) {
+        characters(sort: ROLE, perPage: ${CHARACTERS_LIMIT}) {
+          edges {
+            role
+            node { name { full } image { large } }
+            voiceActors(language: JAPANESE) { name { full } image { large } }
+          }
+        }
+      }
+    }
+  `, { idMal: malId });
+  if (!data.Media) return [];
+  return (data.Media.characters?.edges || []).map((e) => ({
+    character: { name: e.node?.name?.full || 'Unknown', image: e.node?.image?.large || '' },
+    role: e.role || null,
+    voiceActors: (e.voiceActors || []).map((va) => ({ name: va.name?.full || 'Unknown', image: va.image?.large || '' })),
+  }));
+}
+
 export async function anilistRandomish() {
   const page = 1 + Math.floor(Math.random() * 15);
   const data = await gql(`

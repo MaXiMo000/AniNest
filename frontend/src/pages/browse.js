@@ -19,6 +19,7 @@ function buildQueryString(state) {
   if (state.type) p.set('type', state.type);
   if (state.status) p.set('status', state.status);
   if (state.sort && state.sort !== 'popular') p.set('sort', state.sort);
+  if (state.minScore) p.set('min', state.minScore);
   if (state.page && state.page !== 1) p.set('page', state.page);
   return p.toString();
 }
@@ -30,6 +31,7 @@ function parseState(params) {
     type: params.get('type') || '',
     status: params.get('status') || '',
     sort: params.get('sort') || 'popular',
+    minScore: Number(params.get('min')) || 0,
     page: Number(params.get('page') || 1),
   };
 }
@@ -63,8 +65,14 @@ function toolbarHTML(state, genresList) {
         ${statusOptions.map(([v, l]) => `<option value="${v}" ${state.status === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
 
+      <span class="toolbar-label">Min Score</span>
+      <div class="minscore-slider">
+        <input type="range" id="f-minscore" min="0" max="9" step="0.5" value="${state.minScore || 0}" />
+        <span id="minscore-value">${state.minScore ? `★ ${state.minScore.toFixed(1)}+` : 'Any'}</span>
+      </div>
+
       ${state.q ? `<span class="chip active">🔍 "${escapeHtml(state.q)}" <span id="clear-q" style="cursor:pointer">✕</span></span>` : ''}
-      ${state.genres.length || state.type || state.status || state.sort !== 'popular' || state.q
+      ${state.genres.length || state.type || state.status || state.sort !== 'popular' || state.q || state.minScore
         ? `<button class="chip" id="clear-filters">✕ Clear All</button>` : ''}
     </div>
     <div class="genre-filter-list" id="genre-filter-list">
@@ -96,7 +104,10 @@ export async function renderBrowse(root, params) {
 
     if (state.sort === 'season') {
       const res = await Api.seasonNow(state.page);
-      list = res.data || [];
+      // seasonNow has no server-side min-score support (unlike search) -
+      // filtering client-side here is simpler than adding a param to a
+      // second endpoint just for this one Browse tab.
+      list = state.minScore ? (res.data || []).filter((a) => (a.score || 0) >= state.minScore) : (res.data || []);
       hasNext = Boolean(res.pagination?.has_next_page);
       titleLabel = 'This Season';
     } else {
@@ -114,6 +125,7 @@ export async function renderBrowse(root, params) {
         status: state.status || undefined,
         order_by: order.order_by,
         sort: order.sort,
+        min_score: state.minScore || undefined,
         page: state.page,
         sfw: true,
       });
@@ -136,6 +148,13 @@ export async function renderBrowse(root, params) {
     root.querySelector('#f-sort')?.addEventListener('change', (e) => goto({ sort: e.target.value }));
     root.querySelector('#f-type')?.addEventListener('change', (e) => goto({ type: e.target.value }));
     root.querySelector('#f-status')?.addEventListener('change', (e) => goto({ status: e.target.value }));
+    const minScoreSlider = root.querySelector('#f-minscore');
+    const minScoreValue = root.querySelector('#minscore-value');
+    minScoreSlider?.addEventListener('input', (e) => {
+      const v = Number(e.target.value);
+      minScoreValue.textContent = v ? `★ ${v.toFixed(1)}+` : 'Any';
+    });
+    minScoreSlider?.addEventListener('change', (e) => goto({ minScore: Number(e.target.value) }));
     root.querySelector('#clear-q')?.addEventListener('click', () => goto({ q: '' }));
     root.querySelector('#clear-filters')?.addEventListener('click', () => navigate('#/browse'));
     root.querySelectorAll('[data-genre]').forEach((chip) => {
