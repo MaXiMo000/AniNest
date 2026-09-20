@@ -1,6 +1,6 @@
 # AniNest — Session Handoff
 
-Living document — read this first in a new session, then update it before your context runs out again. Last updated by a session that: migrated the DB to Turso, found and fixed a critical cross-site cookie bug, shipped weekly schedule + reviews/ratings, and re-added Turnstile.
+Living document — read this first in a new session, then update it before your context runs out again. Last updated by a session that: swapped AniList to be the primary anime data source (Jikan is now the fallback, not the other way around), and shipped public profile pages.
 
 ## What this is
 
@@ -65,21 +65,18 @@ The Turso migration (item 5 above) only changed the *code* to support Turso — 
 - **Free-tier cold start**: an idle service spins down and takes 20-60s to wake on the next request; the first couple of parallel requests on wake can transiently 502 even though nothing is actually broken. Don't panic-debug a fresh 502 without first checking if it self-resolves in the next request.
 - **Blueprint auto-sync**: pushing to `master` auto-deploys both services. Header/env config syncs can land faster than a full code rebuild — if you check a deploy log entry from Render's dashboard, confirm it's actually the *latest* one (Render keeps full history, and clicking an older entry shows its log even though newer commits have since deployed on top of it — this caused real confusion this session).
 
-## Jikan reliability — this is a real, recurring problem, not a one-off
+## Anime data source: AniList is now primary, Jikan is the fallback
 
-Jikan (the free MyAnimeList API this app uses as primary) returned 504 "MyAnimeList may be down/unavailable" **repeatedly throughout this entire session** — sometimes per-endpoint (e.g. `/top/anime` failing while `/seasons/now` succeeded seconds later), sometimes for extended stretches. This is because **Jikan is an unofficial scraper/proxy in front of MyAnimeList**, not a first-party API — it inherits every hiccup MAL's own infrastructure has, plus its own.
+Previous sessions hit repeated Jikan 504s ("MyAnimeList may be down/unavailable") — Jikan is an unofficial scraper/proxy in front of MyAnimeList, not a first-party API, so it inherits every hiccup MAL's own infrastructure has, plus its own. This session **swapped the primary/fallback order** in `backend/src/lib/animeSource.js`'s `withFallback()` calls for `topAnime`, `schedule`, `seasonNow`, `search`, and `randomAnime`: AniList (first-party GraphQL API, ~90 req/min, no proxy in front of it) is now tried first, Jikan second. Verified working end-to-end (registered a test account, browsed lists, opened a detail page, favorited, reviewed — all served by AniList with no Jikan calls needed).
 
-**What's already mitigated**: every list/detail endpoint has an AniList fallback (`backend/src/lib/animeSource.js` → `withFallback()`), so a Jikan outage degrades gracefully instead of breaking the page. This is working well and caught live during testing multiple times.
+Two endpoints deliberately kept Jikan-first:
+- **`genres()`** — lightweight, rarely fails, and the static fallback list is instant; not worth a network round-trip to AniList.
+- **`fullById()`** (anime detail pages) — now tries **AniList first**, but falls back to **Jikan**, kept specifically because Jikan/MAL has fields AniList's schema doesn't: `rank`, `popularity`, `duration`, MAL's own content `rating`, and curated official "where to watch" streaming links. If AniList is up (the common case), detail pages lose those fields (they render as `—` / fall back to a Crunchyroll search link) — a known, accepted tradeoff for reliability, not a bug.
 
-**What's NOT yet done, worth considering next**:
-
-1. **Make AniList primary, Jikan secondary (or drop Jikan)** — AniList is a genuine first-party API (not a proxy to someone else's site), has a materially higher rate limit (~90/min vs Jikan's ~60/min shared globally), and has been rock-solid every time it's been hit this session, in contrast to Jikan. The tradeoff: AniList doesn't have MAL's curated "official streaming links" field, so the "Where to Watch" section would lose its best-case data (falls back to a Crunchyroll search link either way, so it's not a hard blocker — just a slight downgrade). This is probably the highest-value, lowest-effort fix available: **swap the primary/fallback order in `withFallback()` calls**, keep both, done in probably under an hour.
-
-2. **MyAnimeList's own official API v2** (register a free client ID at myanimelist.net/apiconfig) — this is the "fix the actual root cause" option, since it talks to MAL directly with no scraper in between. Bigger lift: needs its own client module (similar shape to `anilist.js`), a new client ID to register, and MAL's official API has a different pagination/field shape than Jikan so `animeSource.js`'s normalization would need new mapping work. Worth doing eventually if Jikan's flakiness keeps being a problem after trying option 1, but don't start here — try the cheap swap first.
-
-3. **Kitsu API** (kitsu.io/api/edge) — a third free option, JSON:API shaped, not evaluated this session at all. Lower priority than the two above; mentioned for completeness if both AniList and Jikan ever have a bad day simultaneously.
-
-Recommendation for next session if this keeps being annoying: try #1 first (cheap, reversible, already 90% built), measure whether it actually reduces user-visible errors, and only invest in #2 if #1 isn't enough.
+**Still open, worth considering next** if AniList+Jikan together ever aren't enough:
+1. **MyAnimeList's own official API v2** (free client ID at myanimelist.net/apiconfig) — talks to MAL directly, no scraper in between. Needs its own client module (shape like `anilist.js`) and new pagination/field mapping in `animeSource.js`. Bigger lift than the swap above.
+2. **Kitsu API** (kitsu.io/api/edge) — third free option, JSON:API shaped, not evaluated at all yet. Would slot in as a third fallback tier in `withFallback()`. Lower priority — only worth it if AniList+Jikan have simultaneous bad days often enough to matter.
+3. **Wider "more APIs" ask from the user**: they've flagged wanting broader resilience across *all* the list/filter/schedule surfaces, not just a primary/fallback pair — worth scoping properly (which endpoints, how many tiers, is a 3-way fallback chain actually simpler or more fragile than 2-way) before building rather than bolting on more sources reactively.
 
 ## What's tested vs. not
 
@@ -89,11 +86,26 @@ Recommendation for next session if this keeps being annoying: try #1 first (chea
 
 ## Remaining roadmap (user-approved priority order, from an earlier discussion of "what would make this feel like a real community, not just a catalog")
 
-Done: **#1 weekly schedule**, **#2 reviews & ratings**. Still open, in order:
+Done: **#1 weekly schedule**, **#2 reviews & ratings**, **#3 public profile pages**, **#4a Higher/Lower game**, **#4b Guess the Anime game**. Still open, in order:
 
-3. **Public profile pages** (`#/u/username`) — favorites, reviews, join date. Natural next step since reviews now need somewhere to link back to (currently reviewer usernames in the reviews section aren't clickable). Needs: a new public (unauthenticated) `GET /api/users/:username` backend endpoint returning only non-sensitive fields (username, created_at, favorites, reviews — never email/password_hash), plus a new frontend page.
-4. **Original games using existing data** (explicitly: no drawing/reproducing actual anime character art — that's a real copyright line, not a style preference). Ideas already discussed with the user: Higher/Lower on MAL score, guess-the-anime from a blurred synopsis/cover, a short recommendation quiz.
+4. **Original games using existing data**, being built one at a time (user explicitly asked not to rush these — best-effort UI, not just functional):
+   - ✅ **Higher/Lower** — done. `#/games` (hub, `frontend/src/pages/games/hub.js`) and `#/games/higher-lower` (`higherLower.js`). Guess whether a "challenger" anime's score is higher/lower than the current "champion"; correct guesses chain the streak, wrong ends it. Best streak persisted in `localStorage` (`aninest_hl_best`) — no backend/account involvement, purely client-side. Anime pool comes from `frontend/src/lib/animePool.js`, which samples `topAnime` across pages `[1,4,8,12,16,20]` (not just page 1) specifically so the score range is wide enough for the game to be interesting rather than a near-coin-flip between two 9.0s — worth reusing this same pool helper for the next games rather than re-deriving one.
+   - ✅ **Guess the Anime** — done. `#/games/guess-the-anime` (`guessTheAnime.js`). Blurred poster (CSS `filter: blur()`, unblurs on reveal) + a redacted synopsis snippet (strips the `(Source: ...)` citation and blacks out any literal occurrence of the answer's own title text) + 4 multiple-choice title buttons (1 correct + 3 distractors from the same pool, deduped by title so two options can't look identical). Same streak/best/localStorage pattern as Higher/Lower (`aninest_gta_best`), same pool helper, same "Game Over → Play Again / More Games" screen for consistency across games. `shuffle()` was factored out of `higherLower.js` into `frontend/src/lib/shuffle.js` since both games need it now — reuse that rather than re-inlining a Fisher-Yates.
+   - ⬜ **Recommendation Quiz** — not started. Card exists on the hub already, marked "Coming soon".
+
+Known limitation worth knowing about **Guess the Anime**: title redaction only blacks out the exact answer title string. Recap/compilation-film entries often have synopses that name the *parent series* instead (e.g. a "BOCCHI THE ROCK! Recap Part 1" synopsis says "Bocchi the Rock!"), which isn't redacted and makes those rounds nearly free. Not worth fixing unless it turns out to be a big fraction of rounds in practice — most pool entries don't have this issue.
 5. **Achievements/badges** — cheap gamification layer once reviews/favorites have enough data to badge against.
+
+### UI note: the header's logged-in user chip
+
+Fixed this session — `.user-chip` (`frontend/src/style.css`) used `border: 2.5px solid var(--ink)`, and `--ink` (#16101f, near-black) is nearly invisible against the header's own dark background, so the chip looked like unbordered floating text. This is a trap worth remembering for *any* new UI on the header/dark hero areas: the app's whole "comic ink outline" look only works where the bordered element sits on a *lighter* panel than the outline color — on the dark header itself, use a bright accent border (this fix used `var(--purple)`, brightening to `var(--pink2)` on hover) instead of `var(--ink)`.
+
+### #3 detail: public profile pages (done this session)
+
+- Backend: `GET /api/users/:username` (`backend/src/routes/users.js`, mounted at `/api/users` in `app.js`) — public, unauthenticated, returns only `{ username, createdAt }` + that user's favorites + reviews. Never returns email/password_hash. 404s for a non-matching or malformed username (reuses the same `[a-zA-Z0-9_]{3,20}` shape the registration form enforces) rather than leaking existence via a different error.
+- Frontend: `frontend/src/pages/profile.js`, routed at `#/u/:username` (`main.js`). Favorites render as a card grid (flat data from the `favorites` table — no fav-toggle button, this isn't the viewer's own list). Reviews are capped at 12 shown and each one is enriched with the anime's title/poster via `Api.fullById()` (the reviews table itself only stores `mal_id`, not a title) — fine at this size since `fullById` is already cached both server- and client-side; would need rethinking if a single user's review count ever got large.
+- Reviewer usernames in the reviews section on anime detail pages (`details.js` → `reviewCardHTML`) are now links to `#/u/<username>`. The account page (`account.js`) also links to the signed-in user's own public profile.
+- No privacy toggle exists — a registered user's favorites and reviews are always publicly visible under their username. That was an implicit simplification, not an explicit user decision — revisit if that's ever a concern.
 
 ## Known TODOs / things a future session should double check
 

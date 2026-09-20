@@ -54,15 +54,16 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Browse** — search, filter by genre/type/status, sort, pagination.
 - **Details** — synopsis, stats, genres, official YouTube trailer, recommendations, "Where to Watch" (official platforms only).
 - **Accounts** — register/login, favorites saved server-side and synced across devices.
+- **Public profiles** (`/u/username`) — a user's join date, favorites, and reviews, linked from their username anywhere it appears (reviews section, account page).
 
 ## Why a backend at all?
 
 Two reasons:
 
-1. **Rate limits, solved structurally.** Jikan (the free MyAnimeList API) allows roughly 60 requests/minute — *shared across everyone using it, worldwide*. If the browser called Jikan directly, every visitor to the site burned through that budget individually. Now the backend is the only thing that ever calls Jikan, caches every response for several minutes, and serves all visitors from that shared cache — so traffic no longer multiplies API calls 1:1 with visitors.
-2. **A second data source as a safety net.** [AniList](https://anilist.co)'s GraphQL API is also free and keyless, with a much higher limit (~90 req/min) and separate uptime from MyAnimeList. `backend/src/lib/animeSource.js` tries Jikan first (it has richer MAL-curated data, including legit "where to watch" links) and transparently falls back to AniList — reshaped into the same data format — if Jikan is slow, rate-limited, or its own connection to MyAnimeList is having a bad day (which does happen; Jikan is a volunteer-run proxy, not a guaranteed-uptime service).
+1. **Rate limits, solved structurally.** Both upstream APIs cap requests per minute, shared across everyone using them worldwide. If the browser called them directly, every visitor to the site burned through that budget individually. Now the backend is the only thing that ever calls out, caches every response for several minutes, and serves all visitors from that shared cache — so traffic no longer multiplies API calls 1:1 with visitors.
+2. **Two data sources, so one bad day doesn't break the site.** `backend/src/lib/animeSource.js` tries [AniList](https://anilist.co)'s GraphQL API first — a genuine first-party API (not a scraper), with a materially higher limit (~90 req/min) and, in practice, the more reliable uptime of the two — and transparently falls back to [Jikan](https://jikan.moe) (the free MyAnimeList API, ~60 req/min shared globally) if AniList is slow or erroring. Anime detail pages (`fullById`) are the one exception worth knowing about: they still fall back *to* Jikan specifically because it has fields AniList's schema doesn't — MAL's own rank/popularity/duration/content-rating, and curated "where to watch" streaming links.
 
-You can watch which source served a request in the backend's console logs (`[animeSource] primary failed... falling back to AniList`).
+You can watch which source served a request in the backend's console logs (`[animeSource] AniList failed... falling back to Jikan`).
 
 ## Security
 
@@ -104,9 +105,10 @@ Implemented in this pass: skeleton loading cards, accessible focus rings, accoun
 - **Compare mode** — pick two anime, see genres/scores side by side (fun, on-brand for a comic UI).
 - **Rating-aware filters** — a min-score slider on Browse.
 - **PWA install** — offline-friendly shell, "Add to Home Screen" for the comic aesthetic on mobile.
-- **Real-time "airing today"** ticker on Home using Jikan's schedules endpoint.
-- **Public profile pages** (`/u/username`) showing someone's favorites list, if you ever want a social angle.
+- **Real-time "airing today"** ticker on Home using the schedule endpoint.
+- **Original data-driven games** — Higher/Lower on score, guess-the-anime from a blurred synopsis, a recommendation quiz. No reproducing actual anime character art (real copyright line).
+- **Achievements/badges** once reviews/favorites have enough data to badge against.
 
 ## Data sources
 
-[Jikan](https://jikan.moe) (primary) and [AniList](https://anilist.co) (fallback) — both free, keyless, third-party APIs. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.
+[AniList](https://anilist.co) (primary) and [Jikan](https://jikan.moe) (fallback, and still primary for the fields AniList lacks on detail pages) — both free, keyless, third-party APIs. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.

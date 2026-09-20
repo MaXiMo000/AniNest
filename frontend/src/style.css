@@ -681,13 +681,23 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   align-items: center;
   gap: 10px;
   background: var(--panel);
-  border: 2.5px solid var(--ink);
+  /* --ink is near-black, which is the right "comic outline" color on light
+     panels but disappears against the header's own dark background — use a
+     bright accent border here instead so the chip actually reads as one. */
+  border: 2.5px solid var(--purple);
   border-radius: 999px;
   padding: 5px 18px 5px 5px;
   font-weight: 800;
   font-size: 0.92rem;
   white-space: nowrap;
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--purple);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.user-chip:hover {
+  transform: translate(-1px, -1px);
+  background: var(--purple);
+  border-color: var(--pink2);
+  box-shadow: 3px 3px 0 var(--pink2);
 }
 .user-avatar {
   width: 32px; height: 32px;
@@ -778,6 +788,208 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .review-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .review-date { font-size: 0.75rem; color: var(--muted); font-weight: 700; }
 .review-body { margin: 10px 0 0; line-height: 1.6; font-weight: 500; }
+
+/* ===================== Games hub ===================== */
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 22px;
+}
+.game-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  box-shadow: 6px 6px 0 var(--ink);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 10px 12px 0 var(--ink); }
+.game-card--locked { opacity: 0.55; cursor: default; }
+.game-card-emoji { font-size: 2.6rem; margin-bottom: 10px; }
+.game-card-title { margin: 0 0 8px; }
+.game-card-desc { color: var(--muted); font-weight: 600; font-size: 0.9rem; margin: 0 0 16px; min-height: 3em; }
+.game-card-soon { font-weight: 800; color: var(--muted); font-size: 0.85rem; }
+
+/* ===================== Game: Higher or Lower ===================== */
+.hl-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
+.hl-stats { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.vs-arena {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 30px 0;
+}
+.vs-bolt {
+  font-size: 2.6rem;
+  filter: drop-shadow(2px 2px 0 var(--ink));
+  animation: pow-pulse 1.4s infinite ease-in-out;
+}
+.vs-card {
+  position: relative;
+  width: 260px;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 18px;
+  box-shadow: 8px 8px 0 var(--ink);
+  padding: 16px;
+  text-align: center;
+  transition: box-shadow 0.25s ease, border-color 0.25s ease;
+}
+.vs-card-label {
+  display: inline-block;
+  font-family: var(--font-display);
+  letter-spacing: 1px;
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 2px 12px;
+  transform: rotate(-2deg);
+  margin-bottom: 10px;
+}
+.vs-poster-wrap {
+  aspect-ratio: 2/3;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2.5px solid var(--ink);
+  margin-bottom: 12px;
+  background: #000;
+}
+.vs-poster-wrap img { width: 100%; height: 100%; object-fit: cover; }
+.vs-title {
+  font-weight: 800;
+  font-size: 0.98rem;
+  line-height: 1.3;
+  min-height: 2.6em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.vs-score {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px; height: 64px;
+  margin: 0 auto;
+  background: var(--yellow);
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.3s ease, background 0.3s ease, color 0.3s ease;
+}
+.vs-score.is-hidden { background: var(--bg2); color: var(--muted); font-size: 1.8rem; }
+.vs-card.vs-correct { border-color: var(--green); box-shadow: 8px 8px 0 var(--green); }
+.vs-card.vs-correct .vs-score { background: var(--green); color: var(--ink); transform: scale(1.15) rotate(-6deg); }
+.vs-card.vs-wrong { border-color: var(--pink); box-shadow: 8px 8px 0 var(--pink); }
+.vs-card.vs-wrong .vs-score { background: var(--pink); color: #fff; transform: scale(1.15) rotate(6deg); }
+
+.hl-actions { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.hl-actions .btn-pow { min-width: 160px; font-size: 1.2rem; }
+.hl-actions .btn-pow:disabled { opacity: 0.5; cursor: default; }
+
+.hl-gameover { text-align: center; padding: 40px 20px; max-width: 520px; margin: 0 auto; }
+.hl-gameover-emoji { font-size: 4rem; margin-bottom: 6px; }
+.hl-final-streak { font-size: 1.3rem; font-weight: 800; margin: 6px 0; }
+.hl-new-best { color: var(--yellow); font-weight: 800; font-size: 1.1rem; }
+
+@media (max-width: 700px) {
+  .vs-arena { flex-direction: column; }
+  .vs-bolt { transform: rotate(90deg); }
+  .vs-card { width: 100%; max-width: 320px; }
+}
+
+/* ===================== Game: Guess the Anime ===================== */
+.guess-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
+
+.guess-arena { max-width: 560px; margin: 30px auto 0; }
+
+.guess-poster-frame {
+  position: relative;
+  width: 220px;
+  aspect-ratio: 2 / 3;
+  margin: 0 auto 14px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 8px 8px 0 var(--ink);
+  background: #000;
+}
+.guess-poster-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(24px) saturate(0.7) brightness(0.85);
+  transform: scale(1.15);
+  transition: filter 0.6s ease, transform 0.6s ease;
+}
+.guess-poster-frame.is-revealed img { filter: blur(0) saturate(1) brightness(1); transform: scale(1); }
+.guess-poster-mark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 3.5rem;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 3px 3px 0 var(--ink);
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.guess-poster-frame.is-revealed .guess-poster-mark { opacity: 0; }
+.guess-reveal-title {
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  letter-spacing: 0.5px;
+  color: var(--yellow);
+  -webkit-text-stroke: 0.5px var(--ink);
+  min-height: 1.6em;
+  margin: 0 0 4px;
+}
+
+.guess-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 18px;
+}
+.guess-choice {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: 12px;
+  padding: 14px 12px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--text);
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+.guess-choice:not(:disabled):hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.guess-choice:disabled { cursor: default; }
+.guess-choice.is-correct { background: var(--green); color: var(--ink); box-shadow: 4px 4px 0 var(--green); }
+.guess-choice.is-wrong { background: var(--pink); color: #fff; box-shadow: 4px 4px 0 var(--pink); }
+.guess-choice.is-muted { opacity: 0.45; }
+
+@media (max-width: 560px) {
+  .guess-choices { grid-template-columns: 1fr; }
+}
 
 /* ===================== Responsive ===================== */
 @media (max-width: 860px) {
