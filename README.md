@@ -56,6 +56,13 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Accounts** — register/login, favorites saved server-side and synced across devices.
 - **Public profiles** (`/u/username`) — a user's join date, favorites, and reviews, linked from their username anywhere it appears (reviews section, account page).
 - **Game Zone** (`/games`) — three original, data-driven games (no reproduced anime character art — a real copyright line, not a style choice): **Higher/Lower** (guess whether the next anime's score is higher or lower), **Guess the Anime** (blurred cover + redacted synopsis, multiple choice), and a **Taste Quiz** (five questions → a genre-matched recommendation). All client-side, streaks/results kept in `localStorage`.
+- **Watch status** — a lightweight tracker (Watching / Plan to Watch / Completed / Dropped) on top of favorites, with filter tabs on the Favorites page.
+- **Characters & voice actors** on the details page, sourced from whichever data source served the page (AniList or Jikan).
+- **Continue browsing** — a "recently viewed" rail on Home, plus scroll-position restoration on the browser's Back/Forward buttons.
+- **Compare mode** (`/compare`) — pick two anime and see score/episodes/members/genres side by side.
+- **Min-score filter** on Browse.
+- **Installable (PWA)** — "Add to Home Screen" support with an offline-capable app shell.
+- **Airing-today ticker** on Home, using the same schedule data as the weekly schedule page.
 
 ## Why a backend at all?
 
@@ -98,15 +105,8 @@ This was built with the assumption it might be exposed publicly, so:
 
 ## Ideas for later (UI & features)
 
-Implemented in this pass: skeleton loading cards, accessible focus rings, account menu, "log in to save" prompts. Further ideas, roughly in order of bang-for-buck:
+Everything previously listed here has shipped. One thing left:
 
-- **Watch status** beyond a plain favorite — Watching / Plan to Watch / Completed / Dropped, like a mini tracker.
-- **Character & voice-actor lists** on the details page (Jikan has `/anime/{id}/characters`).
-- **"Continue browsing"** — remember scroll position / recently viewed anime in the account.
-- **Compare mode** — pick two anime, see genres/scores side by side (fun, on-brand for a comic UI).
-- **Rating-aware filters** — a min-score slider on Browse.
-- **PWA install** — offline-friendly shell, "Add to Home Screen" for the comic aesthetic on mobile.
-- **Real-time "airing today"** ticker on Home using the schedule endpoint.
 - **Achievements/badges** once reviews/favorites have enough data to badge against.
 
 ## Data sources

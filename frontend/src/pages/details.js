@@ -1,9 +1,10 @@
 import { Api, imageOf } from '../lib/api.js';
-import { cardRail, loadingHTML, errorHTML, escapeHtml, wireRetry, showToast } from '../lib/ui.js';
+import { cardRail, loadingHTML, errorHTML, escapeHtml, wireRetry, showToast, WATCH_STATUSES } from '../lib/ui.js';
 import { Favorites } from '../lib/store.js';
 import { Reviews } from '../lib/reviewsApi.js';
 import { Auth } from '../lib/authStore.js';
 import { navigate } from '../lib/router.js';
+import { RecentlyViewed } from '../lib/recentlyViewed.js';
 
 function fmtDate(x) {
   return x?.string || '?';
@@ -44,6 +45,41 @@ function watchBoxHTML(a) {
       <p style="color:var(--muted);font-weight:600;margin:0">We link to official platforms only — no sketchy streams here, gotta support the studios!</p>
       <div class="watch-links">${links}</div>
     </div>`;
+}
+
+function watchStatusHTML(malId) {
+  const current = Favorites.getStatus(malId);
+  return `
+    <div class="watch-status-row">
+      <span class="watch-status-label">📺 Track:</span>
+      ${WATCH_STATUSES.map((s) => `
+        <button class="status-pill ${current === s.value ? 'is-active' : ''}" data-status="${s.value}">${s.emoji} ${escapeHtml(s.label)}</button>
+      `).join('')}
+    </div>`;
+}
+
+function charCardHTML(c) {
+  const va = c.voiceActors?.[0];
+  const roleLabel = c.role ? c.role.charAt(0) + c.role.slice(1).toLowerCase() : '';
+  return `
+    <div class="char-card">
+      <div class="char-photos">
+        ${c.character.image ? `<img class="char-photo" src="${escapeHtml(c.character.image)}" alt="${escapeHtml(c.character.name)}" loading="lazy" />` : ''}
+        ${va?.image ? `<img class="va-photo" src="${escapeHtml(va.image)}" alt="${escapeHtml(va.name)}" loading="lazy" />` : ''}
+      </div>
+      <div class="char-name">${escapeHtml(c.character.name)}</div>
+      ${roleLabel ? `<div class="char-role">${escapeHtml(roleLabel)}</div>` : ''}
+      ${va ? `<div class="va-name">🎙️ ${escapeHtml(va.name)}</div>` : ''}
+    </div>`;
+}
+
+function charactersSectionHTML(characters) {
+  if (!characters.length) return '';
+  return `
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">🎭 Characters &amp; Voice Actors</h2></div>
+      <div class="rail char-rail">${characters.map(charCardHTML).join('')}</div>
+    </section>`;
 }
 
 function reviewCardHTML(r, isMine) {
@@ -152,17 +188,20 @@ function wireReviewForm(root, malId, animeTitle) {
 export async function renderDetails(root, id) {
   root.innerHTML = loadingHTML('LOADING EPISODE DATA');
   try {
-    const [{ data: a }, recRes, reviewsData] = await Promise.all([
+    const [{ data: a }, recRes, reviewsData, charRes] = await Promise.all([
       Api.fullById(id),
       Api.recommendations(id).catch(() => ({ data: [] })),
       Reviews.list(id).catch(() => ({ reviews: [], average: null, count: 0, myReview: null })),
+      Api.characters(id).catch(() => ({ data: [] })),
     ]);
 
     const img = escapeHtml(imageOf(a));
     const score = a.score ? a.score.toFixed(1) : '—';
     const recs = (recRes.data || []).slice(0, 12).map((r) => r.entry);
+    const characters = charRes.data || [];
 
     document.title = `${a.title} — AniNest`;
+    RecentlyViewed.record(a);
 
     root.innerHTML = `
       <div class="detail-hero" style="background:linear-gradient(160deg, rgba(123,47,247,0.25), rgba(18,12,34,0.9)), var(--panel)">
@@ -181,6 +220,7 @@ export async function renderDetails(root, id) {
             <button class="btn-pow btn-pow--pink" id="fav-toggle">${Favorites.has(a.mal_id) ? '💖 FAVORITED' : '🤍 ADD TO FAVORITES'}</button>
             ${a.url ? `<a class="btn-pow btn-pow--outline" target="_blank" rel="noopener" href="${escapeHtml(a.url)}">🔗 MyAnimeList</a>` : ''}
           </div>
+          ${watchStatusHTML(a.mal_id)}
         </div>
       </div>
 
@@ -197,6 +237,8 @@ export async function renderDetails(root, id) {
         <div class="info-box"><div class="k">Season</div><div class="v">${escapeHtml([a.season, a.year].filter(Boolean).join(' ') || '—')}</div></div>
         <div class="info-box"><div class="k">Members</div><div class="v">${a.members ? a.members.toLocaleString() : '—'}</div></div>
       </div>
+
+      ${charactersSectionHTML(characters)}
 
       ${reviewsSectionHTML(reviewsData).replace('<section class="section">', '<section class="section" id="reviews-section">')}
 
@@ -221,6 +263,28 @@ export async function renderDetails(root, id) {
       showToast(result.ok
         ? (result.isFav ? `Added "${a.title}" to favorites!` : 'Removed from favorites.')
         : 'Something went wrong — try again.');
+    });
+
+    root.querySelectorAll('.status-pill').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const clicked = btn.dataset.status;
+        const wasActive = btn.classList.contains('is-active');
+        const nextStatus = wasActive ? null : clicked; // clicking the active status again clears it
+        root.querySelectorAll('.status-pill').forEach((b) => { b.disabled = true; });
+        const result = await Favorites.setStatus(a, nextStatus);
+        root.querySelectorAll('.status-pill').forEach((b) => { b.disabled = false; });
+        if (result.needsLogin) {
+          showToast('Log in to track anime!');
+          navigate('#/login');
+          return;
+        }
+        if (!result.ok) { showToast('Something went wrong — try again.'); return; }
+        root.querySelectorAll('.status-pill').forEach((b) => b.classList.toggle('is-active', b.dataset.status === nextStatus));
+        const favBtn = root.querySelector('#fav-toggle');
+        if (favBtn) favBtn.textContent = '💖 FAVORITED';
+        const label = WATCH_STATUSES.find((s) => s.value === nextStatus)?.label;
+        showToast(label ? `Marked as ${label}.` : 'Status cleared.');
+      });
     });
 
     wireReviewForm(root, a.mal_id, a.title);

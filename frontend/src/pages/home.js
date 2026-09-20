@@ -1,6 +1,8 @@
 import { Api, imageOf } from '../lib/api.js';
 import { cardRail, cardGrid, loadingHTML, errorHTML, escapeHtml, genreGradient, wireRetry } from '../lib/ui.js';
 import { navigate } from '../lib/router.js';
+import { RecentlyViewed } from '../lib/recentlyViewed.js';
+import { todayName } from './schedule.js';
 
 const FEATURED_GENRES = [
   { id: 1, name: 'Action' }, { id: 22, name: 'Romance' }, { id: 4, name: 'Comedy' },
@@ -42,21 +44,39 @@ function sectionFallback() {
   return `<div class="empty-state" style="padding:30px 10px">📡 This section couldn't load right now (the anime API may be busy). <button class="chip" id="retry-section">🔄 Retry section</button></div>`;
 }
 
+// Duplicated once inside a single flex track (not two separate tracks) so a
+// translateX(-50%) animation loops seamlessly - the visible half always
+// looks identical to what scrolled off, with no jump or gap.
+function tickerHTML(airingToday) {
+  if (!airingToday.length) return '';
+  const itemHTML = (a) => `<a class="ticker-item" href="#/anime/${Number(a.mal_id) || 0}">${escapeHtml(a.title)}</a>`;
+  const items = airingToday.slice(0, 16).map(itemHTML).join('');
+  return `
+    <div class="ticker-bar">
+      <span class="ticker-label">📡 AIRING TODAY</span>
+      <div class="ticker-track">
+        <div class="ticker-move">${items}${items}</div>
+      </div>
+    </div>`;
+}
+
 // Each data source is fetched independently so one flaky endpoint (Jikan's
 // upstream MyAnimeList connection can be unreliable) doesn't blank the whole
 // page — sections that fail just show their own small retry prompt.
 export async function renderHome(root) {
   root.innerHTML = loadingHTML('SUMMONING ANIME');
 
-  const [airingRes, seasonRes, topRes] = await Promise.allSettled([
+  const [airingRes, seasonRes, topRes, scheduleRes] = await Promise.allSettled([
     Api.topAnime(1, 'airing'),
     Api.seasonNow(1),
     Api.topAnime(1),
+    Api.schedule(todayName()),
   ]);
 
   const airing = airingRes.status === 'fulfilled' ? airingRes.value.data : null;
   const seasonNow = seasonRes.status === 'fulfilled' ? seasonRes.value.data : null;
   const topAnime = topRes.status === 'fulfilled' ? topRes.value.data : null;
+  const airingToday = scheduleRes.status === 'fulfilled' ? (scheduleRes.value.data || []) : [];
 
   if (!airing && !seasonNow && !topAnime) {
     root.innerHTML = errorHTML('Couldn’t reach the anime dimension right now (the free API may be temporarily down). Try again shortly!');
@@ -66,9 +86,21 @@ export async function renderHome(root) {
 
   const heroSource = airing || topAnime || seasonNow;
   const heroPick = heroSource?.[Math.floor(Math.random() * Math.min(5, heroSource.length))];
+  const recentlyViewed = RecentlyViewed.list();
 
   root.innerHTML = `
     ${heroPick ? heroHTML(heroPick, heroSource === airing) : ''}
+
+    ${tickerHTML(airingToday)}
+
+    ${recentlyViewed.length ? `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">🕐 Continue Browsing</h2>
+        <span class="section-sub">Picking up where you left off</span>
+      </div>
+      ${cardRail(recentlyViewed)}
+    </section>` : ''}
 
     <section class="section">
       <div class="section-head">

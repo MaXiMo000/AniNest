@@ -12,6 +12,7 @@ import { renderGamesHub } from './pages/games/hub.js';
 import { renderHigherLower } from './pages/games/higherLower.js';
 import { renderGuessTheAnime } from './pages/games/guessTheAnime.js';
 import { renderQuiz } from './pages/games/quiz.js';
+import { renderCompare } from './pages/compare.js';
 import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { Auth } from './lib/authStore.js';
@@ -55,6 +56,7 @@ route('/games', () => renderGamesHub(app));
 route('/games/higher-lower', () => renderHigherLower(app));
 route('/games/guess-the-anime', () => renderGuessTheAnime(app));
 route('/games/quiz', () => renderQuiz(app));
+route('/compare', () => renderCompare(app));
 
 notFound(() => {
   app.innerHTML = emptyHTML('This page wandered off into the filler dimension.', '🌀');
@@ -84,3 +86,23 @@ searchForm.addEventListener('submit', (e) => {
 document.getElementById('nav-toggle').addEventListener('click', () => {
   document.body.classList.toggle('nav-open');
 });
+
+// PWA install prompt. Chrome suppresses its own mini-infobar far more often
+// than it used to, so capturing beforeinstallprompt and offering our own
+// button is the reliable way to surface "Add to Home Screen" at all - the
+// event only fires when the browser has already decided the site qualifies
+// (served over HTTPS/localhost, has a valid manifest + registered SW).
+let deferredInstallPrompt = null;
+const installBtn = document.getElementById('install-btn');
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  installBtn.hidden = false;
+});
+installBtn.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  installBtn.hidden = true;
+  await deferredInstallPrompt.prompt();
+  deferredInstallPrompt = null;
+});
+window.addEventListener('appinstalled', () => { installBtn.hidden = true; });
