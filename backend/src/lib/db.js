@@ -63,9 +63,41 @@ await db.executeMultiple(`
     UNIQUE(user_id, mal_id)
   );
 
+  -- One row per calendar date (UTC): the single mystery anime every visitor
+  -- gets that day. Written once, lazily, by whichever request is first to
+  -- ask for a date with no row yet (see lib/dailyChallenge.js) - persisted
+  -- here rather than in the in-memory cache specifically so it survives a
+  -- Render free-tier cold start/redeploy without visitors getting a
+  -- different puzzle mid-day.
+  CREATE TABLE IF NOT EXISTS daily_challenges (
+    date TEXT PRIMARY KEY,
+    mal_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    image TEXT,
+    synopsis TEXT,
+    score REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Server-side best streak per user per game, so Higher/Lower and Guess the
+  -- Anime streaks (previously only in localStorage) are visible on a shared
+  -- leaderboard. The game column is a short slug ('higher-lower',
+  -- 'guess-the-anime'), validated against lib/games.js's GAMES list at the
+  -- route layer, not a DB CHECK constraint - keeps adding a future game a
+  -- code-only change.
+  CREATE TABLE IF NOT EXISTS game_scores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game TEXT NOT NULL,
+    best_streak INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, game)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
   CREATE INDEX IF NOT EXISTS idx_reviews_mal_id ON reviews(mal_id);
+  CREATE INDEX IF NOT EXISTS idx_game_scores_leaderboard ON game_scores(game, best_streak DESC);
 `);
 
 // SQLite has no "ADD COLUMN IF NOT EXISTS" — this is the idempotent

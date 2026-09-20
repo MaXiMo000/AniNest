@@ -1,11 +1,11 @@
 // Integration tests against a real (ephemeral) instance of the Express app,
 // using Node's built-in test runner and fetch — no extra test dependencies.
 //
-// Deliberately NOT covered here: the /api/anime/* proxy routes' actual data.
-// Those hit live third-party APIs (Jikan/AniList); asserting on their real
-// responses would make this suite flaky and burn shared rate-limit budget on
-// every run. We only test the input-validation edge of those routes, which
-// doesn't require the upstream call to succeed.
+// Deliberately NOT covered here: the /api/anime/* proxy routes' actual data,
+// and /api/games/daily's actual pick. All of these hit live third-party APIs
+// (Jikan/AniList) to build their pool; asserting on real responses would
+// make this suite flaky and burn shared rate-limit budget on every run. We
+// only test the input-validation edge of routes that have one to test.
 //
 // Run with: npm test
 
@@ -492,4 +492,92 @@ test('express-rate-limit actually returns 429 once its limit is exceeded', async
   } finally {
     await new Promise((resolve) => probeServer.close(resolve));
   }
+});
+
+test('game scores require auth to write, but the leaderboard is public', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const post = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 5 } });
+  assert.equal(post.status, 401);
+  const board = await agent.get('/api/games/higher-lower/leaderboard');
+  assert.equal(board.status, 200);
+  assert.equal(board.json.myRank, null, 'an unauthenticated caller has no rank of their own');
+});
+
+test('game scores reject an unknown game slug on both routes', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const post = await agent.post('/api/games/not-a-real-game/score', { csrf: true, body: { streak: 5 } });
+  assert.equal(post.status, 400);
+  const board = await agent.get('/api/games/not-a-real-game/leaderboard');
+  assert.equal(board.status, 400);
+});
+
+test('game scores reject invalid streak values', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const negative = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: -1 } });
+  assert.equal(negative.status, 400);
+  const notInt = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 1.5 } });
+  assert.equal(notInt.status, 400);
+  const missing = await agent.post('/api/games/higher-lower/score', { csrf: true, body: {} });
+  assert.equal(missing.status, 400);
+});
+
+test('game scores only ever raise a user\'s recorded best, never lower it', async () => {
+  const player = makeAgent();
+  await player.get('/api/health');
+  const playerUser = uniqueUser();
+  await player.post('/api/auth/register', { csrf: true, body: playerUser });
+
+  const first = await player.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 5 } });
+  assert.equal(first.status, 200);
+  assert.equal(first.json.best, 5);
+
+  // A worse run posted later must not overwrite the existing best.
+  const lower = await player.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 2 } });
+  assert.equal(lower.json.best, 5);
+
+  const higher = await player.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 9 } });
+  assert.equal(higher.json.best, 9);
+
+  const board = await player.get('/api/games/guess-the-anime/leaderboard');
+  assert.equal(board.status, 200);
+  assert.equal(board.json.myBest, 9);
+  assert.ok(Number.isInteger(board.json.myRank) && board.json.myRank >= 1);
+  const entry = board.json.leaderboard.find((r) => r.username === playerUser.username);
+  assert.ok(entry, 'expected the player to appear on the leaderboard');
+  assert.equal(entry.best_streak, 9);
+});
+
+test('leaderboard ranks the higher streak first and stays sorted regardless of other players', async () => {
+  const a = makeAgent();
+  await a.get('/api/health');
+  const userA = uniqueUser();
+  await a.post('/api/auth/register', { csrf: true, body: userA });
+  await a.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 3 } });
+
+  const b = makeAgent();
+  await b.get('/api/health');
+  const userB = uniqueUser();
+  await b.post('/api/auth/register', { csrf: true, body: userB });
+  await b.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 20 } });
+
+  const board = await a.get('/api/games/higher-lower/leaderboard');
+  for (let i = 1; i < board.json.leaderboard.length; i += 1) {
+    assert.ok(
+      board.json.leaderboard[i - 1].best_streak >= board.json.leaderboard[i].best_streak,
+      'leaderboard rows must be sorted by best_streak, highest first',
+    );
+  }
+  const idxA = board.json.leaderboard.findIndex((r) => r.username === userA.username);
+  const idxB = board.json.leaderboard.findIndex((r) => r.username === userB.username);
+  assert.ok(idxB !== -1, 'expected the higher-streak player to appear in the top 20');
+  assert.ok(idxA === -1 || idxB < idxA, 'the higher streak must rank above the lower one');
 });
