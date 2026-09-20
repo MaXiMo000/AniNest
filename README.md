@@ -20,7 +20,7 @@ cd backend
 npm test
 ```
 
-29 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, rate limiting, reviews, and the game leaderboard/score endpoints. Deliberately does *not* hit the live Jikan/AniList APIs (would make the suite flaky and burn shared rate-limit budget) — see the comment at the top of `backend/test/api.test.js`.
+31 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, rate limiting, reviews, the game leaderboard/score endpoints, and the aggregate-recommendations endpoint. Deliberately does *not* hit the live Jikan/AniList APIs (would make the suite flaky and burn shared rate-limit budget) — see the comment at the top of `backend/test/api.test.js`.
 
 ## Running it locally
 
@@ -50,7 +50,7 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 
 ## Features
 
-- **Home** — hero spotlight, trending-now rail, this-season grid, all-time top-rated rail, genre tiles, "Feeling Lucky" random anime.
+- **Home** — hero spotlight, trending-now rail, this-season grid, all-time top-rated rail, genre tiles, "Feeling Lucky" random anime, and (signed in with 3+ favorites) a personalized "Recommended For You" rail aggregated from your favorites.
 - **Browse** — search, filter by genre/type/status, sort, pagination.
 - **Details** — synopsis, stats, genres, official YouTube trailer, recommendations, "Where to Watch" (official platforms only).
 - **Accounts** — register/login, favorites saved server-side and synced across devices.
