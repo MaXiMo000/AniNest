@@ -1,7 +1,9 @@
 import { Api, imageOf } from '../lib/api.js';
-import { cardRail, cardGrid, loadingHTML, errorHTML, escapeHtml, genreGradient, wireRetry } from '../lib/ui.js';
+import { cardRail, cardGrid, loadingHTML, errorHTML, escapeHtml, genreGradient, wireRetry, skeletonRail } from '../lib/ui.js';
 import { navigate } from '../lib/router.js';
 import { RecentlyViewed } from '../lib/recentlyViewed.js';
+import { Auth } from '../lib/authStore.js';
+import { Recs } from '../lib/recommendationsApi.js';
 import { todayName } from './schedule.js';
 
 const FEATURED_GENRES = [
@@ -87,6 +89,7 @@ export async function renderHome(root) {
   const heroSource = airing || topAnime || seasonNow;
   const heroPick = heroSource?.[Math.floor(Math.random() * Math.min(5, heroSource.length))];
   const recentlyViewed = RecentlyViewed.list();
+  const { user } = Auth.get();
 
   root.innerHTML = `
     ${heroPick ? heroHTML(heroPick, heroSource === airing) : ''}
@@ -100,6 +103,15 @@ export async function renderHome(root) {
         <span class="section-sub">Picking up where you left off</span>
       </div>
       ${cardRail(recentlyViewed)}
+    </section>` : ''}
+
+    ${user ? `
+    <section class="section" id="reco-section">
+      <div class="section-head">
+        <h2 class="section-title">🔀 Recommended For You</h2>
+        <span class="section-sub">Based on your favorites</span>
+      </div>
+      ${skeletonRail()}
     </section>` : ''}
 
     <section class="section">
@@ -158,4 +170,45 @@ export async function renderHome(root) {
       }
     });
   }
+
+  // Fetched separately from the Promise.allSettled batch above rather than
+  // alongside it: it needs its own auth-gated backend call and can take a
+  // few seconds (up to 15 upstream recommendation lookups on a cold cache),
+  // so it shouldn't hold up the rest of Home rendering.
+  if (user) loadRecommendations(root);
+}
+
+async function loadRecommendations(root) {
+  const section = root.querySelector('#reco-section');
+  if (!section) return;
+
+  let data;
+  try {
+    data = await Recs.mine();
+  } catch {
+    section.remove();
+    return;
+  }
+
+  // Not enough favorites yet (or no meaningful overlap found) - removing
+  // the section entirely reads better than an awkward empty state on Home.
+  if (!data.recommendations.length) {
+    section.remove();
+    return;
+  }
+
+  // Guards against a navigation away from Home while the fetch above was
+  // still in flight - re-check the section is still the one we started with.
+  if (!root.querySelector('#reco-section')) return;
+
+  const names = data.basedOn.slice(0, 3).map((b) => b.title);
+  const subtitle = `Because you favorited ${names.join(', ')}${data.basedOn.length > 3 ? ', and more' : ''}`;
+
+  section.innerHTML = `
+    <div class="section-head">
+      <h2 class="section-title">🔀 Recommended For You</h2>
+      <span class="section-sub">${escapeHtml(subtitle)}</span>
+    </div>
+    ${cardRail(data.recommendations)}
+  `;
 }
