@@ -17,16 +17,17 @@ const STATIC_GENRES = [
   { mal_id: 18, name: 'Mecha' }, { mal_id: 19, name: 'Music' }, { mal_id: 40, name: 'Psychological' },
 ];
 
-// Every list-style function tries Jikan first (richer, MAL-curated data,
-// including official "where to watch" streaming links) and transparently
-// falls back to AniList if Jikan is down or its own upstream (MyAnimeList)
-// is having a bad day — see README for why we bother with two sources.
-async function withFallback(key, ttl, primary, fallback) {
+// Every list-style function tries AniList first — a genuine first-party API
+// (not a scraper) with a materially higher rate limit than Jikan (~90/min vs
+// Jikan's ~60/min shared globally) and, empirically, far better uptime — and
+// transparently falls back to Jikan if AniList itself has a bad moment. See
+// README for why we bother with two sources at all.
+async function withFallback(key, ttl, primaryName, primary, fallbackName, fallback) {
   return cached(key, ttl, async () => {
     try {
       return await primary();
     } catch (err) {
-      console.warn(`[animeSource] primary failed for ${key}: ${err.message}. Falling back to AniList.`);
+      console.warn(`[animeSource] ${primaryName} failed for ${key}: ${err.message}. Falling back to ${fallbackName}.`);
       return fallback();
     }
   });
@@ -36,8 +37,8 @@ export function topAnime(page = 1, filter) {
   return withFallback(
     `top:${page}:${filter || ''}`,
     TTL.list,
-    () => jikanGet('/top/anime', { page, filter, sfw: true }),
-    () => anilistTopAnime(page),
+    'AniList', () => anilistTopAnime(page),
+    'Jikan', () => jikanGet('/top/anime', { page, filter, sfw: true }),
   );
 }
 
@@ -48,8 +49,8 @@ export function schedule(day) {
   return withFallback(
     `schedule:${day}`,
     TTL.list,
-    () => jikanGet('/schedules', { filter: day, sfw: true }),
-    () => anilistSchedule(day),
+    'AniList', () => anilistSchedule(day),
+    'Jikan', () => jikanGet('/schedules', { filter: day, sfw: true }),
   );
 }
 
@@ -57,8 +58,8 @@ export function seasonNow(page = 1) {
   return withFallback(
     `season:${page}`,
     TTL.list,
-    () => jikanGet('/seasons/now', { page, sfw: true }),
-    () => anilistSeasonNow(page),
+    'AniList', () => anilistSeasonNow(page),
+    'Jikan', () => jikanGet('/seasons/now', { page, sfw: true }),
   );
 }
 
@@ -67,30 +68,36 @@ export function search({ q, genres, type, status, order_by: orderBy, sort, page 
   return withFallback(
     key,
     TTL.list,
-    () => jikanGet('/anime', { q, genres, type, status, order_by: orderBy, sort, page, sfw: true }),
-    () => anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page }),
+    'AniList', () => anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page }),
+    'Jikan', () => jikanGet('/anime', { q, genres, type, status, order_by: orderBy, sort, page, sfw: true }),
   );
 }
 
+// Genres stay Jikan-first: it's the lightest-weight, least-often-failing
+// endpoint (small static-ish payload), and the static fallback list below
+// already covers an outage without needing a network round-trip to AniList.
 export function genres() {
   return withFallback(
     'genres',
     TTL.genres,
-    () => jikanGet('/genres/anime'),
-    () => ({ data: STATIC_GENRES }),
+    'Jikan', () => jikanGet('/genres/anime'),
+    'static list', () => ({ data: STATIC_GENRES }),
   );
 }
 
+// Detail pages keep Jikan as a fallback (not dropped entirely) because it
+// carries fields AniList doesn't have: rank, popularity, duration, MAL's own
+// content rating, and curated "where to watch" streaming links.
 export function fullById(id) {
   return withFallback(
     `full:${id}`,
     TTL.detail,
-    () => jikanGet(`/anime/${id}/full`),
-    async () => {
+    'AniList', async () => {
       const result = await anilistByMalId(Number(id));
-      if (!result?.full) throw new Error('Not found on AniList either.');
+      if (!result?.full) throw new Error('Not found on AniList.');
       return { data: result.full };
     },
+    'Jikan', () => jikanGet(`/anime/${id}/full`),
   );
 }
 
@@ -98,21 +105,21 @@ export function recommendations(id) {
   return withFallback(
     `recs:${id}`,
     TTL.detail,
-    () => jikanGet(`/anime/${id}/recommendations`),
-    async () => {
+    'AniList', async () => {
       const result = await anilistByMalId(Number(id));
       return { data: result?.recommendations || [] };
     },
+    'Jikan', () => jikanGet(`/anime/${id}/recommendations`),
   );
 }
 
 export async function randomAnime() {
   try {
-    return await jikanGet('/random/anime');
-  } catch (err) {
-    console.warn(`[animeSource] random via Jikan failed: ${err.message}. Falling back to AniList.`);
     const data = await anilistRandomish();
-    if (!data) throw new Error('No anime available from either source right now.');
+    if (!data) throw new Error('No anime available from AniList right now.');
     return { data };
+  } catch (err) {
+    console.warn(`[animeSource] random via AniList failed: ${err.message}. Falling back to Jikan.`);
+    return jikanGet('/random/anime');
   }
 }
