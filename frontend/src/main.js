@@ -17,6 +17,7 @@ import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml } from './lib/ui.
 import { Favorites } from './lib/store.js';
 import { Auth } from './lib/authStore.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
+import { wirePowSelects } from './lib/powSelect.js';
 
 installGlobalErrorReporting();
 
@@ -35,6 +36,7 @@ function renderAuthArea() {
 // stacking duplicate listeners on the persistent #app node as the SPA
 // re-renders its innerHTML on navigation.
 wireCardEvents(app);
+wirePowSelects();
 
 Favorites.subscribe(() => {
   updateFavCount();

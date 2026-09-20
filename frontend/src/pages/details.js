@@ -5,6 +5,7 @@ import { Reviews } from '../lib/reviewsApi.js';
 import { Auth } from '../lib/authStore.js';
 import { navigate } from '../lib/router.js';
 import { RecentlyViewed } from '../lib/recentlyViewed.js';
+import { powSelectHTML } from '../lib/powSelect.js';
 
 function fmtDate(x) {
   return x?.string || '?';
@@ -96,15 +97,14 @@ function reviewCardHTML(r, isMine) {
 }
 
 function reviewFormHTML(myReview) {
-  const options = Array.from({ length: 10 }, (_, i) => 10 - i)
-    .map((n) => `<option value="${n}" ${myReview?.rating === n ? 'selected' : ''}>${n} / 10</option>`).join('');
+  const options = Array.from({ length: 10 }, (_, i) => 10 - i).map((n) => ({ value: n, label: `${n} / 10` }));
   return `
     <div class="watch-box">
       <h3>${myReview ? '✏️ Edit Your Review' : '✍️ Write a Review'}</h3>
       <form id="review-form">
         <div class="form-field">
-          <label for="review-rating">Your Rating</label>
-          <select id="review-rating">${options}</select>
+          <label>Your Rating</label>
+          ${powSelectHTML({ id: 'review-rating', options, value: myReview?.rating ?? 10 })}
         </div>
         <div class="form-field">
           <label for="review-body">Your Thoughts (optional)</label>
