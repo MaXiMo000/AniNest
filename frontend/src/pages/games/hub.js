@@ -19,7 +19,8 @@ const GAMES = [
     emoji: '🧭',
     title: 'Taste Quiz',
     desc: 'Answer a few questions, get an anime recommendation picked just for you.',
-    ready: false,
+    href: '#/games/quiz',
+    ready: true,
   },
 ];
 

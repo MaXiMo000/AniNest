@@ -1,6 +1,6 @@
 # AniNest — Session Handoff
 
-Living document — read this first in a new session, then update it before your context runs out again. Last updated by a session that: swapped AniList to be the primary anime data source (Jikan is now the fallback, not the other way around), and shipped public profile pages.
+Living document — read this first in a new session, then update it before your context runs out again. Last updated by a session that: swapped AniList to be the primary anime data source (Jikan is now the fallback), shipped public profile pages, fixed the header user-chip's invisible border, and built all three planned games (Higher/Lower, Guess the Anime, Taste Quiz).
 
 ## What this is
 
@@ -86,14 +86,17 @@ Two endpoints deliberately kept Jikan-first:
 
 ## Remaining roadmap (user-approved priority order, from an earlier discussion of "what would make this feel like a real community, not just a catalog")
 
-Done: **#1 weekly schedule**, **#2 reviews & ratings**, **#3 public profile pages**, **#4a Higher/Lower game**, **#4b Guess the Anime game**. Still open, in order:
+Done: **#1 weekly schedule**, **#2 reviews & ratings**, **#3 public profile pages**, **#4 all three games**. Still open:
 
-4. **Original games using existing data**, being built one at a time (user explicitly asked not to rush these — best-effort UI, not just functional):
-   - ✅ **Higher/Lower** — done. `#/games` (hub, `frontend/src/pages/games/hub.js`) and `#/games/higher-lower` (`higherLower.js`). Guess whether a "challenger" anime's score is higher/lower than the current "champion"; correct guesses chain the streak, wrong ends it. Best streak persisted in `localStorage` (`aninest_hl_best`) — no backend/account involvement, purely client-side. Anime pool comes from `frontend/src/lib/animePool.js`, which samples `topAnime` across pages `[1,4,8,12,16,20]` (not just page 1) specifically so the score range is wide enough for the game to be interesting rather than a near-coin-flip between two 9.0s — worth reusing this same pool helper for the next games rather than re-deriving one.
-   - ✅ **Guess the Anime** — done. `#/games/guess-the-anime` (`guessTheAnime.js`). Blurred poster (CSS `filter: blur()`, unblurs on reveal) + a redacted synopsis snippet (strips the `(Source: ...)` citation and blacks out any literal occurrence of the answer's own title text) + 4 multiple-choice title buttons (1 correct + 3 distractors from the same pool, deduped by title so two options can't look identical). Same streak/best/localStorage pattern as Higher/Lower (`aninest_gta_best`), same pool helper, same "Game Over → Play Again / More Games" screen for consistency across games. `shuffle()` was factored out of `higherLower.js` into `frontend/src/lib/shuffle.js` since both games need it now — reuse that rather than re-inlining a Fisher-Yates.
-   - ⬜ **Recommendation Quiz** — not started. Card exists on the hub already, marked "Coming soon".
+5. **Achievements/badges** — cheap gamification layer once reviews/favorites have enough data to badge against. Not started.
 
-Known limitation worth knowing about **Guess the Anime**: title redaction only blacks out the exact answer title string. Recap/compilation-film entries often have synopses that name the *parent series* instead (e.g. a "BOCCHI THE ROCK! Recap Part 1" synopsis says "Bocchi the Rock!"), which isn't redacted and makes those rounds nearly free. Not worth fixing unless it turns out to be a big fraction of rounds in practice — most pool entries don't have this issue.
+### #4 detail: the three games (all done, user explicitly asked not to rush these — best-effort UI, not just functional)
+
+All three live under `#/games` (hub, `frontend/src/pages/games/hub.js`), share the anime pool helper (`frontend/src/lib/animePool.js` — samples `topAnime` across pages `[1,4,8,12,16,20]`, not just page 1, so the data spread is wide enough to be interesting), and the `shuffle()` util (`frontend/src/lib/shuffle.js`). All are purely client-side — no backend/account involvement, streaks/results are per-browser via `localStorage`.
+
+- **Higher/Lower** (`#/games/higher-lower`, `higherLower.js`) — guess whether a "challenger" anime's score is higher/lower than the current "champion"; correct guesses chain the streak, wrong ends it. Best streak in `localStorage` key `aninest_hl_best`.
+- **Guess the Anime** (`#/games/guess-the-anime`, `guessTheAnime.js`) — blurred poster (CSS `filter: blur()`, unblurs on reveal) + a redacted synopsis snippet (strips the `(Source: ...)` citation and blacks out any literal occurrence of the answer's own title) + 4 multiple-choice title buttons. Best streak: `aninest_gta_best`. **Known limitation**: redaction only blacks out the exact answer title string — recap/compilation-film entries often name the *parent series* instead (e.g. a "BOCCHI THE ROCK! Recap Part 1" synopsis says "Bocchi the Rock!"), which isn't caught and makes those specific rounds nearly free. Not worth fixing unless it turns out to be a big fraction of rounds in practice.
+- **Taste Quiz** (`#/games/quiz`, `quiz.js`) — 5 fixed multiple-choice questions, each option tagged with one genre. Tallies picks, then searches the pool for the highest-scored anime matching the most-picked genre (falling back to the next-ranked genre, then to the pool's overall best-scored anime, if no match) and shows it as a "Your Match!" result card linking to its detail page. **Deliberately restricted to genres in AniList's own genre enum** (no MAL-only tags like "Shounen"/"Shoujo") — since AniList is now the primary pool source, a genre AniList doesn't have would never match anything and silently fall through every time.
 5. **Achievements/badges** — cheap gamification layer once reviews/favorites have enough data to badge against.
 
 ### UI note: the header's logged-in user chip

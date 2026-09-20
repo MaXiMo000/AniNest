@@ -55,6 +55,7 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Details** — synopsis, stats, genres, official YouTube trailer, recommendations, "Where to Watch" (official platforms only).
 - **Accounts** — register/login, favorites saved server-side and synced across devices.
 - **Public profiles** (`/u/username`) — a user's join date, favorites, and reviews, linked from their username anywhere it appears (reviews section, account page).
+- **Game Zone** (`/games`) — three original, data-driven games (no reproduced anime character art — a real copyright line, not a style choice): **Higher/Lower** (guess whether the next anime's score is higher or lower), **Guess the Anime** (blurred cover + redacted synopsis, multiple choice), and a **Taste Quiz** (five questions → a genre-matched recommendation). All client-side, streaks/results kept in `localStorage`.
 
 ## Why a backend at all?
 
@@ -106,7 +107,6 @@ Implemented in this pass: skeleton loading cards, accessible focus rings, accoun
 - **Rating-aware filters** — a min-score slider on Browse.
 - **PWA install** — offline-friendly shell, "Add to Home Screen" for the comic aesthetic on mobile.
 - **Real-time "airing today"** ticker on Home using the schedule endpoint.
-- **Original data-driven games** — Higher/Lower on score, guess-the-anime from a blurred synopsis, a recommendation quiz. No reproducing actual anime character art (real copyright line).
 - **Achievements/badges** once reviews/favorites have enough data to badge against.
 
 ## Data sources

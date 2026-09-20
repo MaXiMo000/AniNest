@@ -11,6 +11,7 @@ import { renderProfile } from './pages/profile.js';
 import { renderGamesHub } from './pages/games/hub.js';
 import { renderHigherLower } from './pages/games/higherLower.js';
 import { renderGuessTheAnime } from './pages/games/guessTheAnime.js';
+import { renderQuiz } from './pages/games/quiz.js';
 import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { Auth } from './lib/authStore.js';
@@ -53,6 +54,7 @@ route('/u/:username', ({ path }) => renderProfile(app, path.username));
 route('/games', () => renderGamesHub(app));
 route('/games/higher-lower', () => renderHigherLower(app));
 route('/games/guess-the-anime', () => renderGuessTheAnime(app));
+route('/games/quiz', () => renderQuiz(app));
 
 notFound(() => {
   app.innerHTML = emptyHTML('This page wandered off into the filler dimension.', '🌀');
