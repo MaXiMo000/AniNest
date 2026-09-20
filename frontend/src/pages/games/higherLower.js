@@ -2,9 +2,12 @@ import { getAnimePool } from '../../lib/animePool.js';
 import { imageOf } from '../../lib/api.js';
 import { escapeHtml, loadingHTML, errorHTML, wireRetry } from '../../lib/ui.js';
 import { shuffle } from '../../lib/shuffle.js';
+import { Games } from '../../lib/gamesApi.js';
+import { Auth } from '../../lib/authStore.js';
 
 const BEST_KEY = 'aninest_hl_best';
 const REVEAL_DELAY_MS = 1100;
+const GAME_SLUG = 'higher-lower';
 
 function cardHTML(anime, { hidden, id, label }) {
   const img = imageOf(anime) || '';
@@ -112,14 +115,23 @@ export async function renderHigherLower(root) {
 
   function renderGameOver() {
     const isNewBest = streak > 0 && streak === best;
+    if (Auth.get().user && streak > 0) {
+      // Fire-and-forget - the backend only ever raises a user's recorded
+      // best (see routes/games.js), so posting a non-best streak here is
+      // harmless, and a failure (offline, logged out mid-round) isn't worth
+      // interrupting the game-over screen for.
+      Games.submitScore(GAME_SLUG, streak).catch(() => {});
+    }
     root.innerHTML = `
       <div class="hl-gameover">
         <div class="hl-gameover-emoji">💥</div>
         <h1 class="section-title">GAME OVER</h1>
         <p class="hl-final-streak">Final streak: <strong>${streak}</strong></p>
         ${isNewBest ? '<p class="hl-new-best">🏆 New best streak!</p>' : `<p class="section-sub">Best streak: ${best}</p>`}
+        ${Auth.get().user ? '' : '<p class="section-sub">🔒 Log in to save your streak to the leaderboard.</p>'}
         <div class="hero-actions" style="justify-content:center;margin-top:20px">
           <button class="btn-pow btn-pow--pink" id="play-again">🔄 PLAY AGAIN</button>
+          <a href="#/games/leaderboard/${GAME_SLUG}" class="btn-pow btn-pow--outline">🏆 Leaderboard</a>
           <a href="#/games" class="btn-pow btn-pow--outline">🎮 More Games</a>
         </div>
       </div>`;

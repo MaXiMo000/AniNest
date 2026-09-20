@@ -1013,6 +1013,63 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 .game-card-desc { color: var(--muted); font-weight: 600; font-size: 0.9rem; margin: 0 0 16px; min-height: 3em; }
 .game-card-soon { font-weight: 800; color: var(--muted); font-size: 0.85rem; }
 
+.games-leaderboard-links {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 26px;
+}
+.games-leaderboard-links a {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: var(--yellow);
+  text-decoration: none;
+}
+.games-leaderboard-links a:hover { text-decoration: underline; }
+
+/* ===================== Game: Leaderboard ===================== */
+.leaderboard-list {
+  list-style: none;
+  margin: 24px auto 0;
+  padding: 0;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.leaderboard-row,
+.leaderboard-you {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: 10px;
+  padding: 10px 16px;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.leaderboard-row.is-me { border-color: var(--yellow); box-shadow: 3px 3px 0 var(--yellow); }
+.leaderboard-you {
+  max-width: 520px;
+  margin: 14px auto 0;
+  border-style: dashed;
+  border-color: var(--yellow);
+  opacity: 0.9;
+}
+.leaderboard-rank { font-family: var(--font-display); font-size: 1.2rem; text-align: center; }
+.leaderboard-user { font-weight: 800; text-decoration: none; color: var(--text); }
+.leaderboard-user:hover { color: var(--pink2); }
+.leaderboard-streak { font-weight: 800; color: var(--yellow); white-space: nowrap; }
+
+/* ===================== Game: Daily Challenge ===================== */
+.daily-emoji-grid {
+  font-size: 1.8rem;
+  letter-spacing: 6px;
+  margin: 14px 0;
+}
+
 /* ===================== Game: Higher or Lower ===================== */
 .hl-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
 .hl-stats { display: flex; gap: 10px; flex-wrap: wrap; }

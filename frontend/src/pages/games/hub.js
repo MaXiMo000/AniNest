@@ -2,6 +2,13 @@ import { escapeHtml } from '../../lib/ui.js';
 
 const GAMES = [
   {
+    emoji: '📅',
+    title: 'Daily Challenge',
+    desc: 'One shared mystery anime a day, same puzzle for everyone. Wordle-style guesses, shareable results.',
+    href: '#/games/daily',
+    ready: true,
+  },
+  {
     emoji: '📈',
     title: 'Higher or Lower',
     desc: 'Guess whether the next anime scores higher or lower than the current champion. Keep your streak alive!',
@@ -44,5 +51,9 @@ export function renderGamesHub(root) {
       <span class="section-sub">Anime trivia built from our own data — no spoilers, no scraped character art.</span>
     </div>
     <div class="games-grid">${GAMES.map(gameCard).join('')}</div>
+    <div class="games-leaderboard-links">
+      <a href="#/games/leaderboard/higher-lower">🏆 Higher/Lower Leaderboard</a>
+      <a href="#/games/leaderboard/guess-the-anime">🏆 Guess the Anime Leaderboard</a>
+    </div>
   `;
 }

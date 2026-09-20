@@ -2,42 +2,14 @@ import { getAnimePool } from '../../lib/animePool.js';
 import { imageOf } from '../../lib/api.js';
 import { escapeHtml, loadingHTML, errorHTML, wireRetry } from '../../lib/ui.js';
 import { shuffle } from '../../lib/shuffle.js';
+import { synopsisSnippet, pickChoices } from '../../lib/guessMechanic.js';
+import { Games } from '../../lib/gamesApi.js';
+import { Auth } from '../../lib/authStore.js';
 
 const BEST_KEY = 'aninest_gta_best';
 const REVEAL_DELAY_MS = 1600;
+const GAME_SLUG = 'guess-the-anime';
 const MIN_SYNOPSIS_LEN = 60;
-const SNIPPET_MAX_CHARS = 260;
-
-function escapeRegExp(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Strips the trailing "(Source: ...)" citation Jikan/AniList synopses often
-// carry, then blacks out the anime's own title if it happens to appear in
-// the text — otherwise the clue can just hand over the answer.
-function synopsisSnippet(anime) {
-  let text = (anime.synopsis || '').replace(/\(Source:.*$/is, '').trim();
-  const titleRe = new RegExp(escapeRegExp(anime.title), 'gi');
-  text = text.replace(titleRe, '████');
-  if (text.length > SNIPPET_MAX_CHARS) {
-    text = text.slice(0, SNIPPET_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
-  }
-  return text || 'No synopsis available for this mystery entry — go by the cover alone!';
-}
-
-function pickChoices(pool, answer) {
-  const seenTitles = new Set([answer.title.toLowerCase()]);
-  const distractors = [];
-  for (const a of shuffle(pool)) {
-    if (a.mal_id === answer.mal_id) continue;
-    const key = a.title.toLowerCase();
-    if (seenTitles.has(key)) continue;
-    seenTitles.add(key);
-    distractors.push(a);
-    if (distractors.length === 3) break;
-  }
-  return shuffle([answer, ...distractors]);
-}
 
 export async function renderGuessTheAnime(root) {
   root.innerHTML = loadingHTML('BLURRING A COVER');
@@ -137,14 +109,19 @@ export async function renderGuessTheAnime(root) {
 
   function renderGameOver() {
     const isNewBest = streak > 0 && streak === best;
+    if (Auth.get().user && streak > 0) {
+      Games.submitScore(GAME_SLUG, streak).catch(() => {});
+    }
     root.innerHTML = `
       <div class="hl-gameover">
         <div class="hl-gameover-emoji">🔍</div>
         <h1 class="section-title">GAME OVER</h1>
         <p class="hl-final-streak">Final streak: <strong>${streak}</strong></p>
         ${isNewBest ? '<p class="hl-new-best">🏆 New best streak!</p>' : `<p class="section-sub">Best streak: ${best}</p>`}
+        ${Auth.get().user ? '' : '<p class="section-sub">🔒 Log in to save your streak to the leaderboard.</p>'}
         <div class="hero-actions" style="justify-content:center;margin-top:20px">
           <button class="btn-pow btn-pow--pink" id="play-again">🔄 PLAY AGAIN</button>
+          <a href="#/games/leaderboard/${GAME_SLUG}" class="btn-pow btn-pow--outline">🏆 Leaderboard</a>
           <a href="#/games" class="btn-pow btn-pow--outline">🎮 More Games</a>
         </div>
       </div>`;

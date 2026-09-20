@@ -12,6 +12,8 @@ import { renderGamesHub } from './pages/games/hub.js';
 import { renderHigherLower } from './pages/games/higherLower.js';
 import { renderGuessTheAnime } from './pages/games/guessTheAnime.js';
 import { renderQuiz } from './pages/games/quiz.js';
+import { renderDailyChallenge } from './pages/games/dailyChallenge.js';
+import { renderLeaderboard } from './pages/games/leaderboard.js';
 import { renderCompare } from './pages/compare.js';
 import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
@@ -58,9 +60,11 @@ route('/register', () => renderRegister(app));
 route('/account', () => renderAccount(app));
 route('/u/:username', ({ path }) => renderProfile(app, path.username));
 route('/games', () => renderGamesHub(app));
+route('/games/daily', () => renderDailyChallenge(app));
 route('/games/higher-lower', () => renderHigherLower(app));
 route('/games/guess-the-anime', () => renderGuessTheAnime(app));
 route('/games/quiz', () => renderQuiz(app));
+route('/games/leaderboard/:game', ({ path }) => renderLeaderboard(app, path.game));
 route('/compare', () => renderCompare(app));
 
 notFound(() => {
