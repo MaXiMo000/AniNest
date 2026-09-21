@@ -442,6 +442,8 @@ test('anime routes validate the id param without needing the upstream API', asyn
   const agent = makeAgent();
   const res = await agent.get('/api/anime/not-a-number/full');
   assert.equal(res.status, 400);
+  const themes = await agent.get('/api/anime/not-a-number/themes');
+  assert.equal(themes.status, 400);
 });
 
 test('schedule route rejects an invalid day without needing the upstream API', async () => {

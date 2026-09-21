@@ -78,3 +78,9 @@ animeRouter.get('/:id/characters', asyncRoute(async (req, res) => {
   if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
   res.json(await animeSource.characters(id));
 }));
+
+animeRouter.get('/:id/themes', asyncRoute(async (req, res) => {
+  const id = parseAnimeId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
+  res.json({ data: await animeSource.themes(id) });
+}));

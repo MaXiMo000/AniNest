@@ -1,5 +1,6 @@
 import { jikanGet } from './jikan.js';
 import { anilistTopAnime, anilistSeasonNow, anilistSearch, anilistByMalId, anilistRandomish, anilistSchedule, anilistCharacters } from './anilist.js';
+import { animeThemesFor } from './animeThemes.js';
 import { cached } from './cache.js';
 import { logger } from './logger.js';
 
@@ -155,6 +156,15 @@ export function characters(id) {
       return { data: normalizeJikanCharacters(res.data || []) };
     },
   );
+}
+
+// No Jikan fallback - AnimeThemes.moe has no equivalent on either existing
+// source, so this is a single-source lookup like fullById's Jikan-specific
+// fields, just without a fallback at all. A show with nothing indexed
+// (brand new, or simply never added) resolves to an empty array, not an
+// error - confirmed directly against the live API.
+export function themes(id) {
+  return cached(`themes:${id}`, TTL.detail, () => animeThemesFor(Number(id)));
 }
 
 export async function randomAnime() {
