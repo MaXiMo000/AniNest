@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db } from '../lib/db.js';
+import { computeBadges } from '../lib/badges.js';
 
 export const usersRouter = Router();
 
@@ -24,7 +25,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
   const user = userResult.rows[0];
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
-  const [favoritesResult, reviewsResult] = await Promise.all([
+  const [favoritesResult, reviewsResult, favoritesCountResult, reviewsCountResult, completedCountResult, streakResult] = await Promise.all([
     db.execute({
       sql: 'SELECT mal_id, title, image, score, type, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT 200',
       args: [user.id],
@@ -33,11 +34,27 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
       sql: 'SELECT mal_id, rating, body, created_at, updated_at FROM reviews WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100',
       args: [user.id],
     }),
+    // Separate COUNT queries rather than trusting the LIMIT 200/100 rows
+    // above - a badge threshold has to reflect the true total, not just
+    // however many rows this response happens to also be returning.
+    db.execute({ sql: 'SELECT COUNT(*) AS count FROM favorites WHERE user_id = ?', args: [user.id] }),
+    db.execute({ sql: 'SELECT COUNT(*) AS count FROM reviews WHERE user_id = ?', args: [user.id] }),
+    db.execute({ sql: "SELECT COUNT(*) AS count FROM favorites WHERE user_id = ? AND status = 'completed'", args: [user.id] }),
+    db.execute({ sql: 'SELECT MAX(best_streak) AS best FROM game_scores WHERE user_id = ?', args: [user.id] }),
   ]);
+
+  const badges = computeBadges({
+    favoritesCount: Number(favoritesCountResult.rows[0].count),
+    reviewsCount: Number(reviewsCountResult.rows[0].count),
+    completedCount: Number(completedCountResult.rows[0].count),
+    bestStreak: Number(streakResult.rows[0].best) || 0,
+    createdAt: user.created_at,
+  });
 
   res.json({
     user: { username: user.username, createdAt: user.created_at },
     favorites: favoritesResult.rows,
     reviews: reviewsResult.rows,
+    badges,
   });
 }));

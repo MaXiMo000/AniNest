@@ -660,3 +660,52 @@ test('screenshot search rejects an empty image body without hitting trace.moe', 
   });
   assert.equal(res.status, 400);
 });
+
+// Badges are a pure function of data this app already owns (favorites,
+// reviews, game_scores, account age) - unlike everything else added this
+// session, there's no third-party API involved at all, so the real
+// computation is fully covered here, not just an input-validation edge.
+test('public profile badges are computed from real activity, not stored', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  // A brand-new account has no activity and is nowhere near the 30-day
+  // "Regular" member-tenure threshold, so it should start with no badges.
+  const fresh = await agent.get(`/api/users/${user.username}`);
+  assert.equal(fresh.status, 200);
+  assert.deepEqual(fresh.json.badges, []);
+
+  // 5 favorites -> bronze favorites badge.
+  for (let i = 1; i <= 5; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await agent.post('/api/favorites', { csrf: true, body: { mal_id: 30000 + i, title: `Badge Test Anime ${i}` } });
+  }
+  // One review -> bronze reviews badge.
+  await agent.post('/api/reviews', { csrf: true, body: { mal_id: 30001, rating: 8 } });
+  // A game streak of 5 -> bronze streak badge.
+  await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 5 } });
+
+  const after = await agent.get(`/api/users/${user.username}`);
+  assert.equal(after.status, 200);
+  const badgeIds = after.json.badges.map((b) => b.id).sort();
+  assert.deepEqual(badgeIds, ['favorites-bronze', 'reviews-bronze', 'streak-bronze']);
+});
+
+test('badge tiers only show the highest one reached per category', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  for (let i = 1; i <= 25; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await agent.post('/api/favorites', { csrf: true, body: { mal_id: 40000 + i, title: `Tier Test Anime ${i}` } });
+  }
+
+  const res = await agent.get(`/api/users/${user.username}`);
+  const favoriteBadges = res.json.badges.filter((b) => b.id.startsWith('favorites-'));
+  assert.equal(favoriteBadges.length, 1, 'only the highest favorites tier should appear, not bronze+silver stacked');
+  assert.equal(favoriteBadges[0].id, 'favorites-silver');
+});
