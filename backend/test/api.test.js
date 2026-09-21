@@ -2,10 +2,13 @@
 // using Node's built-in test runner and fetch — no extra test dependencies.
 //
 // Deliberately NOT covered here: the /api/anime/* proxy routes' actual data,
-// and /api/games/daily's actual pick. All of these hit live third-party APIs
-// (Jikan/AniList) to build their pool; asserting on real responses would
-// make this suite flaky and burn shared rate-limit budget on every run. We
-// only test the input-validation edge of routes that have one to test.
+// /api/games/daily's actual pick, and /api/studios/:name + /api/people/:name.
+// All of these hit live third-party APIs (Jikan/AniList) to build their
+// result; asserting on real responses would make this suite flaky and burn
+// shared rate-limit budget on every run. We only test the input-validation
+// edge of routes that have one to test - studios/people take a free-text
+// name with nothing to validate beyond a length cap, so there's no
+// network-free edge worth asserting on for those two.
 //
 // Run with: npm test
 

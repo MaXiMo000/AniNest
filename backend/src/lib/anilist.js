@@ -55,6 +55,20 @@ function mapGenres(genreNames = []) {
   return genreNames.map((name) => ({ mal_id: GENRE_NAME_TO_MAL_ID[name] || 0, name }));
 }
 
+// AniList's `studios(isMain: true)` connection can list the same studio
+// twice for one title (confirmed directly against the live API, same
+// quirk as the Studio.media / Staff.characterMedia connections elsewhere
+// in this file) - dedupe once here so every caller of normalizeAniListMedia
+// gets a clean list, not just the new studio-browse feature.
+function dedupeStudios(nodes = []) {
+  const seen = new Set();
+  return nodes.filter((s) => {
+    if (!s?.name || seen.has(s.name)) return false;
+    seen.add(s.name);
+    return true;
+  });
+}
+
 const MEDIA_FIELDS = `
   id idMal
   title { romaji english }
@@ -85,7 +99,7 @@ export function normalizeAniListMedia(m) {
     synopsis: stripHtml(m.description) || null,
     genres: mapGenres(m.genres),
     themes: [],
-    studios: (m.studios?.nodes || []).map((s) => ({ name: s.name })),
+    studios: dedupeStudios(m.studios?.nodes || []).map((s) => ({ name: s.name })),
     source: m.source ? m.source.replaceAll('_', ' ') : null,
     season: m.season ? m.season.toLowerCase() : null,
     status: STATUS_MAP[m.status] || m.status || null,
@@ -111,10 +125,36 @@ async function gql(query, variables) {
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ query, variables }),
   });
-  if (!res.ok) throw new Error(`AniList error ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`AniList error ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   const json = await res.json();
-  if (json.errors?.length) throw new Error(`AniList error: ${json.errors[0].message}`);
+  if (json.errors?.length) {
+    // A "not found" root query (Media/Studio/Staff with no match) comes
+    // back as a GraphQL error alongside `data: { X: null }`, not a clean
+    // null - carrying the status through lets callers that search by name
+    // (no fallback source to mask this, unlike Media lookups elsewhere in
+    // this file) tell "genuinely doesn't exist" apart from "AniList errored".
+    const err = new Error(`AniList error: ${json.errors[0].message}`);
+    err.status = json.errors[0].status || 500;
+    throw err;
+  }
   return json.data;
+}
+
+// For root queries where "no match" is an expected, valid outcome (a
+// Studio/Staff search by name) rather than a real failure - resolves to
+// `null` on AniList's 404-shaped "Not Found" error, still throws for
+// anything else (a genuine outage) so that stays a 502, not a false 404.
+async function gqlOrNull(query, variables) {
+  try {
+    return await gql(query, variables);
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
 }
 
 function currentSeason() {
@@ -257,6 +297,91 @@ export async function anilistCharacters(malId) {
     role: e.role || null,
     voiceActors: (e.voiceActors || []).map((va) => ({ name: va.name?.full || 'Unknown', image: va.image?.large || '' })),
   }));
+}
+
+const BROWSE_MEDIA_LIMIT = 24;
+
+function dedupeMediaByMalId(list) {
+  const seen = new Set();
+  return list.filter((m) => {
+    if (!m?.mal_id || seen.has(m.mal_id)) return false;
+    seen.add(m.mal_id);
+    return true;
+  });
+}
+
+// Studios/voice-actors aren't indexed anywhere in our own data - AniList's
+// own Staff/Studio search does the lookup-by-name directly, so there's no
+// need to crawl every anime's characters() ourselves to build a reverse
+// index. No Jikan fallback here (unlike everywhere else in this file):
+// Jikan's equivalent would need a two-step name->id->anime-list lookup with
+// a materially different shape, for a discovery feature that's a nice-to
+// -have, not core - if AniList is down, this just shows a retry prompt.
+export async function anilistStudioByName(name) {
+  const data = await gqlOrNull(`
+    query($search: String) {
+      Studio(search: $search) {
+        id
+        name
+        media(sort: POPULARITY_DESC, perPage: ${BROWSE_MEDIA_LIMIT}) {
+          nodes { ${MEDIA_FIELDS} }
+        }
+      }
+    }
+  `, { search: name });
+  if (!data?.Studio) return null;
+  return {
+    id: data.Studio.id,
+    name: data.Studio.name,
+    // AniList's own `media` connection returns each title duplicated when a
+    // studio is credited on it more than once (e.g. both as the animation
+    // studio and separately as a producer) - not a bug in this code, just
+    // how the connection resolves, confirmed directly against the live API.
+    media: dedupeMediaByMalId((data.Studio.media?.nodes || []).map(normalizeAniListMedia).filter(Boolean)),
+  };
+}
+
+export async function anilistStaffByName(name) {
+  const data = await gqlOrNull(`
+    query($search: String) {
+      Staff(search: $search) {
+        id
+        name { full }
+        image { large }
+        characterMedia(sort: POPULARITY_DESC, perPage: ${BROWSE_MEDIA_LIMIT}) {
+          edges {
+            characterRole
+            characters { name { full } }
+            node { ${MEDIA_FIELDS} }
+          }
+        }
+      }
+    }
+  `, { search: name });
+  if (!data?.Staff) return null;
+  // Same duplicate-edge quirk as Studio.media (confirmed against the live
+  // API) - merge by anime instead of a plain map/filter, so a repeated or
+  // multi-character credit on the same title becomes one entry with all
+  // character names, not several cards for the same anime.
+  const roleMap = new Map();
+  for (const e of data.Staff.characterMedia?.edges || []) {
+    const anime = normalizeAniListMedia(e.node);
+    if (!anime?.mal_id) continue;
+    const names = (e.characters || []).map((c) => c.name?.full).filter(Boolean);
+    const existing = roleMap.get(anime.mal_id);
+    if (!existing) {
+      roleMap.set(anime.mal_id, { role: e.characterRole || null, characterNames: names, anime });
+    } else {
+      for (const n of names) if (!existing.characterNames.includes(n)) existing.characterNames.push(n);
+    }
+  }
+  const roles = [...roleMap.values()];
+  return {
+    id: data.Staff.id,
+    name: data.Staff.name?.full || name,
+    image: data.Staff.image?.large || '',
+    roles,
+  };
 }
 
 export async function anilistRandomish() {
