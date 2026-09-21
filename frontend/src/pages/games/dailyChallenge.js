@@ -142,25 +142,24 @@ export async function renderDailyChallenge(root) {
     `;
 
     root.querySelectorAll('.guess-choice').forEach((btn) => {
-      btn.addEventListener('click', () => guess(Number(btn.dataset.id), btn));
+      btn.addEventListener('click', () => guess(Number(btn.dataset.id)));
     });
   }
 
-  function guess(chosenId, btnEl) {
+  function guess(chosenId) {
     if (locked) return;
     locked = true;
 
     const correct = chosenId === answer.mal_id;
-    root.querySelectorAll('.guess-choice').forEach((btn) => {
-      btn.disabled = true;
-      const id = Number(btn.dataset.id);
-      if (id === answer.mal_id) btn.classList.add('is-correct');
-      else if (id === chosenId) btn.classList.add('is-wrong');
-      else btn.classList.add('is-muted');
-    });
 
     if (correct) {
       attempts.push('correct');
+      // Only reveal which choice was correct here - the round (and the
+      // puzzle) is over, so there's nothing left to spoil.
+      root.querySelectorAll('.guess-choice').forEach((btn) => {
+        btn.disabled = true;
+        btn.classList.add(Number(btn.dataset.id) === answer.mal_id ? 'is-correct' : 'is-muted');
+      });
       root.querySelector('#guess-poster')?.querySelector('img')?.style.setProperty('filter', 'blur(0) saturate(1) brightness(1)');
       root.querySelector('#guess-poster')?.classList.add('is-revealed');
       const titleEl = root.querySelector('#guess-reveal-title');
@@ -170,7 +169,25 @@ export async function renderDailyChallenge(root) {
     }
 
     attempts.push('wrong');
-    if (attempts.length >= MAX_ATTEMPTS) {
+    const isFinalAttempt = attempts.length >= MAX_ATTEMPTS;
+
+    // A wrong guess with attempts left must NOT reveal which button was
+    // actually correct - the same fixed answer reappears in every
+    // subsequent round, so highlighting it here would trivially hand over
+    // the puzzle. Only mark the one the player picked as wrong; leave
+    // everything else - including the real answer - unstyled until the
+    // round is genuinely over (this branch, or the final attempt below).
+    root.querySelectorAll('.guess-choice').forEach((btn) => {
+      btn.disabled = true;
+      const id = Number(btn.dataset.id);
+      if (isFinalAttempt && id === answer.mal_id) btn.classList.add('is-correct');
+      else if (id === chosenId) btn.classList.add('is-wrong');
+      else if (isFinalAttempt) btn.classList.add('is-muted');
+    });
+
+    if (isFinalAttempt) {
+      root.querySelector('#guess-poster')?.querySelector('img')?.style.setProperty('filter', 'blur(0) saturate(1) brightness(1)');
+      root.querySelector('#guess-poster')?.classList.add('is-revealed');
       const titleEl = root.querySelector('#guess-reveal-title');
       if (titleEl) titleEl.textContent = answer.title;
       setTimeout(() => finish(false), 1400);
