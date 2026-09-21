@@ -65,6 +65,7 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Airing-today ticker** on Home, using the same schedule data as the weekly schedule page.
 - **Screenshot search** (`/screenshot-search`) — upload a frame from any anime and get candidate matches via [trace.moe](https://trace.moe), linking straight to that anime's detail page.
 - **OP/ED jukebox** on the details page — play an anime's actual opening/ending themes via [AnimeThemes.moe](https://animethemes.moe).
+- **Tier-list maker** (`/tier-list`) — drag your favorites into S/A/B/C/D/F and export the result as a PNG. Purely client-side.
 
 ## Why a backend at all?
 
