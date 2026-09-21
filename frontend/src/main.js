@@ -132,6 +132,26 @@ document.getElementById('nav-toggle').addEventListener('click', () => {
   document.body.classList.toggle('nav-open');
 });
 
+// Header "More"/"Library" dropdowns - click-toggled (not hover-only) so it
+// works the same on touch and mouse. Opening one closes any other that's
+// already open; clicking outside, pressing Escape, or navigating anywhere
+// (a link click inside the menu, or any route change) closes it too.
+document.querySelectorAll('.nav-dropdown-toggle').forEach((toggle) => {
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dropdown = toggle.closest('.nav-dropdown');
+    const wasOpen = dropdown.classList.contains('is-open');
+    document.querySelectorAll('.nav-dropdown.is-open').forEach((d) => d.classList.remove('is-open'));
+    dropdown.classList.toggle('is-open', !wasOpen);
+  });
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.nav-dropdown.is-open').forEach((d) => d.classList.remove('is-open'));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.querySelectorAll('.nav-dropdown.is-open').forEach((d) => d.classList.remove('is-open'));
+});
+
 // PWA install prompt. Chrome suppresses its own mini-infobar far more often
 // than it used to, so capturing beforeinstallprompt and offering our own
 // button is the reliable way to surface "Add to Home Screen" at all - the

@@ -53,6 +53,7 @@ async function dispatch() {
     window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
   }
   document.body.classList.remove('nav-open');
+  document.querySelectorAll('.nav-dropdown.is-open').forEach((d) => d.classList.remove('is-open'));
   highlightNav(path, params);
 
   for (const r of routes) {

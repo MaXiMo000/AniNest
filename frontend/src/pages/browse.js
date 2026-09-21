@@ -40,6 +40,7 @@ function toolbarHTML(state, genresList) {
   const sortOptions = [
     ['popular', '🔥 Most Popular'],
     ['top', '🏆 Highest Rated'],
+    ['season', '📅 This Season'],
     ['newest', '🆕 Newest'],
     ['title', '🔤 A–Z'],
   ];

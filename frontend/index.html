@@ -36,14 +36,25 @@
       <nav class="main-nav">
         <a href="#/" data-route="/">Home</a>
         <a href="#/browse" data-route="/browse">Browse</a>
-        <a href="#/browse?sort=top" data-route="/browse?sort=top">Top&nbsp;Rated</a>
-        <a href="#/browse?sort=season" data-route="/browse?sort=season">This&nbsp;Season</a>
         <a href="#/manga" data-route="/manga">📖 Manga</a>
-        <a href="#/schedule" data-route="/schedule">📅 Schedule</a>
         <a href="#/games" data-route="/games">🎮 Games</a>
-        <a href="#/compare" data-route="/compare">⚖️ Compare</a>
-        <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Favorites <span id="fav-count" class="fav-count">0</span></a>
-        <a href="#/manga-favorites" data-route="/manga-favorites" class="nav-fav">📖 My Manga <span id="manga-fav-count" class="fav-count">0</span></a>
+
+        <div class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle">More <span class="nav-caret">▾</span></button>
+          <div class="nav-dropdown-menu">
+            <a href="#/schedule" data-route="/schedule">📅 Schedule</a>
+            <a href="#/compare" data-route="/compare">⚖️ Compare</a>
+          </div>
+        </div>
+
+        <div class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle">📚 Library <span class="nav-caret">▾</span></button>
+          <div class="nav-dropdown-menu">
+            <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Anime Favorites <span id="fav-count" class="fav-count">0</span></a>
+            <a href="#/manga-favorites" data-route="/manga-favorites" class="nav-fav">📖 Manga List <span id="manga-fav-count" class="fav-count">0</span></a>
+          </div>
+        </div>
+
         <span id="auth-area" class="auth-area"></span>
       </nav>
 
