@@ -1,5 +1,6 @@
 import { imageOf } from './api.js';
 import { Favorites } from './store.js';
+import { MangaFavorites } from './mangaStore.js';
 import { navigate } from './router.js';
 
 // Shared between the detail page (setting a status) and the library page
@@ -7,6 +8,15 @@ import { navigate } from './router.js';
 export const WATCH_STATUSES = [
   { value: 'watching', emoji: '👀', label: 'Watching' },
   { value: 'plan_to_watch', emoji: '📌', label: 'Plan to Watch' },
+  { value: 'completed', emoji: '✅', label: 'Completed' },
+  { value: 'dropped', emoji: '❌', label: 'Dropped' },
+];
+
+// Manga equivalent of WATCH_STATUSES, shared between mangaDetail.js and
+// mangaFavorites.js.
+export const READ_STATUSES = [
+  { value: 'reading', emoji: '📖', label: 'Reading' },
+  { value: 'plan_to_read', emoji: '📌', label: 'Plan to Read' },
   { value: 'completed', emoji: '✅', label: 'Completed' },
   { value: 'dropped', emoji: '❌', label: 'Dropped' },
 ];
@@ -107,14 +117,38 @@ export function animeCard(anime) {
     </article>`;
 }
 
-export function cardGrid(list) {
+// `renderer` defaults to animeCard so every existing call site is
+// untouched; mangaBrowse.js/mangaDetail.js pass mangaCard instead. Pure
+// CSS-wrapper layout with zero anime-specific logic, so this is extended
+// rather than forked into a separate mangaCardGrid/mangaCardRail (avoids
+// two near-identical layout helpers drifting apart over time).
+export function cardGrid(list, renderer = animeCard) {
   if (!list || !list.length) return emptyHTML('No anime found. Try a different search!', '🔍');
-  return `<div class="card-grid">${list.map(animeCard).join('')}</div>`;
+  return `<div class="card-grid">${list.map(renderer).join('')}</div>`;
 }
 
-export function cardRail(list) {
+export function cardRail(list, renderer = animeCard) {
   if (!list || !list.length) return emptyHTML();
-  return `<div class="rail">${list.map(animeCard).join('')}</div>`;
+  return `<div class="rail">${list.map(renderer).join('')}</div>`;
+}
+
+export function mangaCard(manga) {
+  const img = manga.image !== undefined ? manga.image : (manga.coverImage || '');
+  const isFav = MangaFavorites.has(manga.id);
+  const meta = [manga.format, manga.status, manga.year].filter(Boolean).join(' · ');
+  const id = manga.id || '';
+  return `
+    <article class="manga-card" data-manga-id="${escapeHtml(id)}" tabindex="0" role="link" aria-label="${escapeHtml(manga.title)}">
+      <div class="poster-wrap">
+        ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(manga.title)}" loading="lazy" />` : ''}
+        <span class="card-type">${escapeHtml(manga.demographic || 'Manga')}</span>
+        <button class="fav-btn ${isFav ? 'is-fav' : ''}" data-manga-fav-id="${escapeHtml(id)}" aria-label="Toggle favorite" title="Favorite">${isFav ? '💖' : '🤍'}</button>
+      </div>
+      <div class="card-body">
+        <div class="card-title">${escapeHtml(manga.title)}</div>
+        <div class="card-meta">${escapeHtml(meta || '')}</div>
+      </div>
+    </article>`;
 }
 
 // Event delegation: click a card -> navigate; click fav button -> toggle (and stop propagation).
@@ -168,7 +202,57 @@ export function wireCardEvents(container, { onOpen } = {}) {
   });
 }
 
+// Manga equivalent of wireCardEvents - kept as its own separate function
+// rather than a generalization of it, since wireCardEvents is hard-wired
+// to Favorites/mal_id/#/anime/:id and forcing it to branch on content type
+// would tangle two unrelated stores into one function.
+export function wireMangaCardEvents(container, { onOpen } = {}) {
+  container.addEventListener('click', (e) => {
+    const favBtn = e.target.closest('[data-manga-fav-id]');
+    if (favBtn) {
+      e.stopPropagation();
+      const card = favBtn.closest('.manga-card');
+      const id = favBtn.dataset.mangaFavId;
+      const title = card?.querySelector('.card-title')?.textContent || '';
+      const img = card?.querySelector('img')?.getAttribute('src') || '';
+      const manga = { id, title, coverImage: img };
+
+      const wasFav = favBtn.classList.contains('is-fav');
+      favBtn.textContent = wasFav ? '🤍' : '💖';
+      favBtn.classList.toggle('is-fav', !wasFav);
+
+      MangaFavorites.toggle(manga).then((result) => {
+        if (result.needsLogin) {
+          favBtn.textContent = wasFav ? '💖' : '🤍';
+          favBtn.classList.toggle('is-fav', wasFav);
+          showToast('Log in to save favorites!');
+          navigate('#/login');
+          return;
+        }
+        favBtn.textContent = result.isFav ? '💖' : '🤍';
+        favBtn.classList.toggle('is-fav', result.isFav);
+        if (result.ok) {
+          showToast(result.isFav ? `Added "${title}" to favorites!` : `Removed "${title}" from favorites.`);
+        } else {
+          showToast('Something went wrong — try again.');
+        }
+      });
+      return;
+    }
+    const card = e.target.closest('.manga-card');
+    if (card) {
+      if (onOpen) onOpen(card.dataset.mangaId);
+      else window.location.hash = `#/manga/${card.dataset.mangaId}`;
+    }
+  });
+}
+
 export function updateFavCount() {
   const el = document.getElementById('fav-count');
   if (el) el.textContent = Favorites.count();
+}
+
+export function updateMangaFavCount() {
+  const el = document.getElementById('manga-fav-count');
+  if (el) el.textContent = MangaFavorites.count();
 }

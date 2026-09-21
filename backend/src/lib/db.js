@@ -94,10 +94,31 @@ await db.executeMultiple(`
     UNIQUE(user_id, game)
   );
 
+  -- Manga reading-list, parallel to favorites but keyed by a MangaDex
+  -- UUID (manga_id TEXT) instead of a numeric MAL id - MangaDex ids don't
+  -- fit favorites.mal_id's INTEGER column, so this is a new table rather
+  -- than a widened one, keeping the existing anime favorites/reviews
+  -- tables and data completely untouched. status mirrors favorites'
+  -- watch-status idea, adapted to reading (reading/plan_to_read/completed/
+  -- dropped). manga_reviews (mirroring reviews) is intentionally not
+  -- created yet - out of scope for this slice, a near-identical fast-follow.
+  CREATE TABLE IF NOT EXISTS manga_favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    manga_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    image TEXT,
+    format TEXT,
+    status TEXT,
+    added_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, manga_id)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
   CREATE INDEX IF NOT EXISTS idx_reviews_mal_id ON reviews(mal_id);
   CREATE INDEX IF NOT EXISTS idx_game_scores_leaderboard ON game_scores(game, best_streak DESC);
+  CREATE INDEX IF NOT EXISTS idx_manga_favorites_user ON manga_favorites(user_id);
 `);
 
 // SQLite has no "ADD COLUMN IF NOT EXISTS" — this is the idempotent

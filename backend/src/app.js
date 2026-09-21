@@ -20,6 +20,8 @@ import { recommendationsRouter } from './routes/recommendations.js';
 import { studiosRouter, peopleRouter } from './routes/browse.js';
 import { importRouter } from './routes/import.js';
 import { screenshotSearchRouter } from './routes/screenshotSearch.js';
+import { mangaRouter } from './routes/manga.js';
+import { mangaFavoritesRouter } from './routes/mangaFavorites.js';
 
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
@@ -81,6 +83,8 @@ export function createApp() {
   app.use('/api/people', peopleRouter);
   app.use('/api/import', importRouter);
   app.use('/api/screenshot-search', screenshotSearchRouter);
+  app.use('/api/manga', mangaRouter);
+  app.use('/api/manga-favorites', mangaFavoritesRouter);
 
   app.use((req, res) => res.status(404).json({ error: 'Not found.' }));
 

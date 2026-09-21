@@ -3,14 +3,16 @@
 //
 // Deliberately NOT covered here: the /api/anime/* proxy routes' actual data,
 // /api/games/daily's actual pick, /api/studios/:name + /api/people/:name,
-// /api/import/anilist's actual import, and /api/screenshot-search's actual
-// match. All of these hit live third-party APIs (Jikan/AniList/trace.moe) to
-// build their result; asserting on real responses would make this suite
-// flaky and burn shared rate-limit/quota budget on every run. We only test
-// the input-validation edge of routes that have one to test - studios/
-// people/import take a free-text name with nothing to validate beyond a
-// length cap; screenshot-search's edge (wrong content type, empty body) is
-// pure body-parser/route logic that never reaches trace.moe.
+// /api/import/anilist's actual import, /api/screenshot-search's actual
+// match, and /api/manga/*'s actual data (search/tags/detail). All of these
+// hit live third-party APIs (Jikan/AniList/trace.moe/MangaDex) to build
+// their result; asserting on real responses would make this suite flaky and
+// burn shared rate-limit/quota budget on every run. We only test the
+// input-validation edge of routes that have one to test - studios/people/
+// import take a free-text name with nothing to validate beyond a length
+// cap; screenshot-search's edge (wrong content type, empty body) is pure
+// body-parser/route logic that never reaches trace.moe; manga's edge (bad
+// id format, out-of-allowlist filter values) never reaches MangaDex either.
 //
 // Run with: npm test
 
@@ -342,6 +344,102 @@ test('favorites normalizes a URL that contains a raw quote instead of storing it
   assert.ok(!stored.includes('"'), `stored image URL must not contain a raw quote, got: ${stored}`);
 });
 
+test('manga-favorites routes require auth', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const get = await agent.get('/api/manga-favorites');
+  const post = await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: 'a1b2c3d4-e5f6-4789-a012-3456789abcde', title: 'x' } });
+  const del = await agent.delete('/api/manga-favorites/a1b2c3d4-e5f6-4789-a012-3456789abcde', { csrf: true });
+  assert.equal(get.status, 401);
+  assert.equal(post.status, 401);
+  assert.equal(del.status, 401);
+});
+
+test('manga-favorites CRUD lifecycle for a logged-in user', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const mangaId = 'a1c7c817-4e59-43b7-9365-09675a149a6f';
+  const add = await agent.post('/api/manga-favorites', {
+    csrf: true,
+    body: { manga_id: mangaId, title: 'One Piece', image: 'https://uploads.mangadex.org/covers/x/y.512.jpg', format: 'manga' },
+  });
+  assert.equal(add.status, 201);
+
+  const list = await agent.get('/api/manga-favorites');
+  assert.equal(list.status, 200);
+  assert.equal(list.json.favorites.length, 1);
+  assert.equal(list.json.favorites[0].title, 'One Piece');
+
+  // Adding the same manga_id again must not create a duplicate row.
+  await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: mangaId, title: 'One Piece' } });
+  const listAgain = await agent.get('/api/manga-favorites');
+  assert.equal(listAgain.json.favorites.length, 1);
+
+  const del = await agent.delete(`/api/manga-favorites/${mangaId}`, { csrf: true });
+  assert.equal(del.status, 204);
+  const listAfterDelete = await agent.get('/api/manga-favorites');
+  assert.equal(listAfterDelete.json.favorites.length, 0);
+});
+
+test('manga-favorites: reading status can be set, changed, and cleared without wiping other fields', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const mangaId = 'b2c3d4e5-f6a7-4890-b123-456789abcdef';
+  await agent.post('/api/manga-favorites', {
+    csrf: true,
+    body: { manga_id: mangaId, title: 'Vinland Saga', status: 'reading' },
+  });
+  let list = await agent.get('/api/manga-favorites');
+  assert.equal(list.json.favorites[0].status, 'reading');
+
+  // A plain heart re-toggle (no `status` key at all) must not clobber it.
+  await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: mangaId, title: 'Vinland Saga' } });
+  list = await agent.get('/api/manga-favorites');
+  assert.equal(list.json.favorites[0].status, 'reading', 'status must survive an update that omits the field entirely');
+
+  // Changing it explicitly does update it.
+  await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: mangaId, title: 'Vinland Saga', status: 'completed' } });
+  list = await agent.get('/api/manga-favorites');
+  assert.equal(list.json.favorites[0].status, 'completed');
+
+  // Explicit null clears it back to "no status" (still a plain favorite).
+  await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: mangaId, title: 'Vinland Saga', status: null } });
+  list = await agent.get('/api/manga-favorites');
+  assert.equal(list.json.favorites[0].status, null);
+
+  const invalid = await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: mangaId, title: 'Vinland Saga', status: 'binge-reading' } });
+  assert.equal(invalid.status, 400);
+});
+
+test('manga-favorites rejects a non-UUID manga_id', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const res = await agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: 'not-a-uuid', title: 'x' } });
+  assert.equal(res.status, 400);
+});
+
+test('manga-favorites rejects a javascript: URL for the image field', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const res = await agent.post('/api/manga-favorites', {
+    csrf: true,
+    body: { manga_id: 'c3d4e5f6-a7b8-4901-c234-56789abcdef0', title: 'Malicious', image: 'javascript:alert(1)' },
+  });
+  assert.equal(res.status, 400);
+});
+
 test('reviews require auth to write but not to read', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');
@@ -452,6 +550,20 @@ test('schedule route rejects an invalid day without needing the upstream API', a
   assert.equal(bad.status, 400);
   const missing = await agent.get('/api/anime/schedule');
   assert.equal(missing.status, 400);
+});
+
+test('manga route validates the id param without needing MangaDex', async () => {
+  const agent = makeAgent();
+  const res = await agent.get('/api/manga/not-a-uuid');
+  assert.equal(res.status, 400);
+});
+
+test('manga tags route returns the curated list without needing MangaDex', async () => {
+  const agent = makeAgent();
+  const res = await agent.get('/api/manga/tags');
+  assert.equal(res.status, 200);
+  assert.ok(Array.isArray(res.json.data) && res.json.data.length > 0);
+  assert.ok(res.json.data.every((t) => t.id && t.name));
 });
 
 // This process's authLimiter was created with AUTH_RATE_LIMIT=1000 (see top

@@ -382,9 +382,15 @@ button { font-family: var(--font-body); cursor: pointer; }
 .rail::-webkit-scrollbar { height: 10px; }
 .rail::-webkit-scrollbar-thumb { background: var(--purple); border-radius: 8px; border: 2px solid var(--ink); }
 .rail::-webkit-scrollbar-track { background: var(--panel); border-radius: 8px; }
-.rail .anime-card { flex: 0 0 190px; scroll-snap-align: start; }
+.rail .anime-card, .rail .manga-card { flex: 0 0 190px; scroll-snap-align: start; }
 
-.anime-card {
+/* .manga-card shares every visual rule with .anime-card (same card
+   language, different content type) - kept as a distinct class rather
+   than reusing .anime-card itself, since main.js wires a separate
+   delegated click handler (wireMangaCardEvents) for manga cards, and
+   sharing the .anime-card class would make wireCardEvents' own delegated
+   handler also match manga cards (wrong id shape, wrong route). */
+.anime-card, .manga-card {
   position: relative;
   background: var(--panel);
   border: var(--border-w) solid var(--ink);
@@ -396,20 +402,20 @@ button { font-family: var(--font-body); cursor: pointer; }
   display: flex;
   flex-direction: column;
 }
-.anime-card:hover {
+.anime-card:hover, .manga-card:hover {
   transform: translate(-4px, -6px) rotate(-1deg);
   box-shadow: 10px 12px 0 var(--ink);
   z-index: 2;
 }
-.anime-card .poster-wrap {
+.anime-card .poster-wrap, .manga-card .poster-wrap {
   position: relative;
   aspect-ratio: 2/3;
   overflow: hidden;
   border-bottom: var(--border-w) solid var(--ink);
   background: #000;
 }
-.anime-card .poster-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
-.anime-card:hover .poster-wrap img { transform: scale(1.08); }
+.anime-card .poster-wrap img, .manga-card .poster-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
+.anime-card:hover .poster-wrap img, .manga-card:hover .poster-wrap img { transform: scale(1.08); }
 .card-score {
   position: absolute;
   top: 8px; right: 8px;
@@ -796,7 +802,7 @@ button { font-family: var(--font-body); cursor: pointer; }
 
 /* ===================== Accessibility ===================== */
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
-.anime-card:focus-visible {
+.anime-card:focus-visible, .manga-card:focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: 2px;
   border-radius: 6px;

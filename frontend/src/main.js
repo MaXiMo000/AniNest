@@ -19,8 +19,12 @@ import { renderQuiz } from './pages/games/quiz.js';
 import { renderDailyChallenge } from './pages/games/dailyChallenge.js';
 import { renderLeaderboard } from './pages/games/leaderboard.js';
 import { renderCompare } from './pages/compare.js';
-import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml, loadingHTML } from './lib/ui.js';
+import { renderMangaBrowse } from './pages/mangaBrowse.js';
+import { renderMangaDetail } from './pages/mangaDetail.js';
+import { renderMangaFavorites } from './pages/mangaFavorites.js';
+import { wireCardEvents, wireMangaCardEvents, updateFavCount, updateMangaFavCount, emptyHTML, escapeHtml, loadingHTML } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
+import { MangaFavorites } from './lib/mangaStore.js';
 import { Auth } from './lib/authStore.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
 import { wirePowSelects } from './lib/powSelect.js';
@@ -40,13 +44,22 @@ function renderAuthArea() {
 // Single global delegated handler for every anime-card / favorite-heart click,
 // across every page. Attaching this once (instead of per-render) avoids
 // stacking duplicate listeners on the persistent #app node as the SPA
-// re-renders its innerHTML on navigation.
+// re-renders its innerHTML on navigation. wireMangaCardEvents is a separate
+// handler (not a branch inside wireCardEvents) keying off disjoint
+// selectors (.anime-card/[data-fav-id] vs .manga-card/[data-manga-fav-id]),
+// so both listen on the same #app node without conflicting.
 wireCardEvents(app);
+wireMangaCardEvents(app);
 wirePowSelects();
 
 Favorites.subscribe(() => {
   updateFavCount();
   if (currentPath() === '/favorites') renderFavorites(app);
+});
+
+MangaFavorites.subscribe(() => {
+  updateMangaFavCount();
+  if (currentPath() === '/manga-favorites') renderMangaFavorites(app);
 });
 
 Auth.subscribe(() => {
@@ -74,6 +87,9 @@ route('/games/guess-the-anime', () => renderGuessTheAnime(app));
 route('/games/quiz', () => renderQuiz(app));
 route('/games/leaderboard/:game', ({ path }) => renderLeaderboard(app, path.game));
 route('/compare', () => renderCompare(app));
+route('/manga', ({ params }) => renderMangaBrowse(app, params));
+route('/manga/:id', ({ path }) => renderMangaDetail(app, path.id));
+route('/manga-favorites', () => renderMangaFavorites(app));
 
 notFound(() => {
   app.innerHTML = emptyHTML('This page wandered off into the filler dimension.', '🌀');
@@ -94,8 +110,10 @@ async function boot() {
   app.innerHTML = loadingHTML('WAKING UP ANINEST');
   await Auth.init();
   await Favorites.loadFromServer();
+  await MangaFavorites.loadFromServer();
   renderAuthArea();
   updateFavCount();
+  updateMangaFavCount();
   startRouter();
 }
 boot();
