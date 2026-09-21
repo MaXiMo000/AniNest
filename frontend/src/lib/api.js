@@ -34,6 +34,7 @@ export const Api = {
   fullById: (id) => cachedGet(`full:${id}`, `/api/anime/${id}/full`),
   recommendations: (id) => cachedGet(`recs:${id}`, `/api/anime/${id}/recommendations`),
   characters: (id) => cachedGet(`chars:${id}`, `/api/anime/${id}/characters`),
+  themes: (id) => cachedGet(`themes:${id}`, `/api/anime/${id}/themes`),
   randomAnime: () => apiGet('/api/anime/random'),
   studio: (name) => cachedGet(`studio:${name}`, `/api/studios/${encodeURIComponent(name)}`),
   person: (name) => cachedGet(`person:${name}`, `/api/people/${encodeURIComponent(name)}`),

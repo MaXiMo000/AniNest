@@ -83,6 +83,25 @@ function charactersSectionHTML(characters) {
     </section>`;
 }
 
+// Reuses .tv-frame (from the trailer embed above) for the player shell and
+// .guess-choice (from the games) for the track-list buttons - both already
+// styled, no new CSS needed for a one-off jukebox.
+function themesSectionHTML(themes) {
+  if (!themes.length) return '';
+  const trackLabel = (t) => `${t.slug}${t.title ? ` — ${t.title}` : ''}`;
+  return `
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">🎵 OP/ED Jukebox</h2></div>
+      <div class="tv-frame">
+        <div class="tv-screen"><video id="theme-player" style="width:100%;height:100%" controls preload="none"></video></div>
+        <div class="tv-label" id="theme-now-playing">▶ Pick a track below</div>
+      </div>
+      <div class="guess-choices" id="theme-track-list" style="margin-top:14px">
+        ${themes.map((t) => `<button class="guess-choice" data-video="${escapeHtml(t.videoUrl)}" data-label="${escapeHtml(trackLabel(t))}">${escapeHtml(trackLabel(t))}</button>`).join('')}
+      </div>
+    </section>`;
+}
+
 function reviewCardHTML(r, isMine) {
   const date = new Date(r.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   return `
@@ -188,17 +207,19 @@ function wireReviewForm(root, malId, animeTitle) {
 export async function renderDetails(root, id) {
   root.innerHTML = loadingHTML('LOADING EPISODE DATA');
   try {
-    const [{ data: a }, recRes, reviewsData, charRes] = await Promise.all([
+    const [{ data: a }, recRes, reviewsData, charRes, themesRes] = await Promise.all([
       Api.fullById(id),
       Api.recommendations(id).catch(() => ({ data: [] })),
       Reviews.list(id).catch(() => ({ reviews: [], average: null, count: 0, myReview: null })),
       Api.characters(id).catch(() => ({ data: [] })),
+      Api.themes(id).catch(() => ({ data: [] })),
     ]);
 
     const img = escapeHtml(imageOf(a));
     const score = a.score ? a.score.toFixed(1) : '—';
     const recs = (recRes.data || []).slice(0, 12).map((r) => r.entry);
     const characters = charRes.data || [];
+    const themes = themesRes.data || [];
 
     document.title = `${a.title} — AniNest`;
     RecentlyViewed.record(a);
@@ -239,6 +260,8 @@ export async function renderDetails(root, id) {
       </div>
 
       ${charactersSectionHTML(characters)}
+
+      ${themesSectionHTML(themes)}
 
       ${reviewsSectionHTML(reviewsData).replace('<section class="section">', '<section class="section" id="reviews-section">')}
 
@@ -284,6 +307,19 @@ export async function renderDetails(root, id) {
         if (favBtn) favBtn.textContent = '💖 FAVORITED';
         const label = WATCH_STATUSES.find((s) => s.value === nextStatus)?.label;
         showToast(label ? `Marked as ${label}.` : 'Status cleared.');
+      });
+    });
+
+    root.querySelectorAll('#theme-track-list .guess-choice').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const player = root.querySelector('#theme-player');
+        if (!player) return;
+        player.src = btn.dataset.video;
+        player.play().catch(() => {}); // browsers can reject autoplay-after-src-swap; controls still let the user hit play themselves
+        root.querySelectorAll('#theme-track-list .guess-choice').forEach((b) => b.classList.remove('is-correct'));
+        btn.classList.add('is-correct');
+        const label = root.querySelector('#theme-now-playing');
+        if (label) label.textContent = `▶ ${btn.dataset.label}`;
       });
     });
 
