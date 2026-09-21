@@ -22,9 +22,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch(path, { method = 'GET', body } = {}) {
+// `file`/`fileType` bypass the JSON encoding entirely - used for a raw
+// binary upload (e.g. the screenshot-search endpoint), which sends a File
+// object as-is with its own Content-Type rather than a JSON body.
+export async function apiFetch(path, { method = 'GET', body, file, fileType } = {}) {
   const headers = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  else if (file !== undefined) headers['Content-Type'] = fileType;
   if (method !== 'GET' && method !== 'HEAD' && csrfToken) {
     headers['x-csrf-token'] = csrfToken;
   }
@@ -33,7 +37,7 @@ export async function apiFetch(path, { method = 'GET', body } = {}) {
     method,
     headers,
     credentials: 'include',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: file !== undefined ? file : (body !== undefined ? JSON.stringify(body) : undefined),
   });
 
   const freshToken = res.headers.get('x-csrf-token');
@@ -53,3 +57,4 @@ export async function apiFetch(path, { method = 'GET', body } = {}) {
 export const apiGet = (path) => apiFetch(path, { method: 'GET' });
 export const apiPost = (path, body) => apiFetch(path, { method: 'POST', body: body ?? {} });
 export const apiDelete = (path) => apiFetch(path, { method: 'DELETE' });
+export const apiPostFile = (path, file) => apiFetch(path, { method: 'POST', file, fileType: file.type });
