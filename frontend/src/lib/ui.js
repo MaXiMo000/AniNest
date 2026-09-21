@@ -19,6 +19,14 @@ export function escapeHtml(str = '') {
     .replace(/"/g, '&quot;');
 }
 
+// Shared between the public profile and the account page - both display
+// the same server-computed badge list (see backend/src/lib/badges.js) the
+// same way.
+export function badgesRowHTML(badges) {
+  if (!badges?.length) return '';
+  return `<div class="badges-row">${badges.map((b) => `<span class="badge-pill badge-${b.tier}" title="${escapeHtml(b.desc)}">${b.emoji} ${escapeHtml(b.label)}</span>`).join('')}</div>`;
+}
+
 export function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;

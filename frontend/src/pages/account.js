@@ -1,8 +1,9 @@
 import { Auth } from '../lib/authStore.js';
 import { Favorites } from '../lib/store.js';
 import { Import } from '../lib/importApi.js';
+import { Users } from '../lib/usersApi.js';
 import { navigate } from '../lib/router.js';
-import { escapeHtml, showToast } from '../lib/ui.js';
+import { escapeHtml, showToast, badgesRowHTML } from '../lib/ui.js';
 
 function importSectionHTML() {
   return `
@@ -37,10 +38,22 @@ export function renderAccount(root) {
         <a href="#/u/${encodeURIComponent(user.username)}" class="btn-pow btn-pow--outline">👤 View Public Profile</a>
         <button id="logout-btn" class="btn-pow btn-pow--outline">🚪 Log Out</button>
       </div>
+      <div id="badges-row"></div>
     </div>
 
     ${importSectionHTML()}
   `;
+
+  // Badges reuse the public profile endpoint (same data, same computation
+  // - see backend/src/lib/badges.js) rather than a second route just for
+  // "my own" badges. Loaded separately from the initial render so opening
+  // Account doesn't wait on it.
+  Users.profile(user.username)
+    .then(({ badges }) => {
+      const el = root.querySelector('#badges-row');
+      if (el) el.innerHTML = badgesRowHTML(badges);
+    })
+    .catch(() => {});
 
   root.querySelector('#logout-btn').addEventListener('click', async () => {
     await Auth.logout();

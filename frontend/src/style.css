@@ -1422,6 +1422,29 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
   .compare-label { order: -1; }
 }
 
+/* ===================== Badges ===================== */
+.badges-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 2.5px solid var(--ink);
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+.badge-pill.badge-bronze { background: var(--orange); }
+.badge-pill.badge-silver { background: var(--blue); }
+.badge-pill.badge-gold { background: var(--yellow); }
+
 /* ===================== Tier List Maker ===================== */
 .tier-row {
   display: flex;
