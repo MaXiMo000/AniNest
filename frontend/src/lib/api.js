@@ -35,6 +35,8 @@ export const Api = {
   recommendations: (id) => cachedGet(`recs:${id}`, `/api/anime/${id}/recommendations`),
   characters: (id) => cachedGet(`chars:${id}`, `/api/anime/${id}/characters`),
   randomAnime: () => apiGet('/api/anime/random'),
+  studio: (name) => cachedGet(`studio:${name}`, `/api/studios/${encodeURIComponent(name)}`),
+  person: (name) => cachedGet(`person:${name}`, `/api/people/${encodeURIComponent(name)}`),
 };
 
 export function imageOf(anime) {

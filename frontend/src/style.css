@@ -674,6 +674,9 @@ button { font-family: var(--font-body); cursor: pointer; }
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.va-name:hover { color: var(--pink2); }
+.studio-link { color: var(--blue); font-weight: 700; }
+.studio-link:hover { color: var(--pink2); }
 
 .tv-frame {
   background: var(--ink);

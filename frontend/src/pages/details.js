@@ -70,7 +70,7 @@ function charCardHTML(c) {
       </div>
       <div class="char-name">${escapeHtml(c.character.name)}</div>
       ${roleLabel ? `<div class="char-role">${escapeHtml(roleLabel)}</div>` : ''}
-      ${va ? `<div class="va-name">🎙️ ${escapeHtml(va.name)}</div>` : ''}
+      ${va ? `<a class="va-name" href="#/person/${encodeURIComponent(va.name)}">🎙️ ${escapeHtml(va.name)}</a>` : ''}
     </div>`;
 }
 
@@ -232,7 +232,7 @@ export async function renderDetails(root, id) {
       <div class="info-grid">
         <div class="info-box"><div class="k">Episodes</div><div class="v">${a.episodes ?? '?'}</div></div>
         <div class="info-box"><div class="k">Aired</div><div class="v">${escapeHtml(fmtDate(a.aired))}</div></div>
-        <div class="info-box"><div class="k">Studios</div><div class="v">${escapeHtml((a.studios || []).map((s) => s.name).join(', ') || '—')}</div></div>
+        <div class="info-box"><div class="k">Studios</div><div class="v">${(a.studios || []).length ? (a.studios || []).map((s) => `<a class="studio-link" href="#/studio/${encodeURIComponent(s.name)}">${escapeHtml(s.name)}</a>`).join(', ') : '—'}</div></div>
         <div class="info-box"><div class="k">Source</div><div class="v">${escapeHtml(a.source || '—')}</div></div>
         <div class="info-box"><div class="k">Season</div><div class="v">${escapeHtml([a.season, a.year].filter(Boolean).join(' ') || '—')}</div></div>
         <div class="info-box"><div class="k">Members</div><div class="v">${a.members ? a.members.toLocaleString() : '—'}</div></div>
