@@ -113,8 +113,22 @@ function normalizeManga(raw) {
   };
 }
 
-export function mangaSearch({ q, tags, demographic, status, page = 1 } = {}) {
-  const key = `manga:search:${q || ''}:${(tags || []).join(',')}:${demographic || ''}:${status || ''}:${page}`;
+// 'latest' orders by latestUploadedChapter - MangaDex's own "just updated
+// with a new chapter" signal, the manga equivalent of anime browse's
+// "Newest" tab in spirit (surfaces active/currently-releasing titles)
+// though technically closest to createdAt for "newest added to the site".
+// Both are offered separately so neither meaning gets silently dropped.
+const SORT_ORDER_PARAMS = {
+  popular: ['order[followedCount]', 'desc'],
+  latest: ['order[latestUploadedChapter]', 'desc'],
+  newest: ['order[createdAt]', 'desc'],
+  title: ['order[title]', 'asc'],
+  relevance: ['order[relevance]', 'desc'],
+};
+
+export function mangaSearch({ q, tags, demographic, status, sort, page = 1 } = {}) {
+  const sortKey = SORT_ORDER_PARAMS[sort] ? sort : (q ? 'relevance' : 'popular');
+  const key = `manga:search:${q || ''}:${(tags || []).join(',')}:${demographic || ''}:${status || ''}:${sortKey}:${page}`;
   return cached(key, TTL.list, async () => {
     const limit = 20;
     const offset = Math.max(0, (Math.max(1, page) - 1) * limit);
@@ -123,7 +137,7 @@ export function mangaSearch({ q, tags, demographic, status, page = 1 } = {}) {
       ['offset', String(offset)],
       ['includes[]', 'cover_art'],
       ['includes[]', 'author'],
-      ['order[relevance]', 'desc'],
+      SORT_ORDER_PARAMS[sortKey],
     ];
     for (const r of SAFE_CONTENT_RATINGS) params.push(['contentRating[]', r]);
     if (q) params.push(['title', q]);

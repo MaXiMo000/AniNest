@@ -16,6 +16,7 @@ function buildQueryString(state) {
   if (state.tags.length) p.set('tags', state.tags.join(','));
   if (state.demographic) p.set('demographic', state.demographic);
   if (state.status) p.set('status', state.status);
+  if (state.sort && state.sort !== 'popular') p.set('sort', state.sort);
   if (state.page && state.page !== 1) p.set('page', state.page);
   return p.toString();
 }
@@ -26,11 +27,18 @@ function parseState(params) {
     tags: (params.get('tags') || '').split(',').filter(Boolean),
     demographic: params.get('demographic') || '',
     status: params.get('status') || '',
+    sort: params.get('sort') || 'popular',
     page: Number(params.get('page') || 1),
   };
 }
 
 function toolbarHTML(state, tagsList) {
+  const sortOptions = [
+    ['popular', '🔥 Most Followed'],
+    ['latest', '🆕 Recently Updated'],
+    ['newest', '✨ Newest Added'],
+    ['title', '🔤 A–Z'],
+  ];
   const demographicOptions = [
     ['', 'Any Demographic'], ['shounen', 'Shounen'], ['shoujo', 'Shoujo'], ['seinen', 'Seinen'], ['josei', 'Josei'],
   ];
@@ -40,6 +48,11 @@ function toolbarHTML(state, tagsList) {
 
   return `
     <div class="toolbar">
+      <span class="toolbar-label">Sort</span>
+      <select id="f-sort">
+        ${sortOptions.map(([v, l]) => `<option value="${v}" ${state.sort === v ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+
       <span class="toolbar-label">Demographic</span>
       <select id="f-demographic">
         ${demographicOptions.map(([v, l]) => `<option value="${v}" ${state.demographic === v ? 'selected' : ''}>${l}</option>`).join('')}
@@ -51,7 +64,7 @@ function toolbarHTML(state, tagsList) {
       </select>
 
       ${state.q ? `<span class="chip active">🔍 "${escapeHtml(state.q)}" <span id="clear-q" style="cursor:pointer">✕</span></span>` : ''}
-      ${state.tags.length || state.demographic || state.status || state.q
+      ${state.tags.length || state.demographic || state.status || state.q || state.sort !== 'popular'
         ? `<button class="chip" id="clear-filters">✕ Clear All</button>` : ''}
     </div>
     <div class="genre-filter-list" id="tag-filter-list">
@@ -82,6 +95,7 @@ export async function renderMangaBrowse(root, params) {
       tags: state.tags.join(',') || undefined,
       demographic: state.demographic || undefined,
       status: state.status || undefined,
+      sort: state.sort !== 'popular' ? state.sort : undefined,
       page: state.page,
     });
     const list = res.data || [];
@@ -99,6 +113,7 @@ export async function renderMangaBrowse(root, params) {
 
     const goto = (patch) => navigate('#/manga?' + buildQueryString({ ...state, page: 1, ...patch }));
 
+    root.querySelector('#f-sort')?.addEventListener('change', (e) => goto({ sort: e.target.value }));
     root.querySelector('#f-demographic')?.addEventListener('change', (e) => goto({ demographic: e.target.value }));
     root.querySelector('#f-status')?.addEventListener('change', (e) => goto({ status: e.target.value }));
     root.querySelector('#clear-q')?.addEventListener('click', () => goto({ q: '' }));

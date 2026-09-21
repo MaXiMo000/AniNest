@@ -18,6 +18,7 @@ function parseMangaId(raw) {
 
 const ALLOWED_DEMOGRAPHIC = new Set(['shounen', 'shoujo', 'josei', 'seinen']);
 const ALLOWED_STATUS = new Set(['ongoing', 'completed', 'hiatus', 'cancelled']);
+const ALLOWED_SORT = new Set(['popular', 'latest', 'newest', 'title', 'relevance']);
 
 mangaRouter.get('/search', asyncRoute(async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
@@ -27,7 +28,8 @@ mangaRouter.get('/search', asyncRoute(async (req, res) => {
     : undefined;
   const demographic = ALLOWED_DEMOGRAPHIC.has(req.query.demographic) ? req.query.demographic : undefined;
   const status = ALLOWED_STATUS.has(req.query.status) ? req.query.status : undefined;
-  res.json(await mangadex.mangaSearch({ q, tags, demographic, status, page }));
+  const sort = ALLOWED_SORT.has(req.query.sort) ? req.query.sort : undefined;
+  res.json(await mangadex.mangaSearch({ q, tags, demographic, status, sort, page }));
 }));
 
 mangaRouter.get('/tags', asyncRoute(async (_req, res) => {
