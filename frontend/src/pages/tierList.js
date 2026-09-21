@@ -35,10 +35,21 @@ function savePlacement(username, placement) {
   } catch { /* private-browsing/storage-full — placement just won't persist across reloads */ }
 }
 
+// No crossorigin here - these are for on-screen display only, and adding
+// it caused a real bug: Browse/Favorites/Home all load these exact same
+// poster URLs WITHOUT crossorigin, so by the time a user reaches Tier
+// List the browser has usually already cached a non-CORS response for
+// that URL - requesting the identical URL again in CORS mode then fails
+// to load at all (confirmed directly: the same URL succeeds plain but
+// fails with crossOrigin='anonymous' once already cached that way),
+// showing a broken-image icon instead of the poster. Export needs a
+// CORS-clean image, but it builds its own separate Image() objects (see
+// loadImageForExport below) rather than reusing these <img> elements, so
+// decoupling the two is both the fix and the more correct design.
 function cardHTML(f) {
   return `
     <div class="tier-card" draggable="true" data-id="${f.mal_id}" title="${escapeHtml(f.title)}">
-      ${f.image ? `<img src="${escapeHtml(f.image)}" alt="${escapeHtml(f.title)}" loading="lazy" crossorigin="anonymous" />` : `<span class="tier-card-fallback">${escapeHtml(f.title.slice(0, 2))}</span>`}
+      ${f.image ? `<img src="${escapeHtml(f.image)}" alt="${escapeHtml(f.title)}" loading="lazy" />` : `<span class="tier-card-fallback">${escapeHtml(f.title.slice(0, 2))}</span>`}
     </div>`;
 }
 
@@ -110,7 +121,14 @@ function loadImageForExport(url) {
     img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null); // one bad/blocked image shouldn't fail the whole export
-    img.src = url;
+    // Cache-busted on purpose: the plain <img> in the tier cards above
+    // loads this exact URL without crossorigin, so the browser very often
+    // already has a non-CORS cached response for it by export time - a
+    // crossorigin='anonymous' request against that same cached URL fails
+    // to load at all (confirmed directly). A unique query string forces a
+    // fresh network fetch, which correctly gets AniList/MAL's CORS headers.
+    const separator = url.includes('?') ? '&' : '?';
+    img.src = `${url}${separator}_export=1`;
   });
 }
 
