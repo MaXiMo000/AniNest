@@ -764,7 +764,8 @@ body.is-admin [data-admin-only] { display: flex; }
 .watch-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 
 /* ===================== Admin: watch-source curation ===================== */
-#yt-search-form input, #yt-search-form select, #yt-manual-form input {
+#yt-search-form input, #yt-search-form select, #yt-manual-form input,
+#bulk-import-form select {
   padding: 10px 12px;
   border: 2.5px solid var(--ink);
   border-radius: 10px;
@@ -773,6 +774,10 @@ body.is-admin [data-admin-only] { display: flex; }
   font-family: var(--font-body);
   font-weight: 600;
 }
+.bulk-report-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.bulk-report-list li { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+#bulk-import-result details { margin-top: 10px; }
+#bulk-import-result summary { cursor: pointer; font-weight: 800; color: var(--yellow); }
 .admin-yt-results {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

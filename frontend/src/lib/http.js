@@ -16,9 +16,15 @@ export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8787';
 let csrfToken = null;
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  // `extra` carries any additional JSON fields an error response included
+  // beyond `error` itself (e.g. { quotaExceeded: true } or
+  // { notConfigured: true } from the watch-sources admin routes) - spread
+  // onto the instance so callers can just check err.quotaExceeded etc.,
+  // the same way err.status already works for every existing caller.
+  constructor(message, status, extra) {
     super(message);
     this.status = status;
+    Object.assign(this, extra);
   }
 }
 
@@ -49,7 +55,10 @@ export async function apiFetch(path, { method = 'GET', body, file, fileType } = 
   try { json = await res.json(); } catch { /* empty/non-JSON body */ }
 
   if (!res.ok) {
-    throw new ApiError(json?.error || `Request failed (${res.status})`, res.status);
+    // Excludes `error`/`message`/`status` specifically (not just `error`) so
+    // a response body can never clobber Error's own built-in properties.
+    const { error: _error, message: _message, status: _status, ...extra } = json || {};
+    throw new ApiError(json?.error || `Request failed (${res.status})`, res.status, extra);
   }
   return json;
 }

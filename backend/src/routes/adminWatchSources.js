@@ -4,6 +4,7 @@ import { db } from '../lib/db.js';
 import { requireAdmin } from '../middleware/session.js';
 import * as youtube from '../lib/youtube.js';
 import { parseYouTubeVideoId } from '../lib/youtubeUrl.js';
+import * as watchSourceMatcher from '../lib/watchSourceMatcher.js';
 
 // Admin-only curation tools for anime_watch_sources: search the YouTube API
 // (see lib/youtube.js for why this is admin-gated - shared, scarce quota),
@@ -71,6 +72,73 @@ adminWatchSourcesRouter.post('/', asyncRoute(async (req, res) => {
   }
 
   res.status(201).json({ ok: true });
+}));
+
+// Bulk-populates real, currently-available free episodes from one curated
+// channel: lists everything it's actually uploaded (cheap - see
+// lib/youtube.js's listChannelUploads), filters to titles that look like a
+// real episode (must contain an episode-number marker, or it's skipped as
+// likely a trailer/short/announcement - see watchSourceMatcher.js), guesses
+// each one's series title, and only inserts a row when that guess matches
+// an AniNest search result with high confidence. Everything ambiguous is
+// reported back, never guessed into the database - a wrong auto-match
+// would put a stranger's episode on the wrong anime's page, which is worse
+// than just leaving a gap for manual review.
+const VALID_YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+adminWatchSourcesRouter.post('/bulk-import', asyncRoute(async (req, res) => {
+  const channel = typeof req.body.channel === 'string' ? req.body.channel : '';
+  if (!channel) return res.status(400).json({ error: 'channel is required.' });
+  const maxItems = Math.min(200, Math.max(1, Number(req.body.maxItems) || 100));
+
+  let uploads;
+  try {
+    uploads = await youtube.listChannelUploads(channel, { maxItems });
+  } catch (err) {
+    if (err.notConfigured) return res.status(503).json({ error: err.message, notConfigured: true });
+    if (err.quotaExceeded) return res.status(429).json({ error: 'YouTube quota is exhausted for today.', quotaExceeded: true });
+    throw err;
+  }
+
+  const added = [];
+  const skippedNoMatch = [];
+  let skippedNoEpisode = 0;
+  let duplicates = 0;
+  // Many uploads are different episodes of the same series - cache each
+  // distinct series guess's match result so a 24-episode show only costs
+  // one AniNest search, not 24.
+  const guessCache = new Map();
+
+  for (const video of uploads) {
+    if (!VALID_YOUTUBE_ID_RE.test(video.videoId)) continue; // defense in depth; shouldn't happen from our own API response
+
+    const { seriesGuess, episodeLabel } = watchSourceMatcher.extractSeriesGuess(video.title);
+    if (!seriesGuess) { skippedNoEpisode += 1; continue; }
+
+    let match = guessCache.get(seriesGuess);
+    if (match === undefined) {
+      match = await watchSourceMatcher.matchToAnime(seriesGuess);
+      guessCache.set(seriesGuess, match);
+    }
+    if (!match) {
+      skippedNoMatch.push({ title: video.title, videoId: video.videoId, guess: seriesGuess });
+      continue;
+    }
+
+    try {
+      await db.execute({
+        sql: `INSERT INTO anime_watch_sources (mal_id, youtube_video_id, channel_name, label, status, submitted_by, reviewed_by, reviewed_at)
+              VALUES (?, ?, ?, ?, 'approved', ?, ?, datetime('now'))`,
+        args: [match.malId, video.videoId, video.channelName, episodeLabel, req.user.id, req.user.id],
+      });
+      added.push({ malId: match.malId, animeTitle: match.title, videoId: video.videoId, episodeLabel });
+    } catch (err) {
+      if (String(err.message).includes('UNIQUE')) { duplicates += 1; continue; }
+      throw err;
+    }
+  }
+
+  res.json({ totalUploadsScanned: uploads.length, added, duplicates, skippedNoEpisode, skippedNoMatch });
 }));
 
 adminWatchSourcesRouter.get('/pending', asyncRoute(async (_req, res) => {

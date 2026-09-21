@@ -89,3 +89,56 @@ export function searchOfficialChannel({ channelId, query, maxResults = 8 }) {
     })).filter((r) => r.videoId);
   });
 }
+
+function findChannelOrThrow(channelId) {
+  const channel = CHANNEL_BY_ID.get(channelId);
+  if (!channel) {
+    const err = new Error('Unknown channel.');
+    err.status = 400;
+    throw err;
+  }
+  return channel;
+}
+
+// Enumerates what a channel has ACTUALLY uploaded, for bulk-curation - a
+// completely different (and vastly cheaper) approach from
+// searchOfficialChannel above: channels.list + playlistItems.list cost 1
+// unit per call each (vs. search.list's 100), so listing a channel's
+// entire upload history costs only a few units total, not "100 units per
+// guessed title". This is what backs the admin page's "Import from
+// channel" bulk action - see routes/adminWatchSources.js and
+// lib/watchSourceMatcher.js for how titles get matched to a MAL id before
+// anything is inserted.
+export async function listChannelUploads(channelId, { maxItems = 200 } = {}) {
+  const channel = findChannelOrThrow(channelId);
+  return cached(`yt:uploads:${channelId}:${maxItems}`, SEARCH_CACHE_TTL_MS, async () => {
+    const channelInfo = await youtubeGet('/channels', { part: 'contentDetails', id: channel.channelId });
+    const uploadsPlaylistId = channelInfo.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) return [];
+
+    const videos = [];
+    let pageToken = '';
+    while (videos.length < maxItems) {
+      const json = await youtubeGet('/playlistItems', {
+        part: 'snippet',
+        playlistId: uploadsPlaylistId,
+        maxResults: '50',
+        ...(pageToken ? { pageToken } : {}),
+      });
+      for (const item of json.items || []) {
+        const videoId = item.snippet?.resourceId?.videoId;
+        if (!videoId) continue;
+        videos.push({
+          videoId,
+          title: item.snippet?.title || 'Untitled',
+          thumbnail: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || '',
+          publishedAt: item.snippet?.publishedAt || null,
+          channelName: channel.name,
+        });
+      }
+      pageToken = json.nextPageToken;
+      if (!pageToken) break;
+    }
+    return videos.slice(0, maxItems);
+  });
+}

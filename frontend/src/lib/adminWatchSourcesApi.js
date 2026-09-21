@@ -10,6 +10,7 @@ export const AdminWatchSources = {
     mal_id: Number(malId), youtube_url: youtubeUrl, channel_name: channelName || undefined, label: label || undefined,
   }),
   pending: () => apiGet('/api/admin/watch-sources/pending'),
+  bulkImport: (channel, maxItems) => apiPost('/api/admin/watch-sources/bulk-import', { channel, maxItems }),
   approve: (id) => apiPost(`/api/admin/watch-sources/${id}/approve`),
   reject: (id) => apiPost(`/api/admin/watch-sources/${id}/reject`),
 };

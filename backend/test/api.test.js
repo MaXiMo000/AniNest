@@ -13,12 +13,14 @@
 // cap; screenshot-search's edge (wrong content type, empty body) is pure
 // body-parser/route logic that never reaches trace.moe; manga's edge (bad
 // id format, out-of-allowlist filter values) never reaches MangaDex either.
-// /api/admin/watch-sources/search's actual YouTube results are the same
-// story (no YOUTUBE_API_KEY in the test env, on purpose) - what IS covered
-// is that it fails closed with a clear "not configured" response rather
-// than a raw crash, and every input-validation/auth/admin-gating edge
-// around anime_watch_sources, including the security-critical
-// parseYouTubeVideoId parser itself (tested directly, many malicious inputs).
+// /api/admin/watch-sources/search and /bulk-import's actual YouTube results
+// are the same story (no YOUTUBE_API_KEY in the test env, on purpose) -
+// what IS covered is that both fail closed with a clear "not configured"
+// response rather than a raw crash, and every input-validation/auth/
+// admin-gating edge around anime_watch_sources, including the security-
+// critical parseYouTubeVideoId parser (many malicious inputs) and
+// extractSeriesGuess's episode-detection/title-cleanup (many real upload
+// title shapes) - both pure functions, tested directly and deterministically.
 //
 // Run with: npm test
 
@@ -945,6 +947,36 @@ test('admin channel allowlist is exposed and scoped to the curated official chan
   assert.equal(res.status, 200);
   const ids = res.json.data.map((c) => c.id);
   assert.ok(ids.includes('museasia') && ids.includes('anione') && ids.includes('crunchyroll'));
+});
+
+test('extractSeriesGuess pulls a series title + episode label from real upload titles, and rejects non-episode content', async () => {
+  const { extractSeriesGuess } = await import('../src/lib/watchSourceMatcher.js');
+
+  assert.deepEqual(extractSeriesGuess('Mushoku Tensei Episode 12 [ENG SUB]'), { seriesGuess: 'Mushoku Tensei', episodeLabel: 'Episode 12' });
+  assert.deepEqual(extractSeriesGuess('Attack on Titan | Episode 1 | Ani-One Asia'), { seriesGuess: 'Attack on Titan', episodeLabel: 'Episode 1' });
+  assert.deepEqual(extractSeriesGuess('Kaiju No. 8 - Ep 5'), { seriesGuess: 'Kaiju No. 8', episodeLabel: 'Episode 5' });
+  assert.deepEqual(extractSeriesGuess('ONE PIECE E1071'), { seriesGuess: 'ONE PIECE', episodeLabel: 'Episode 1071' });
+
+  // No episode marker at all - trailers/announcements/AMVs must be
+  // rejected outright, not guessed into a series title.
+  assert.deepEqual(extractSeriesGuess('Crunchyroll Anime Awards 2024 Highlights'), { seriesGuess: null, episodeLabel: null });
+  assert.deepEqual(extractSeriesGuess('Muse Asia Channel Trailer'), { seriesGuess: null, episodeLabel: null });
+  assert.deepEqual(extractSeriesGuess(''), { seriesGuess: null, episodeLabel: null });
+});
+
+test('bulk-import requires admin, validates its input, and reports "not configured" without a live call when YOUTUBE_API_KEY is unset', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  const anonRes = await anon.post('/api/admin/watch-sources/bulk-import', { csrf: true, body: { channel: 'museasia' } });
+  assert.equal(anonRes.status, 401);
+
+  const admin = await makeAdminAgent();
+  const missingChannel = await admin.post('/api/admin/watch-sources/bulk-import', { csrf: true, body: {} });
+  assert.equal(missingChannel.status, 400);
+
+  const res = await admin.post('/api/admin/watch-sources/bulk-import', { csrf: true, body: { channel: 'museasia' } });
+  assert.equal(res.status, 503);
+  assert.equal(res.json.notConfigured, true);
 });
 
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {

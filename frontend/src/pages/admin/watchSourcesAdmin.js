@@ -18,6 +18,46 @@ let searchResults = null;
 let searchNotice = null; // { kind: 'quotaExceeded' | 'notConfigured' | 'error', message }
 let channels = null;
 
+function bulkImportSectionHTML(channelsList) {
+  return `
+    <div class="watch-box">
+      <h3>📥 Import from a channel</h3>
+      <p style="color:var(--muted);font-weight:600;margin:0 0 10px">
+        Scans everything a channel has actually uploaded (cheap - a few quota units total, not per-title), keeps only
+        uploads that look like a real numbered episode, and adds it only when the guessed series title confidently
+        matches an AniNest search result. Anything ambiguous is reported below, never guessed in.
+      </p>
+      <form id="bulk-import-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="bulk-import-channel">
+          ${channelsList.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+        <button type="submit" class="btn-pow btn-pow--sm">📥 Import</button>
+      </form>
+      <div id="bulk-import-result"></div>
+    </div>`;
+}
+
+function bulkImportReportHTML(report) {
+  const addedList = report.added.length
+    ? `<details open><summary>✅ Added ${report.added.length}</summary><ul class="bulk-report-list">
+        ${report.added.map((a) => `<li><a href="#/anime/${a.malId}" target="_blank" rel="noopener">${escapeHtml(a.animeTitle)}</a> — ${escapeHtml(a.episodeLabel || '')}</li>`).join('')}
+      </ul></details>` : '';
+  const unmatchedList = report.skippedNoMatch.length
+    ? `<details><summary>❓ Couldn't confidently match ${report.skippedNoMatch.length} (not added — review manually)</summary><ul class="bulk-report-list">
+        ${report.skippedNoMatch.slice(0, 40).map((s) => `<li>${escapeHtml(s.title)} <span style="color:var(--muted)">(guessed "${escapeHtml(s.guess)}")</span></li>`).join('')}
+        ${report.skippedNoMatch.length > 40 ? `<li style="color:var(--muted)">…and ${report.skippedNoMatch.length - 40} more</li>` : ''}
+      </ul></details>` : '';
+  return `
+    <div class="watch-box" style="margin-top:14px">
+      <p style="font-weight:700">
+        Scanned ${report.totalUploadsScanned} uploads — ${report.added.length} added,
+        ${report.duplicates} already there, ${report.skippedNoEpisode} not episode-shaped, ${report.skippedNoMatch.length} unmatched.
+      </p>
+      ${addedList}
+      ${unmatchedList}
+    </div>`;
+}
+
 function pickerHTML() {
   return `
     <div class="watch-box">
@@ -157,6 +197,7 @@ function render(root) {
       <h2 class="section-title">🛠️ Watch-Source Curation</h2>
       <span class="section-sub">Admin only</span>
     </div>
+    ${channels ? bulkImportSectionHTML(channels) : loadingHTML('LOADING')}
     ${pickedAnime ? pickedAnimeHTML(pickedAnime) : pickerHTML()}
     ${pickedAnime && channels ? searchFormHTML(channels) : ''}
     <div id="pending-section"></div>
@@ -166,6 +207,29 @@ function render(root) {
 }
 
 function wireEvents(root) {
+  root.querySelector('#bulk-import-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const channel = root.querySelector('#bulk-import-channel').value;
+    const resultEl = root.querySelector('#bulk-import-result');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    resultEl.innerHTML = loadingHTML('SCANNING CHANNEL');
+    try {
+      const report = await AdminWatchSources.bulkImport(channel);
+      resultEl.innerHTML = bulkImportReportHTML(report);
+      showToast(`Added ${report.added.length} new free episodes!`);
+      renderPendingSection(root);
+    } catch (err) {
+      resultEl.innerHTML = err.quotaExceeded
+        ? '<div class="error-box">⏳ YouTube quota is exhausted for today — try again tomorrow.</div>'
+        : err.notConfigured
+          ? '<div class="error-box">⚙️ YouTube search isn\'t configured (set YOUTUBE_API_KEY).</div>'
+          : `<div class="error-box">💥 ${escapeHtml(err.message || 'Import failed.')}</div>`;
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
   root.querySelector('#anime-search-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = root.querySelector('#anime-search-input');
@@ -258,7 +322,7 @@ function wireEvents(root) {
   });
 }
 
-export function renderWatchSourcesAdmin(root) {
+export async function renderWatchSourcesAdmin(root) {
   document.title = 'Watch-Source Curation — AniNest';
   if (!Auth.get().user?.isAdmin) {
     root.innerHTML = '<div class="empty-state"><span class="big-emoji">🌀</span>This page wandered off into the filler dimension.</div>';
@@ -268,5 +332,8 @@ export function renderWatchSourcesAdmin(root) {
   searchResults = null;
   searchNotice = null;
   channels = null;
+  root.innerHTML = loadingHTML('LOADING');
+  const chRes = await AdminWatchSources.channels().catch(() => ({ data: [] }));
+  channels = chRes.data;
   render(root);
 }
