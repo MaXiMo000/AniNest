@@ -64,6 +64,7 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Installable (PWA)** — "Add to Home Screen" support with an offline-capable app shell.
 - **Airing-today ticker** on Home, using the same schedule data as the weekly schedule page.
 - **Screenshot search** (`/screenshot-search`) — upload a frame from any anime and get candidate matches via [trace.moe](https://trace.moe), linking straight to that anime's detail page.
+- **OP/ED jukebox** on the details page — play an anime's actual opening/ending themes via [AnimeThemes.moe](https://animethemes.moe).
 
 ## Why a backend at all?
 
@@ -116,4 +117,4 @@ Everything previously listed here has shipped. One thing left:
 
 ## Data sources
 
-[AniList](https://anilist.co) (primary) and [Jikan](https://jikan.moe) (fallback, and still primary for the fields AniList lacks on detail pages) — both free, keyless, third-party APIs. [trace.moe](https://trace.moe) (also free, keyless) powers screenshot search, with its own much smaller shared daily quota. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.
+[AniList](https://anilist.co) (primary) and [Jikan](https://jikan.moe) (fallback, and still primary for the fields AniList lacks on detail pages) — both free, keyless, third-party APIs. [trace.moe](https://trace.moe) (also free, keyless) powers screenshot search, with its own much smaller shared daily quota. [AnimeThemes.moe](https://animethemes.moe) (also free, keyless) powers the OP/ED jukebox. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.
