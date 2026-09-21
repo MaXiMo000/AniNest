@@ -398,3 +398,59 @@ export async function anilistRandomish() {
   const pick = pool[Math.floor(Math.random() * pool.length)];
   return anilistByMalId(pick.idMal).then((r) => r?.full);
 }
+
+// AniList's own MediaListStatus enum -> AniNest's watch-status enum
+// (favorites.status: 'watching'|'plan_to_watch'|'completed'|'dropped').
+// PAUSED ("on hold") has no equivalent in our smaller enum - left
+// unclassified (null) rather than guessed into the wrong bucket.
+const LIST_STATUS_TO_WATCH_STATUS = {
+  CURRENT: 'watching',
+  REPEATING: 'watching',
+  PLANNING: 'plan_to_watch',
+  COMPLETED: 'completed',
+  DROPPED: 'dropped',
+  PAUSED: null,
+};
+
+// Fetches a public AniList user's whole anime list (not manga - out of
+// AniNest's scope) for import into `favorites`. Returns null specifically
+// for "no such user" (confirmed against the live API: this is another
+// GraphQL-error-not-null root query, same as Studio/Staff - see gqlOrNull),
+// so the route can tell that apart from a genuine AniList outage.
+export async function anilistUserAnimeList(username) {
+  const data = await gqlOrNull(`
+    query($userName: String) {
+      MediaListCollection(userName: $userName, type: ANIME) {
+        lists {
+          entries {
+            status
+            media { idMal title { romaji english } coverImage { extraLarge large } averageScore format }
+          }
+        }
+      }
+    }
+  `, { userName: username });
+  if (!data?.MediaListCollection) return null;
+
+  // A title can appear in more than one of a user's lists (e.g. a custom
+  // list alongside the default status list) - dedupe by idMal, keeping
+  // whichever occurrence is seen first.
+  const seen = new Set();
+  const entries = [];
+  for (const list of data.MediaListCollection.lists || []) {
+    for (const entry of list.entries || []) {
+      const m = entry.media;
+      if (!m?.idMal || seen.has(m.idMal)) continue;
+      seen.add(m.idMal);
+      entries.push({
+        mal_id: m.idMal,
+        title: m.title?.english || m.title?.romaji || 'Untitled',
+        image: m.coverImage?.extraLarge || m.coverImage?.large || '',
+        score: m.averageScore != null ? Math.round(m.averageScore) / 10 : null,
+        type: FORMAT_MAP[m.format] || m.format || 'TV',
+        status: LIST_STATUS_TO_WATCH_STATUS[entry.status] ?? null,
+      });
+    }
+  }
+  return entries;
+}

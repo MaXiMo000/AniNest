@@ -2,13 +2,14 @@
 // using Node's built-in test runner and fetch — no extra test dependencies.
 //
 // Deliberately NOT covered here: the /api/anime/* proxy routes' actual data,
-// /api/games/daily's actual pick, and /api/studios/:name + /api/people/:name.
-// All of these hit live third-party APIs (Jikan/AniList) to build their
-// result; asserting on real responses would make this suite flaky and burn
-// shared rate-limit budget on every run. We only test the input-validation
-// edge of routes that have one to test - studios/people take a free-text
-// name with nothing to validate beyond a length cap, so there's no
-// network-free edge worth asserting on for those two.
+// /api/games/daily's actual pick, /api/studios/:name + /api/people/:name,
+// and /api/import/anilist's actual import. All of these hit live
+// third-party APIs (Jikan/AniList) to build their result; asserting on real
+// responses would make this suite flaky and burn shared rate-limit budget
+// on every run. We only test the input-validation edge of routes that have
+// one to test - studios/people/import take a free-text name with nothing
+// to validate beyond a length cap, so there's no network-free edge worth
+// asserting on beyond "is it non-empty".
 //
 // Run with: npm test
 
@@ -613,4 +614,23 @@ test('aggregate recommendations short-circuit below the minimum seed count, with
   assert.equal(res.status, 200);
   assert.equal(res.json.recommendations.length, 0);
   assert.equal(res.json.basedOn.length, 2);
+});
+
+test('AniList list import requires auth', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const res = await agent.post('/api/import/anilist', { csrf: true, body: { username: 'someone' } });
+  assert.equal(res.status, 401);
+});
+
+test('AniList list import rejects an empty username without hitting the anime API', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const empty = await agent.post('/api/import/anilist', { csrf: true, body: { username: '' } });
+  assert.equal(empty.status, 400);
+  const missing = await agent.post('/api/import/anilist', { csrf: true, body: {} });
+  assert.equal(missing.status, 400);
 });
