@@ -20,7 +20,7 @@ cd backend
 npm test
 ```
 
-35 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, rate limiting, reviews, the game leaderboard/score endpoints, the aggregate-recommendations endpoint, the AniList list-import endpoint, and the screenshot-search endpoint. Deliberately does *not* hit the live Jikan/AniList/trace.moe APIs (would make the suite flaky and burn shared rate-limit/quota budget) — see the comment at the top of `backend/test/api.test.js`.
+37 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, rate limiting, reviews, the game leaderboard/score endpoints, the aggregate-recommendations endpoint, the AniList list-import endpoint, the screenshot-search endpoint, and achievement-badge computation. Deliberately does *not* hit the live Jikan/AniList/trace.moe/AnimeThemes APIs (would make the suite flaky and burn shared rate-limit/quota budget) — see the comment at the top of `backend/test/api.test.js`.
 
 ## Running it locally
 
@@ -54,7 +54,8 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Browse** — search, filter by genre/type/status, sort, pagination.
 - **Details** — synopsis, stats, genres, official YouTube trailer, recommendations, "Where to Watch" (official platforms only).
 - **Accounts** — register/login, favorites saved server-side and synced across devices. Import an existing public AniList list by username from the account page, mapping AniList's watch statuses onto ours.
-- **Public profiles** (`/u/username`) — a user's join date, favorites, and reviews, linked from their username anywhere it appears (reviews section, account page).
+- **Public profiles** (`/u/username`) — a user's join date, favorites, reviews, and earned achievement badges, linked from their username anywhere it appears (reviews section, account page).
+- **Achievements/badges** — earned automatically from existing activity (favorites, reviews, completed anime, Game Zone streaks, account age), shown on public profiles and the account page. No separate "unlock" step — a badge just reflects your current stats.
 - **Game Zone** (`/games`) — four original, data-driven games (no reproduced anime character art — a real copyright line, not a style choice): a **Daily Challenge** (one shared mystery anime a day, same puzzle for every visitor, Wordle-style guesses with a shareable emoji-grid result), **Higher/Lower** (guess whether the next anime's score is higher or lower), **Guess the Anime** (blurred cover + redacted synopsis, multiple choice), and a **Taste Quiz** (five questions → a genre-matched recommendation). Higher/Lower and Guess the Anime streaks are saved to a **global leaderboard** when signed in (`/games/leaderboard/:game`); playing itself never requires an account, and per-browser bests still work via `localStorage` either way.
 - **Watch status** — a lightweight tracker (Watching / Plan to Watch / Completed / Dropped) on top of favorites, with filter tabs on the Favorites page.
 - **Characters & voice actors** on the details page, sourced from whichever data source served the page (AniList or Jikan). Studio and voice-actor names link to their own browse pages (`/studio/:name`, `/person/:name`) listing everything else they've worked on.
@@ -112,9 +113,7 @@ This was built with the assumption it might be exposed publicly, so:
 
 ## Ideas for later (UI & features)
 
-Everything previously listed here has shipped. One thing left:
-
-- **Achievements/badges** once reviews/favorites have enough data to badge against.
+Everything previously listed here has shipped, including achievements/badges. Nothing is currently queued.
 
 ## Data sources
 
