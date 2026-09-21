@@ -202,6 +202,14 @@ button { font-family: var(--font-body); cursor: pointer; }
   border-radius: 8px;
 }
 .nav-dropdown-menu a:hover { background: rgba(255,255,255,0.06); }
+/* Hidden for everyone except an is_admin account - main.js toggles
+   body.is-admin from the same place it already renders the auth area, so
+   this is a plain CSS gate rather than conditionally-built nav markup. Not
+   a real security boundary on its own (every admin route also checks
+   requireAdmin server-side) - just keeps a non-admin from seeing a link to
+   a page that would 404 them anyway. */
+[data-admin-only] { display: none; }
+body.is-admin [data-admin-only] { display: flex; }
 
 /* ===================== Buttons ===================== */
 .btn-pow {
@@ -754,6 +762,46 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .watch-box h3 { margin-top: 0; }
 .watch-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+
+/* ===================== Admin: watch-source curation ===================== */
+#yt-search-form input, #yt-search-form select, #yt-manual-form input {
+  padding: 10px 12px;
+  border: 2.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--bg2);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+.admin-yt-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.admin-yt-result {
+  background: var(--bg2);
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.admin-yt-result img { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; }
+.admin-yt-result-title { font-weight: 700; font-size: 0.85rem; flex: 1; }
+.admin-pending-list { display: flex; flex-direction: column; gap: 16px; }
+.admin-pending-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 14px;
+  padding: 14px;
+}
+.admin-pending-meta { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.admin-pending-meta a { color: var(--blue); }
 
 .info-grid {
   display: grid;

@@ -6,6 +6,7 @@ import { Auth } from '../lib/authStore.js';
 import { navigate } from '../lib/router.js';
 import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { powSelectHTML } from '../lib/powSelect.js';
+import { WatchSources } from '../lib/watchSourcesApi.js';
 
 function fmtDate(x) {
   return x?.string || '?';
@@ -46,6 +47,30 @@ function watchBoxHTML(a) {
       <p style="color:var(--muted);font-weight:600;margin:0">We link to official platforms only — no sketchy streams here, gotta support the studios!</p>
       <div class="watch-links">${links}</div>
     </div>`;
+}
+
+// Curated official YouTube uploads (Muse Asia, Ani-One Asia, Crunchyroll's
+// own channel, etc.) - deliberately separate from watchBoxHTML above
+// (licensed-platform links, not embeddable) rather than merged into it, so
+// "actually watchable here for free" never gets visually confused with
+// "here's a link to a paid platform". Always rebuilt from the bare video id
+// the backend returns - never trusts/embeds a raw URL (see
+// backend/src/lib/youtubeUrl.js).
+function freeWatchSectionHTML(sources, malId) {
+  const embedUrlFor = (id) => `https://www.youtube-nocookie.com/embed/${id}`;
+  const players = sources.map((s) => `
+    <div class="tv-frame">
+      <div class="tv-screen"><iframe src="${embedUrlFor(escapeHtml(s.youtube_video_id))}" title="${escapeHtml(s.label || 'Free episode')}" allowfullscreen loading="lazy"></iframe></div>
+      <div class="tv-label">▶ ${escapeHtml(s.channel_name || 'Official upload')}${s.label ? ` — ${escapeHtml(s.label)}` : ''}</div>
+    </div>`).join('');
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">🆓 Watch Free (Official)</h2>
+        <a href="#/anime/${malId}/submit-watch-link" class="chip">➕ Suggest a link</a>
+      </div>
+      ${sources.length ? players : '<p style="color:var(--muted);font-weight:600">No free official episodes added yet — know one? Suggest a link above!</p>'}
+    </section>`;
 }
 
 function watchStatusHTML(malId) {
@@ -207,12 +232,13 @@ function wireReviewForm(root, malId, animeTitle) {
 export async function renderDetails(root, id) {
   root.innerHTML = loadingHTML('LOADING EPISODE DATA');
   try {
-    const [{ data: a }, recRes, reviewsData, charRes, themesRes] = await Promise.all([
+    const [{ data: a }, recRes, reviewsData, charRes, themesRes, watchSourcesRes] = await Promise.all([
       Api.fullById(id),
       Api.recommendations(id).catch(() => ({ data: [] })),
       Reviews.list(id).catch(() => ({ reviews: [], average: null, count: 0, myReview: null })),
       Api.characters(id).catch(() => ({ data: [] })),
       Api.themes(id).catch(() => ({ data: [] })),
+      WatchSources.forAnime(id).catch(() => ({ data: [] })),
     ]);
 
     const img = escapeHtml(imageOf(a));
@@ -220,6 +246,7 @@ export async function renderDetails(root, id) {
     const recs = (recRes.data || []).slice(0, 12).map((r) => r.entry);
     const characters = charRes.data || [];
     const themes = themesRes.data || [];
+    const watchSources = watchSourcesRes.data || [];
 
     document.title = `${a.title} — AniNest`;
     RecentlyViewed.record(a);
@@ -248,6 +275,7 @@ export async function renderDetails(root, id) {
       <div class="speech-bubble">${escapeHtml(a.synopsis || 'No synopsis available for this one — pure mystery box.')}</div>
 
       ${trailerHTML(a)}
+      ${freeWatchSectionHTML(watchSources, a.mal_id)}
       ${watchBoxHTML(a)}
 
       <div class="info-grid">

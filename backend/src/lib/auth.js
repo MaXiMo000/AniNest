@@ -44,7 +44,7 @@ export async function getUserForToken(token) {
   if (!token) return null;
   const result = await db.execute({
     sql: `
-      SELECT s.expires_at, u.id, u.username, u.email, u.created_at
+      SELECT s.expires_at, u.id, u.username, u.email, u.created_at, u.is_admin
       FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?
     `,
@@ -56,7 +56,10 @@ export async function getUserForToken(token) {
     await db.execute({ sql: 'DELETE FROM sessions WHERE token_hash = ?', args: [hashToken(token)] });
     return null;
   }
-  return { id: Number(row.id), username: row.username, email: row.email, createdAt: row.created_at };
+  return {
+    id: Number(row.id), username: row.username, email: row.email, createdAt: row.created_at,
+    isAdmin: Boolean(Number(row.is_admin)),
+  };
 }
 
 export async function pruneExpiredSessions() {

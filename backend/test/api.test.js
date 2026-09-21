@@ -13,6 +13,12 @@
 // cap; screenshot-search's edge (wrong content type, empty body) is pure
 // body-parser/route logic that never reaches trace.moe; manga's edge (bad
 // id format, out-of-allowlist filter values) never reaches MangaDex either.
+// /api/admin/watch-sources/search's actual YouTube results are the same
+// story (no YOUTUBE_API_KEY in the test env, on purpose) - what IS covered
+// is that it fails closed with a clear "not configured" response rather
+// than a raw crash, and every input-validation/auth/admin-gating edge
+// around anime_watch_sources, including the security-critical
+// parseYouTubeVideoId parser itself (tested directly, many malicious inputs).
 //
 // Run with: npm test
 
@@ -37,6 +43,7 @@ process.env.RATE_LIMIT = '1000';
 
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/lib/db.js');
+const { parseYouTubeVideoId } = await import('../src/lib/youtubeUrl.js');
 
 let server;
 let baseUrl;
@@ -125,6 +132,19 @@ function uniqueUser() {
   uniqueSuffix += 1;
   const n = `${Date.now()}${uniqueSuffix}`.slice(-10);
   return { username: `u${n}`, email: `u${n}@test.local`, password: 'correcthorse123' };
+}
+
+// ADMIN_USERNAMES only gets applied once, at db.js's module-load time (see
+// its own comment) - long before any test-registered user exists, so it
+// can't be used to mint a test admin. Flipping is_admin directly is the
+// test-only equivalent of what that env var does in production.
+async function makeAdminAgent() {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  const reg = await agent.post('/api/auth/register', { csrf: true, body: user });
+  await db.execute({ sql: 'UPDATE users SET is_admin = 1 WHERE id = ?', args: [reg.json.user.id] });
+  return agent;
 }
 
 test('health check', async () => {
@@ -752,6 +772,179 @@ test('AniList list import rejects an empty username without hitting the anime AP
   assert.equal(empty.status, 400);
   const missing = await agent.post('/api/import/anilist', { csrf: true, body: {} });
   assert.equal(missing.status, 400);
+});
+
+test('parseYouTubeVideoId only accepts real YouTube video links, rejecting everything else', () => {
+  // Valid shapes actually used by YouTube.
+  assert.equal(parseYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://youtube.com/watch?v=dQw4w9WgXcQ&list=abc'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://youtu.be/dQw4w9WgXcQ?t=30'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://www.youtube.com/embed/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://m.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(parseYouTubeVideoId('https://www.youtube.com/shorts/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+
+  // Security-critical rejections - none of these should ever produce an id.
+  assert.equal(parseYouTubeVideoId('javascript:alert(1)'), null);
+  assert.equal(parseYouTubeVideoId('data:text/html,<script>alert(1)</script>'), null);
+  assert.equal(parseYouTubeVideoId('https://evil.example/watch?v=dQw4w9WgXcQ'), null, 'a non-YouTube host must never pass, even with a YouTube-shaped path');
+  assert.equal(parseYouTubeVideoId('https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ'), null, 'a lookalike host (real host is evil.example) must be rejected');
+  assert.equal(parseYouTubeVideoId('https://notyoutube.com/watch?v=dQw4w9WgXcQ'), null);
+  assert.equal(parseYouTubeVideoId('ftp://youtube.com/watch?v=dQw4w9WgXcQ'), null, 'only http/https protocols are allowed');
+  assert.equal(parseYouTubeVideoId('https://www.youtube.com/watch?v=short'), null, 'id must be exactly 11 chars');
+  assert.equal(parseYouTubeVideoId('https://www.youtube.com/'), null, 'no video id present at all');
+  assert.equal(parseYouTubeVideoId('not a url'), null);
+  assert.equal(parseYouTubeVideoId(''), null);
+  assert.equal(parseYouTubeVideoId(null), null);
+  assert.equal(parseYouTubeVideoId(123), null);
+});
+
+test('GET anime watch-sources is public, validates the id, and starts empty', async () => {
+  const agent = makeAgent();
+  const bad = await agent.get('/api/anime/not-a-number/watch-sources');
+  assert.equal(bad.status, 400);
+  const ok = await agent.get('/api/anime/99999999/watch-sources');
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.json.data, []);
+});
+
+test('anime-watch-sources submission requires auth', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const res = await agent.post('/api/anime-watch-sources', {
+    csrf: true,
+    body: { mal_id: 1, youtube_url: 'https://youtu.be/dQw4w9WgXcQ' },
+  });
+  assert.equal(res.status, 401);
+});
+
+test('anime-watch-sources submission rejects anything that is not a real YouTube link', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  for (const bad of ['javascript:alert(1)', 'https://evil.example/video', 'not a url', 'https://vimeo.com/12345']) {
+    const res = await agent.post('/api/anime-watch-sources', { csrf: true, body: { mal_id: 1, youtube_url: bad } });
+    assert.equal(res.status, 400, `expected "${bad}" to be rejected`);
+  }
+});
+
+test('a submitted link stays private (pending) until an admin approves it', async () => {
+  const submitter = makeAgent();
+  await submitter.get('/api/health');
+  const submitterUser = uniqueUser();
+  await submitter.post('/api/auth/register', { csrf: true, body: submitterUser });
+
+  const malId = 20000 + Math.floor(Math.random() * 10000);
+  const submit = await submitter.post('/api/anime-watch-sources', {
+    csrf: true,
+    body: { mal_id: malId, youtube_url: 'https://youtu.be/dQw4w9WgXcQ', channel_name: 'Muse Asia' },
+  });
+  assert.equal(submit.status, 201);
+
+  // Not public yet - only 'approved' rows are ever returned here.
+  const beforeApproval = await submitter.get(`/api/anime/${malId}/watch-sources`);
+  assert.deepEqual(beforeApproval.json.data, []);
+
+  // Resubmitting the exact same link for the exact same anime is rejected.
+  const dupe = await submitter.post('/api/anime-watch-sources', {
+    csrf: true,
+    body: { mal_id: malId, youtube_url: 'https://youtu.be/dQw4w9WgXcQ' },
+  });
+  assert.equal(dupe.status, 409);
+
+  const admin = await makeAdminAgent();
+  const pending = await admin.get('/api/admin/watch-sources/pending');
+  assert.equal(pending.status, 200);
+  const row = pending.json.data.find((r) => r.mal_id === malId);
+  assert.ok(row, 'the pending submission should show up in the admin queue');
+  assert.equal(row.submitted_by_username, submitterUser.username);
+  assert.equal(row.youtube_video_id, 'dQw4w9WgXcQ');
+
+  const approve = await admin.post(`/api/admin/watch-sources/${row.id}/approve`, { csrf: true });
+  assert.equal(approve.status, 204);
+
+  const afterApproval = await submitter.get(`/api/anime/${malId}/watch-sources`);
+  assert.equal(afterApproval.json.data.length, 1);
+  assert.equal(afterApproval.json.data[0].youtube_video_id, 'dQw4w9WgXcQ');
+});
+
+test('an admin-rejected submission never becomes public', async () => {
+  const submitter = makeAgent();
+  await submitter.get('/api/health');
+  await submitter.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+
+  const malId = 30000 + Math.floor(Math.random() * 10000);
+  await submitter.post('/api/anime-watch-sources', {
+    csrf: true,
+    body: { mal_id: malId, youtube_url: 'https://youtu.be/oHg5SJYRHA0' },
+  });
+
+  const admin = await makeAdminAgent();
+  const pending = await admin.get('/api/admin/watch-sources/pending');
+  const row = pending.json.data.find((r) => r.mal_id === malId);
+
+  const reject = await admin.post(`/api/admin/watch-sources/${row.id}/reject`, { csrf: true });
+  assert.equal(reject.status, 204);
+
+  const publicList = await submitter.get(`/api/anime/${malId}/watch-sources`);
+  assert.deepEqual(publicList.json.data, []);
+});
+
+test('admin watch-source routes are hidden (404) from a signed-in non-admin, and require auth for an anonymous caller', async () => {
+  const anon = makeAgent();
+  const anonRes = await anon.get('/api/admin/watch-sources/pending');
+  assert.equal(anonRes.status, 401);
+
+  const regular = makeAgent();
+  await regular.get('/api/health');
+  await regular.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const regularRes = await regular.get('/api/admin/watch-sources/pending');
+  assert.equal(regularRes.status, 404, 'a non-admin should not even be able to tell this route exists');
+});
+
+test('an admin adding a link directly lands as already-approved, and only accepts a real YouTube link', async () => {
+  const admin = await makeAdminAgent();
+  const malId = 40000 + Math.floor(Math.random() * 10000);
+
+  const bad = await admin.post('/api/admin/watch-sources', {
+    csrf: true,
+    body: { mal_id: malId, youtube_url: 'https://evil.example/not-youtube' },
+  });
+  assert.equal(bad.status, 400);
+
+  const add = await admin.post('/api/admin/watch-sources', {
+    csrf: true,
+    body: { mal_id: malId, youtube_url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw', channel_name: 'Ani-One Asia' },
+  });
+  assert.equal(add.status, 201);
+
+  const publicList = await admin.get(`/api/anime/${malId}/watch-sources`);
+  assert.equal(publicList.json.data.length, 1);
+  assert.equal(publicList.json.data[0].youtube_video_id, 'jNQXAC9IVRw');
+  assert.equal(publicList.json.data[0].channel_name, 'Ani-One Asia');
+});
+
+test('admin YouTube search reports "not configured" without a live call when YOUTUBE_API_KEY is unset', async () => {
+  const admin = await makeAdminAgent();
+  assert.equal(process.env.YOUTUBE_API_KEY, undefined, 'test env should not have a real key set');
+
+  const missingParams = await admin.get('/api/admin/watch-sources/search');
+  assert.equal(missingParams.status, 400);
+
+  const res = await admin.get('/api/admin/watch-sources/search?channel=museasia&q=Naruto');
+  assert.equal(res.status, 503);
+  assert.equal(res.json.notConfigured, true);
+});
+
+test('admin channel allowlist is exposed and scoped to the curated official channels', async () => {
+  const admin = await makeAdminAgent();
+  const res = await admin.get('/api/admin/watch-sources/channels');
+  assert.equal(res.status, 200);
+  const ids = res.json.data.map((c) => c.id);
+  assert.ok(ids.includes('museasia') && ids.includes('anione') && ids.includes('crunchyroll'));
 });
 
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {

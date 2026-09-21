@@ -22,6 +22,8 @@ import { renderCompare } from './pages/compare.js';
 import { renderMangaBrowse } from './pages/mangaBrowse.js';
 import { renderMangaDetail } from './pages/mangaDetail.js';
 import { renderMangaFavorites } from './pages/mangaFavorites.js';
+import { renderWatchSourceSubmit } from './pages/watchSourceSubmit.js';
+import { renderWatchSourcesAdmin } from './pages/admin/watchSourcesAdmin.js';
 import { wireCardEvents, wireMangaCardEvents, updateFavCount, updateMangaFavCount, emptyHTML, escapeHtml, loadingHTML } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { MangaFavorites } from './lib/mangaStore.js';
@@ -39,6 +41,10 @@ function renderAuthArea() {
   authArea.innerHTML = user
     ? `<a href="#/account" class="user-chip"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span>${escapeHtml(user.username)}</a>`
     : `<span class="auth-links"><a href="#/login">Log In</a><a href="#/register" class="btn-pow btn-pow--sm">Sign Up</a></span>`;
+  // Drives the [data-admin-only] nav link's visibility (see index.html /
+  // style.css) - CSS-gated rather than conditionally rendered HTML, so it's
+  // one class toggle here instead of duplicating the auth-render logic.
+  document.body.classList.toggle('is-admin', Boolean(user?.isAdmin));
 }
 
 // Single global delegated handler for every anime-card / favorite-heart click,
@@ -90,6 +96,8 @@ route('/compare', () => renderCompare(app));
 route('/manga', ({ params }) => renderMangaBrowse(app, params));
 route('/manga/:id', ({ path }) => renderMangaDetail(app, path.id));
 route('/manga-favorites', () => renderMangaFavorites(app));
+route('/anime/:id/submit-watch-link', ({ path }) => renderWatchSourceSubmit(app, path.id));
+route('/admin/watch-sources', () => renderWatchSourcesAdmin(app));
 
 notFound(() => {
   app.innerHTML = emptyHTML('This page wandered off into the filler dimension.', '🌀');

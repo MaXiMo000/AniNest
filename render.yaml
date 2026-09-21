@@ -35,6 +35,22 @@ services:
       # https://dash.cloudflare.com/?to=/:account/turnstile
       - key: TURNSTILE_SECRET_KEY
         sync: false
+      # Comma-separated usernames to promote to admin (unlocks the YouTube
+      # search-assisted watch-source curation page and its approve/reject
+      # queue) - applied on every boot, so an account must already be
+      # registered before it's added here, or added and then redeployed.
+      # Leave unset and nobody is an admin; the feature just stays hidden.
+      - key: ADMIN_USERNAMES
+        sync: false
+      # Powers the admin-only "search official YouTube channels" assist on
+      # the watch-source curation page (see backend/src/lib/youtube.js).
+      # Optional - free Google Cloud API key (YouTube Data API v3, no
+      # billing required for the default 10,000-unit/day quota). Leave
+      # blank to skip search-assist entirely; admins can still add links by
+      # pasting a URL directly, and regular users can still submit links
+      # for review either way - this key only affects the search shortcut.
+      - key: YOUTUBE_API_KEY
+        sync: false
 
   - name: aninest-frontend
     type: web

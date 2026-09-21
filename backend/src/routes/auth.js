@@ -64,7 +64,7 @@ authRouter.post('/register', async (req, res, next) => {
     const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
     const created = await db.execute({ sql: 'SELECT created_at FROM users WHERE id = ?', args: [userId] });
-    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at } });
+    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at, isAdmin: false } });
   } catch (err) { next(err); }
 });
 
@@ -95,7 +95,12 @@ authRouter.post('/login', async (req, res, next) => {
     const userId = Number(user.id);
     const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
-    res.json({ user: { id: userId, username: user.username, email: user.email, createdAt: user.created_at } });
+    res.json({
+      user: {
+        id: userId, username: user.username, email: user.email, createdAt: user.created_at,
+        isAdmin: Boolean(Number(user.is_admin)),
+      },
+    });
   } catch (err) { next(err); }
 });
 

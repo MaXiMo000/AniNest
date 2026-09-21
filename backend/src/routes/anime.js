@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as animeSource from '../lib/animeSource.js';
+import { db } from '../lib/db.js';
 
 export const animeRouter = Router();
 
@@ -83,4 +84,21 @@ animeRouter.get('/:id/themes', asyncRoute(async (req, res) => {
   const id = parseAnimeId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
   res.json({ data: await animeSource.themes(id) });
+}));
+
+// Legal free-to-watch episode links (curated official YouTube uploads -
+// Muse Asia, Ani-One Asia, Crunchyroll's own channel), never a scraped/
+// piracy source. Public/no auth, same tier as this file's other routes -
+// only ever returns 'approved' rows, so a pending or rejected submission
+// (see animeWatchSources.js/adminWatchSources.js) is invisible here
+// regardless of who's asking.
+animeRouter.get('/:id/watch-sources', asyncRoute(async (req, res) => {
+  const id = parseAnimeId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
+  const result = await db.execute({
+    sql: `SELECT id, youtube_video_id, channel_name, label FROM anime_watch_sources
+          WHERE mal_id = ? AND status = 'approved' ORDER BY created_at ASC`,
+    args: [id],
+  });
+  res.json({ data: result.rows });
 }));
