@@ -72,6 +72,7 @@ export async function renderFavorites(root) {
     <div class="section-head">
       <h2 class="section-title">💖 Your Favorites</h2>
       <span class="section-sub">${all.length} saved</span>
+      ${all.length ? '<a href="#/tier-list" class="chip">🏆 Make a Tier List</a>' : ''}
     </div>
     <div class="library-tabs">
       ${FILTERS.map((f) => `<button class="library-tab ${activeFilter === f.value ? 'is-active' : ''}" data-filter="${f.value}">${f.emoji} ${escapeHtml(f.label)} (${counts[f.value] || 0})</button>`).join('')}

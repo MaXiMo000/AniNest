@@ -1422,12 +1422,69 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
   .compare-label { order: -1; }
 }
 
+/* ===================== Tier List Maker ===================== */
+.tier-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 10px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.tier-label {
+  flex: 0 0 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: var(--ink);
+  border-right: var(--border-w) solid var(--ink);
+}
+.tier-pool {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  min-height: 100px;
+  background: var(--panel);
+  transition: background 0.15s ease;
+}
+.tier-pool.is-drag-over { background: var(--bg2); }
+#unranked-pool-wrap .tier-pool {
+  border: var(--border-w) dashed var(--muted);
+  border-radius: var(--radius);
+  min-height: 120px;
+}
+.tier-card {
+  width: 70px;
+  height: 100px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  cursor: grab;
+  background: var(--bg2);
+  flex-shrink: 0;
+}
+.tier-card:active { cursor: grabbing; }
+.tier-card img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.tier-card-fallback {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+  font-weight: 800; font-size: 1.2rem; color: var(--muted);
+}
+
 /* ===================== Responsive ===================== */
 @media (max-width: 860px) {
   .main-nav { display: none; }
   .nav-toggle { display: inline-flex; }
   .header-inner { flex-wrap: wrap; }
   .search-form { order: 3; max-width: 100%; flex-basis: 100%; }
+  .tier-label { flex-basis: 60px; font-size: 1.4rem; }
+  .tier-card { width: 52px; height: 74px; }
   body.nav-open .main-nav {
     display: flex;
     position: fixed;
