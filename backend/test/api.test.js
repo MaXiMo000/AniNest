@@ -3,13 +3,14 @@
 //
 // Deliberately NOT covered here: the /api/anime/* proxy routes' actual data,
 // /api/games/daily's actual pick, /api/studios/:name + /api/people/:name,
-// and /api/import/anilist's actual import. All of these hit live
-// third-party APIs (Jikan/AniList) to build their result; asserting on real
-// responses would make this suite flaky and burn shared rate-limit budget
-// on every run. We only test the input-validation edge of routes that have
-// one to test - studios/people/import take a free-text name with nothing
-// to validate beyond a length cap, so there's no network-free edge worth
-// asserting on beyond "is it non-empty".
+// /api/import/anilist's actual import, and /api/screenshot-search's actual
+// match. All of these hit live third-party APIs (Jikan/AniList/trace.moe) to
+// build their result; asserting on real responses would make this suite
+// flaky and burn shared rate-limit/quota budget on every run. We only test
+// the input-validation edge of routes that have one to test - studios/
+// people/import take a free-text name with nothing to validate beyond a
+// length cap; screenshot-search's edge (wrong content type, empty body) is
+// pure body-parser/route logic that never reaches trace.moe.
 //
 // Run with: npm test
 
@@ -87,7 +88,11 @@ function makeAgent() {
     if (headerToken) csrfToken = headerToken;
   }
 
-  async function request(method, path, { body, headers = {}, csrf = false } = {}) {
+  // `raw` sends its value as-is (a Buffer/string), skipping JSON encoding -
+  // needed for the one route that takes a binary body (screenshot search).
+  // `headers` still wins for Content-Type in that case since the `body`
+  // branch below is what forces application/json, not this one.
+  async function request(method, path, { body, raw, headers = {}, csrf = false } = {}) {
     const finalHeaders = { ...headers };
     if (body !== undefined) finalHeaders['Content-Type'] = 'application/json';
     if (cookieHeader()) finalHeaders.Cookie = cookieHeader();
@@ -96,7 +101,7 @@ function makeAgent() {
     const res = await fetch(baseUrl + path, {
       method,
       headers: finalHeaders,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: raw !== undefined ? raw : (body !== undefined ? JSON.stringify(body) : undefined),
     });
     storeCookies(res);
     let json = null;
@@ -633,4 +638,23 @@ test('AniList list import rejects an empty username without hitting the anime AP
   assert.equal(empty.status, 400);
   const missing = await agent.post('/api/import/anilist', { csrf: true, body: {} });
   assert.equal(missing.status, 400);
+});
+
+test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const res = await agent.post('/api/screenshot-search', { csrf: true, body: { not: 'an image' } });
+  assert.equal(res.status, 400);
+  assert.match(res.json.error, /jpeg|png|webp/i);
+});
+
+test('screenshot search rejects an empty image body without hitting trace.moe', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const res = await agent.post('/api/screenshot-search', {
+    csrf: true,
+    raw: Buffer.alloc(0),
+    headers: { 'Content-Type': 'image/jpeg' },
+  });
+  assert.equal(res.status, 400);
 });
