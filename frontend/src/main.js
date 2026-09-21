@@ -19,7 +19,7 @@ import { renderQuiz } from './pages/games/quiz.js';
 import { renderDailyChallenge } from './pages/games/dailyChallenge.js';
 import { renderLeaderboard } from './pages/games/leaderboard.js';
 import { renderCompare } from './pages/compare.js';
-import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml } from './lib/ui.js';
+import { wireCardEvents, updateFavCount, emptyHTML, escapeHtml, loadingHTML } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { Auth } from './lib/authStore.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
@@ -82,6 +82,16 @@ notFound(() => {
 async function boot() {
   renderAuthArea();
   updateFavCount();
+  // Several pages (account.js, login.js, register.js, ...) read
+  // Auth.get().user synchronously on their very first render to decide
+  // whether to redirect (e.g. bounce a logged-out visitor away from
+  // /account) - that's only correct once Auth.init() has actually
+  // resolved, so startRouter() can't fire until then. Without this
+  // loading state, #app sits completely empty for that whole wait - on a
+  // cold Render free-tier backend (documented elsewhere in this repo: a
+  // spun-down instance can take 20-60s to wake) that's a long blank page
+  // with zero feedback, easy to mistake for the site being broken.
+  app.innerHTML = loadingHTML('WAKING UP ANINEST');
   await Auth.init();
   await Favorites.loadFromServer();
   renderAuthArea();
