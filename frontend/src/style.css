@@ -883,7 +883,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 /* ===================== Auth: header area, forms, account ===================== */
 .auth-area { display: flex; align-items: center; gap: 12px; }
 .auth-links { display: flex; gap: 12px; align-items: center; font-weight: 800; }
-.user-chip {
+/* Qualified with .main-nav (not just .user-chip) so this reliably beats
+   .main-nav a's own padding rule above - a bare .user-chip class selector
+   loses that specificity fight (class+tag beats a single class), which
+   silently collapsed this pill's right-side padding down to .main-nav a's
+   2px instead of the 14px meant for it, hugging "mxximo"/the username
+   right up against the border. */
+.main-nav .user-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
