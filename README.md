@@ -20,7 +20,7 @@ cd backend
 npm test
 ```
 
-33 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, rate limiting, reviews, the game leaderboard/score endpoints, the aggregate-recommendations endpoint, and the AniList list-import endpoint. Deliberately does *not* hit the live Jikan/AniList APIs (would make the suite flaky and burn shared rate-limit budget) — see the comment at the top of `backend/test/api.test.js`.
+35 integration tests against a real (ephemeral, temp-file) instance of the app — no mocking, no separate test framework, just Node's built-in `node:test` + `fetch`. Covers the auth lifecycle, CSRF enforcement, input validation, the favorites XSS-normalization fix, per-account isolation, rate limiting, reviews, the game leaderboard/score endpoints, the aggregate-recommendations endpoint, the AniList list-import endpoint, and the screenshot-search endpoint. Deliberately does *not* hit the live Jikan/AniList/trace.moe APIs (would make the suite flaky and burn shared rate-limit/quota budget) — see the comment at the top of `backend/test/api.test.js`.
 
 ## Running it locally
 
@@ -63,6 +63,7 @@ The backend talks to SQLite either way, via [`@libsql/client`](https://github.co
 - **Min-score filter** on Browse.
 - **Installable (PWA)** — "Add to Home Screen" support with an offline-capable app shell.
 - **Airing-today ticker** on Home, using the same schedule data as the weekly schedule page.
+- **Screenshot search** (`/screenshot-search`) — upload a frame from any anime and get candidate matches via [trace.moe](https://trace.moe), linking straight to that anime's detail page.
 
 ## Why a backend at all?
 
@@ -115,4 +116,4 @@ Everything previously listed here has shipped. One thing left:
 
 ## Data sources
 
-[AniList](https://anilist.co) (primary) and [Jikan](https://jikan.moe) (fallback, and still primary for the fields AniList lacks on detail pages) — both free, keyless, third-party APIs. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.
+[AniList](https://anilist.co) (primary) and [Jikan](https://jikan.moe) (fallback, and still primary for the fields AniList lacks on detail pages) — both free, keyless, third-party APIs. [trace.moe](https://trace.moe) (also free, keyless) powers screenshot search, with its own much smaller shared daily quota. Trailers are official YouTube embeds. No episode/movie streaming is implemented — see the note in the app footer about why.
