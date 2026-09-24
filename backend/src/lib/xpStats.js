@@ -27,7 +27,8 @@ export async function loadXpInputs(userId = null) {
       sql: `SELECT user_id, COUNT(*) AS n, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS done FROM manga_favorites${only} GROUP BY user_id`,
       args,
     }),
-    db.execute({ sql: `SELECT user_id, COUNT(*) AS n FROM reviews${only} GROUP BY user_id`, args }),
+    // Anime and manga reviews both count as "reviews written".
+    db.execute({ sql: `SELECT user_id, COUNT(*) AS n FROM (SELECT user_id FROM reviews UNION ALL SELECT user_id FROM manga_reviews)${only} GROUP BY user_id`, args }),
     db.execute({ sql: `SELECT user_id, best_streak FROM game_scores${only}`, args }),
     db.execute({
       sql: `SELECT user_id, COUNT(*) AS played, SUM(won) AS won FROM daily_results${only} GROUP BY user_id`,

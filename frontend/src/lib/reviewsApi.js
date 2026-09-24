@@ -8,3 +8,10 @@ export const Reviews = {
   submit: (malId, rating, body) => apiPost('/api/reviews', { mal_id: malId, rating, body }),
   remove: (malId) => apiDelete(`/api/reviews/${malId}`),
 };
+
+// Same contract as Reviews, keyed by the MangaDex UUID.
+export const MangaReviews = {
+  list: (mangaId) => apiGet(`/api/manga-reviews/${mangaId}`),
+  submit: (mangaId, rating, body) => apiPost('/api/manga-reviews', { manga_id: mangaId, rating, body }),
+  remove: (mangaId) => apiDelete(`/api/manga-reviews/${mangaId}`),
+};

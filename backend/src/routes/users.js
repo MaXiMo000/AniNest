@@ -26,6 +26,11 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
   const user = userResult.rows[0];
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
+  const mangaReviewsResult = await db.execute({
+    sql: 'SELECT manga_id, rating, body, created_at, updated_at FROM manga_reviews WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100',
+    args: [user.id],
+  });
+
   const [favoritesResult, reviewsResult, favoritesCountResult, reviewsCountResult, completedCountResult, streakResult] = await Promise.all([
     db.execute({
       sql: 'SELECT mal_id, title, image, score, type, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT 200',
@@ -39,7 +44,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
     // above - a badge threshold has to reflect the true total, not just
     // however many rows this response happens to also be returning.
     db.execute({ sql: 'SELECT COUNT(*) AS count FROM favorites WHERE user_id = ?', args: [user.id] }),
-    db.execute({ sql: 'SELECT COUNT(*) AS count FROM reviews WHERE user_id = ?', args: [user.id] }),
+    db.execute({ sql: 'SELECT (SELECT COUNT(*) FROM reviews WHERE user_id = ?) + (SELECT COUNT(*) FROM manga_reviews WHERE user_id = ?) AS count', args: [user.id, user.id] }),
     db.execute({ sql: "SELECT COUNT(*) AS count FROM favorites WHERE user_id = ? AND status = 'completed'", args: [user.id] }),
     db.execute({ sql: 'SELECT MAX(best_streak) AS best FROM game_scores WHERE user_id = ?', args: [user.id] }),
   ]);
@@ -56,6 +61,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
     user: { username: user.username, createdAt: user.created_at },
     favorites: favoritesResult.rows,
     reviews: reviewsResult.rows,
+    mangaReviews: mangaReviewsResult.rows,
     badges,
     // Derived, not stored - see lib/xp.js. Same computation the XP leaderboard uses.
     xp: await xpForUser(user.id),

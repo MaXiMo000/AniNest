@@ -100,8 +100,7 @@ await db.executeMultiple(`
   -- than a widened one, keeping the existing anime favorites/reviews
   -- tables and data completely untouched. status mirrors favorites'
   -- watch-status idea, adapted to reading (reading/plan_to_read/completed/
-  -- dropped). manga_reviews (mirroring reviews) is intentionally not
-  -- created yet - out of scope for this slice, a near-identical fast-follow.
+  -- dropped). Manga reviews live in manga_reviews, below.
   CREATE TABLE IF NOT EXISTS manga_favorites (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -185,6 +184,20 @@ await db.executeMultiple(`
     fetched_at INTEGER NOT NULL
   );
 
+  -- Manga reviews, a mirror of reviews keyed by the MangaDex UUID (manga_id TEXT)
+  -- instead of a numeric MAL id, one review per user per manga.
+  CREATE TABLE IF NOT EXISTS manga_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    manga_id TEXT NOT NULL,
+    rating INTEGER NOT NULL,
+    body TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, manga_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_manga_reviews_manga ON manga_reviews(manga_id);
   CREATE INDEX IF NOT EXISTS idx_candidates_group ON watch_source_candidates(status, group_key);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);

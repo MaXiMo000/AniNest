@@ -1411,6 +1411,61 @@ test('free-watch grouping: languages, complete series first, long runs split int
   assert.deepEqual(lone.languages[0].groups.map((g) => g.title), ['Episode 1', 'Episode 2']);
 });
 
+test('manga reviews: public read, auth to write, validation, one per user, average, delete', async () => {
+  const mangaId = 'a1c7c817-4e59-43b7-9365-09675a149a6f';
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await anon.get('/api/manga-reviews/not-a-uuid')).status, 400);
+  const empty = await anon.get(`/api/manga-reviews/${mangaId}`);
+  assert.equal(empty.status, 200);
+  assert.deepEqual([empty.json.count, empty.json.average, empty.json.myReview], [0, null, null]);
+  assert.equal((await anon.post('/api/manga-reviews', { csrf: true, body: { manga_id: mangaId, rating: 8 } })).status, 401);
+
+  const a = makeAgent();
+  await a.get('/api/health');
+  const ua = uniqueUser();
+  await a.post('/api/auth/register', { csrf: true, body: ua });
+
+  for (const body of [{ manga_id: 'nope', rating: 8 }, { manga_id: mangaId, rating: 0 }, { manga_id: mangaId, rating: 11 }, { manga_id: mangaId, rating: 5, body: 'x'.repeat(2001) }]) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal((await a.post('/api/manga-reviews', { csrf: true, body })).status, 400);
+  }
+
+  assert.equal((await a.post('/api/manga-reviews', { csrf: true, body: { manga_id: mangaId, rating: 8, body: 'Great art' } })).status, 201);
+  // Re-posting edits the same review rather than adding a second.
+  assert.equal((await a.post('/api/manga-reviews', { csrf: true, body: { manga_id: mangaId, rating: 9, body: '<script>alert(1)</script> even better' } })).status, 201);
+
+  const b = makeAgent();
+  await b.get('/api/health');
+  await b.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  await b.post('/api/manga-reviews', { csrf: true, body: { manga_id: mangaId, rating: 7 } });
+
+  const list = await a.get(`/api/manga-reviews/${mangaId}`);
+  assert.equal(list.json.count, 2, 'one review per user');
+  assert.equal(list.json.average, 8, '(9 + 7) / 2');
+  assert.equal(list.json.myReview.rating, 9, 'the caller\'s own review is reported separately');
+  assert.equal(list.json.reviews.find((r) => r.username === ua.username).body, '<script>alert(1)</script> even better', 'stored verbatim; the page escapes it on render, same as anime reviews');
+
+  assert.equal((await a.delete(`/api/manga-reviews/${mangaId}`, { csrf: true })).status, 204);
+  assert.equal((await a.get(`/api/manga-reviews/${mangaId}`)).json.count, 1, 'only the caller\'s own review is deleted');
+  assert.equal((await anon.delete(`/api/manga-reviews/${mangaId}`, { csrf: true })).status, 401);
+});
+
+test('a manga review counts as a review for badges, XP and the public profile', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  await agent.post('/api/manga-reviews', { csrf: true, body: { manga_id: 'b1c7c817-4e59-43b7-9365-09675a149a6f', rating: 6, body: 'Solid' } });
+  const profile = await agent.get(`/api/users/${user.username}`);
+  assert.equal(profile.json.mangaReviews.length, 1);
+  assert.equal(profile.json.mangaReviews[0].rating, 6);
+  assert.ok(profile.json.badges.some((b) => b.id === 'reviews-bronze'), 'the first review of any kind earns the Critic badge');
+  // 25 (review) + 50 (Critic bronze badge)
+  assert.equal(profile.json.xp.total, 75);
+});
+
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');

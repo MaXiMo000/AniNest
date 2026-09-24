@@ -2,6 +2,8 @@ import { MangaApi } from '../lib/mangaApi.js';
 import { loadingHTML, errorHTML, escapeHtml, wireRetry, showToast, READ_STATUSES } from '../lib/ui.js';
 import { MangaFavorites } from '../lib/mangaStore.js';
 import { mangaImg } from '../lib/mangaImage.js';
+import { MangaReviews } from '../lib/reviewsApi.js';
+import { createReviewsUi } from '../lib/reviewsUi.js';
 import { navigate } from '../lib/router.js';
 
 // The manga analog of details.js's watchBoxHTML fallback branch. There's no
@@ -36,10 +38,12 @@ function readStatusHTML(mangaId) {
     </div>`;
 }
 
+const mangaReviews = createReviewsUi(MangaReviews);
+
 export async function renderMangaDetail(root, id) {
   root.innerHTML = loadingHTML('LOADING CHAPTER DATA');
   try {
-    const { data: m } = await MangaApi.byId(id);
+    const [{ data: m }, reviewsData] = await Promise.all([MangaApi.byId(id), mangaReviews.load(id)]);
 
     document.title = `${m.title} — AniNest`;
 
@@ -78,7 +82,11 @@ export async function renderMangaDetail(root, id) {
         <div class="info-box"><div class="k">Author</div><div class="v">${escapeHtml(m.author || '—')}</div></div>
         <div class="info-box"><div class="k">Year</div><div class="v">${escapeHtml(String(m.year || '—'))}</div></div>
       </div>
+
+      ${mangaReviews.sectionHTML(reviewsData)}
     `;
+
+    mangaReviews.wire(root, m.id);
 
     root.querySelector('#manga-fav-toggle')?.addEventListener('click', async (e) => {
       const btn = e.target;

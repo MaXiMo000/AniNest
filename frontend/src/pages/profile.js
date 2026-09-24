@@ -1,5 +1,7 @@
 import { Users } from '../lib/usersApi.js';
 import { Api, imageOf } from '../lib/api.js';
+import { MangaApi } from '../lib/mangaApi.js';
+import { mangaImg } from '../lib/mangaImage.js';
 import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
 
 // Public profiles show up to this many reviews, each enriched with the
@@ -38,6 +40,23 @@ function reviewRowHTML(r, anime) {
     </a>`;
 }
 
+function mangaReviewRowHTML(r, manga) {
+  const date = new Date(r.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const img = mangaImg(manga?.coverImage);
+  return `
+    <a class="review-card" href="#/manga/${encodeURIComponent(r.manga_id)}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
+      ${img ? `<img src="${escapeHtml(img)}" alt="" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
+      <div style="flex:1;min-width:0">
+        <div class="review-head">
+          <span class="badge-score small">${r.rating}</span>
+          <strong>${escapeHtml(manga?.title || 'A manga')}</strong>
+          <span class="review-date">${escapeHtml(date)}</span>
+        </div>
+        ${r.body ? `<p class="review-body">${escapeHtml(r.body)}</p>` : ''}
+      </div>
+    </a>`;
+}
+
 export async function renderProfile(root, username) {
   root.innerHTML = loadingHTML('LOADING PROFILE');
   let data;
@@ -54,6 +73,7 @@ export async function renderProfile(root, username) {
   }
 
   const { user, favorites, reviews, badges, xp } = data;
+  const mangaReviews = data.mangaReviews || [];
   const joined = user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : null;
   document.title = `${user.username} — AniNest`;
 
@@ -66,6 +86,15 @@ export async function renderProfile(root, username) {
     } catch { /* row falls back to "Anime #<id>" below */ }
   }));
 
+  const shownMangaReviews = mangaReviews.slice(0, MAX_REVIEWS_SHOWN);
+  const mangaById = new Map();
+  await Promise.all(shownMangaReviews.map(async (r) => {
+    try {
+      const { data: m } = await MangaApi.byId(r.manga_id);
+      mangaById.set(r.manga_id, m);
+    } catch { /* row falls back to a generic title below */ }
+  }));
+
   root.innerHTML = `
     <div class="account-page">
       <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
@@ -73,7 +102,7 @@ export async function renderProfile(root, username) {
       ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
       <div class="hero-actions" style="justify-content:center;margin-top:16px">
         <span class="stat-pill">💖 ${favorites.length} favorite${favorites.length === 1 ? '' : 's'}</span>
-        <span class="stat-pill">💬 ${reviews.length} review${reviews.length === 1 ? '' : 's'}</span>
+        <span class="stat-pill">💬 ${reviews.length + mangaReviews.length} review${reviews.length + mangaReviews.length === 1 ? '' : 's'}</span>
       </div>
       ${xpCardHTML(xp)}
       ${badgesRowHTML(badges)}
@@ -91,5 +120,11 @@ export async function renderProfile(root, username) {
         ? shownReviews.map((r) => reviewRowHTML(r, animeByMalId.get(r.mal_id))).join('')
         : emptyHTML('No reviews yet.', '📝')}
     </section>
+
+    ${shownMangaReviews.length ? `
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">📖 Manga Reviews</h2></div>
+      ${shownMangaReviews.map((r) => mangaReviewRowHTML(r, mangaById.get(r.manga_id))).join('')}
+    </section>` : ''}
   `;
 }
