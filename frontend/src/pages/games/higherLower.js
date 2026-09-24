@@ -2,15 +2,65 @@ import { getAnimePool } from '../../lib/animePool.js';
 import { imageOf } from '../../lib/api.js';
 import { escapeHtml, loadingHTML, errorHTML, wireRetry } from '../../lib/ui.js';
 import { shuffle } from '../../lib/shuffle.js';
-import { Games } from '../../lib/gamesApi.js';
-import { Auth } from '../../lib/authStore.js';
+import { randomFor, stableOrder } from '../../lib/rng.js';
+import {
+  startServerRun, recordLocalResult, getLocalStats, gameOverHTML, wireGameOver, challengeBannerHTML,
+} from '../../lib/gameKit.js';
+import {
+  celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle, countUp, sfx, popText,
+} from '../../lib/gameFx.js';
+import { navigate } from '../../lib/router.js';
 
-const BEST_KEY = 'aninest_hl_best';
-const REVEAL_DELAY_MS = 1100;
-const GAME_SLUG = 'higher-lower';
+const REVEAL_DELAY_MS = 1400;
 
-function cardHTML(anime, { hidden, id, label }) {
+function compact(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}K`;
+  return String(Math.round(n));
+}
+
+// Each mode compares one number. `valid` filters the pool to entries that
+// have it; `format` is how it is shown (also used mid count-up animation).
+export const HL_MODES = {
+  score: {
+    slug: 'higher-lower', legacyKey: 'aninest_hl_best', emoji: '⭐', label: 'Score',
+    question: 'community score', value: (a) => Number(a.score), format: (v) => Number(v).toFixed(1),
+    valid: (a) => Number(a.score) > 0,
+  },
+  popularity: {
+    slug: 'hl-popularity', emoji: '👥', label: 'Popularity',
+    question: 'number of fans (members)', value: (a) => Number(a.members), format: compact,
+    valid: (a) => Number(a.members) > 0,
+  },
+  episodes: {
+    slug: 'hl-episodes', emoji: '🎞️', label: 'Episodes',
+    question: 'episode count', value: (a) => Number(a.episodes), format: (v) => String(Math.round(v)),
+    valid: (a) => Number(a.episodes) > 0,
+  },
+  year: {
+    slug: 'hl-year', emoji: '📅', label: 'Release Year',
+    question: 'release year (higher = newer)', value: (a) => Number(a.year), format: (v) => String(Math.round(v)),
+    valid: (a) => Number(a.year) > 1900,
+  },
+};
+
+// Combo multiplier on points (the leaderboard still ranks the streak).
+export function comboFor(streak) {
+  if (streak >= 15) return 4;
+  if (streak >= 10) return 3;
+  if (streak >= 5) return 2;
+  return 1;
+}
+
+// A tie counts as a win either way - punishing an exact match as a "wrong"
+// guess would feel unfair, not skill-testing.
+export function isCorrectGuess(direction, championValue, challengerValue) {
+  return direction === 'higher' ? challengerValue >= championValue : challengerValue <= championValue;
+}
+
+function cardHTML(anime, mode, { hidden, id, label }) {
   const img = imageOf(anime) || '';
+  const value = mode.value(anime);
   return `
     <div class="vs-card" id="${id}">
       <span class="vs-card-label">${label}</span>
@@ -18,70 +68,116 @@ function cardHTML(anime, { hidden, id, label }) {
         ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(anime.title)}" />` : ''}
       </div>
       <div class="vs-title">${escapeHtml(anime.title)}</div>
-      <div class="vs-score ${hidden ? 'is-hidden' : ''}">${hidden ? '?' : Number(anime.score).toFixed(1)}</div>
+      <div class="vs-flip ${hidden ? '' : 'is-flipped'}">
+        <div class="vs-flip-inner">
+          <div class="vs-score vs-face vs-face--back is-hidden">?</div>
+          <div class="vs-score vs-face vs-face--front" data-value="${value}">${hidden ? '' : mode.format(value)}</div>
+        </div>
+      </div>
     </div>`;
 }
 
-export async function renderHigherLower(root) {
+function modeTabsHTML(current) {
+  return `
+    <div class="mode-tabs" role="tablist" aria-label="Compare by">
+      ${Object.entries(HL_MODES).map(([key, m]) => `
+        <button type="button" role="tab" class="mode-tab ${key === current ? 'is-active' : ''}" aria-selected="${key === current}" data-mode="${key}">
+          ${m.emoji} ${m.label}<span class="mode-tab-best">Best ${getLocalStats(m.slug, m.legacyKey).best}</span>
+        </button>`).join('')}
+    </div>`;
+}
+
+export async function renderHigherLower(root, params = new URLSearchParams()) {
   root.innerHTML = loadingHTML('SHUFFLING THE DECK');
 
-  let pool;
+  let rawPool;
   try {
-    pool = await getAnimePool();
+    rawPool = await getAnimePool();
   } catch {
     root.innerHTML = errorHTML('Couldn’t load anime for the game — try again shortly!');
-    wireRetry(root, () => renderHigherLower(root));
+    wireRetry(root, () => renderHigherLower(root, params));
     return;
   }
 
   document.title = 'Higher or Lower — AniNest';
+  const modeKey = HL_MODES[params.get('mode')] ? params.get('mode') : 'score';
+  const mode = HL_MODES[modeKey];
+  const seed = params.get('seed');
+  const pool = rawPool.filter(mode.valid);
+  if (pool.length < 8) {
+    root.innerHTML = errorHTML('Not enough anime data for this mode right now. Try another one!');
+    wireRetry(root, () => navigate('#/games/higher-lower'));
+    return;
+  }
 
-  // Game state lives in this closure, not a module-level store — the game
+  // Game state lives in this closure, not a module-level store - the game
   // is scoped to a single page visit and doesn't need to survive navigation.
-  let deck = shuffle(pool);
+  const rand = randomFor(seed);
+  let deck = shuffle(seed ? stableOrder(pool) : pool, rand);
   let champion = deck.pop();
   let challenger = deck.pop();
   let streak = 0;
-  let best = Number(localStorage.getItem(BEST_KEY)) || 0;
+  let points = 0;
+  let skipsLeft = 1;
   let locked = false; // true during the reveal animation, blocks a double guess
-  // A signed-in player's run must be started with the server before a score
-  // can be submitted (backend/src/routes/games.js checks the streak against
-  // the time actually played). Fire-and-forget: logged out, or if this
-  // fails, the game still plays - it just can't post a score.
-  let runId = null;
-  if (Auth.get().user) Games.startRun(GAME_SLUG).then((r) => { runId = r.runId; }).catch(() => {});
+  const best = getLocalStats(mode.slug, mode.legacyKey).best;
+  const run = startServerRun(mode.slug);
 
   function drawChallenger() {
-    if (deck.length === 0) deck = shuffle(pool.filter((a) => a.mal_id !== champion.mal_id));
+    if (deck.length === 0) deck = shuffle(pool.filter((a) => a.mal_id !== champion.mal_id), rand);
     challenger = deck.pop();
   }
 
   function renderRound() {
     locked = false;
+    const combo = comboFor(streak);
     root.innerHTML = `
       <div class="hl-header">
         <h1 class="section-title">🎮 Higher or Lower</h1>
         <div class="hl-stats">
           <span class="stat-pill">🔥 Streak: ${streak}</span>
-          <span class="stat-pill">🏆 Best: ${best}</span>
+          <span class="stat-pill ${combo > 1 ? 'combo-pill' : ''}">✖️${combo} Combo</span>
+          <span class="stat-pill">⭐ ${points} pts</span>
+          <span class="stat-pill">🏆 Best: ${Math.max(best, streak)}</span>
+          ${soundToggleHTML()}
         </div>
       </div>
-      <p class="section-sub" style="margin-bottom:18px">Will the challenger's community score be <strong>higher</strong> or <strong>lower</strong> than the champion's?</p>
+      ${modeTabsHTML(modeKey)}
+      ${challengeBannerHTML(seed)}
+      <p class="section-sub hl-question">Will the challenger's <strong>${escapeHtml(mode.question)}</strong> be <strong>higher</strong> or <strong>lower</strong> than the champion's?</p>
 
       <div class="vs-arena">
-        ${cardHTML(champion, { hidden: false, id: 'vs-champion', label: 'CHAMPION' })}
+        ${cardHTML(champion, mode, { hidden: false, id: 'vs-champion', label: 'CHAMPION' })}
         <div class="vs-bolt">⚡</div>
-        ${cardHTML(challenger, { hidden: true, id: 'vs-challenger', label: 'CHALLENGER' })}
+        ${cardHTML(challenger, mode, { hidden: true, id: 'vs-challenger', label: 'CHALLENGER' })}
       </div>
 
       <div class="hl-actions">
-        <button class="btn-pow btn-pow--blue" id="guess-higher">▲ HIGHER</button>
-        <button class="btn-pow btn-pow--pink" id="guess-lower">▼ LOWER</button>
+        <button class="btn-pow btn-pow--blue" id="guess-higher">▲ HIGHER <kbd>↑</kbd></button>
+        <button class="btn-pow btn-pow--pink" id="guess-lower">▼ LOWER <kbd>↓</kbd></button>
+      </div>
+      <div class="hl-actions">
+        <button class="btn-pow btn-pow--sm btn-pow--outline" id="skip" ${skipsLeft ? '' : 'disabled'}>⏭️ SKIP THIS ONE (${skipsLeft} left)</button>
       </div>
     `;
 
+    wireSoundToggle(root);
     root.querySelector('#guess-higher').addEventListener('click', () => guess('higher'));
     root.querySelector('#guess-lower').addEventListener('click', () => guess('lower'));
+    root.querySelector('#skip').addEventListener('click', skip);
+    root.querySelectorAll('.mode-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        if (tab.dataset.mode !== modeKey) navigate(`#/games/higher-lower?mode=${tab.dataset.mode}`);
+      });
+    });
+  }
+
+  function skip() {
+    if (locked || skipsLeft <= 0) return;
+    skipsLeft -= 1;
+    sfx('click');
+    drawChallenger();
+    renderRound();
   }
 
   function guess(direction) {
@@ -89,27 +185,32 @@ export async function renderHigherLower(root) {
     locked = true;
     root.querySelectorAll('.hl-actions button').forEach((b) => { b.disabled = true; });
 
-    // A tie counts as a win either way — punishing an exact score match
-    // as a "wrong" guess would feel unfair, not skill-testing.
-    const correct = direction === 'higher'
-      ? challenger.score >= champion.score
-      : challenger.score <= champion.score;
-
+    const correct = isCorrectGuess(direction, mode.value(champion), mode.value(challenger));
     const cardEl = root.querySelector('#vs-challenger');
-    const scoreEl = cardEl?.querySelector('.vs-score');
-    if (scoreEl) {
-      scoreEl.textContent = Number(challenger.score).toFixed(1);
-      scoreEl.classList.remove('is-hidden');
+    const flip = cardEl?.querySelector('.vs-flip');
+    const front = cardEl?.querySelector('.vs-face--front');
+    flip?.classList.add('is-flipped');
+    if (front) {
+      const target = mode.value(challenger);
+      countUp(front, target, { from: modeKey === 'year' ? target - 30 : 0, ms: 650, format: mode.format });
     }
-    cardEl?.classList.add(correct ? 'vs-correct' : 'vs-wrong');
 
     setTimeout(() => {
+      cardEl?.classList.add(correct ? 'vs-correct' : 'vs-wrong');
       if (correct) {
         streak += 1;
-        if (streak > best) {
-          best = streak;
-          localStorage.setItem(BEST_KEY, String(best));
-        }
+        const gained = 10 * comboFor(streak - 1);
+        points += gained;
+        celebrateCorrect(streak, cardEl);
+        if (comboFor(streak) > comboFor(streak - 1)) popText(`COMBO ×${comboFor(streak)}!`, { color: 'var(--blue)' });
+      } else {
+        lamentWrong(cardEl);
+      }
+    }, 450);
+
+    setTimeout(() => {
+      if (!root.isConnected) return;
+      if (correct) {
         champion = challenger;
         drawChallenger();
         renderRound();
@@ -119,29 +220,38 @@ export async function renderHigherLower(root) {
     }, REVEAL_DELAY_MS);
   }
 
-  function renderGameOver() {
-    const isNewBest = streak > 0 && streak === best;
-    if (Auth.get().user && streak > 0 && runId) {
-      // Fire-and-forget - the backend only ever raises a user's recorded
-      // best (see routes/games.js), so posting a non-best streak here is
-      // harmless, and a failure (offline, logged out mid-round) isn't worth
-      // interrupting the game-over screen for.
-      Games.submitScore(GAME_SLUG, streak, runId).catch(() => {});
+  function onKey(e) {
+    if (!root.isConnected || !root.querySelector('#guess-higher')) {
+      if (!root.isConnected) document.removeEventListener('keydown', onKey);
+      return;
     }
-    root.innerHTML = `
-      <div class="hl-gameover">
-        <div class="hl-gameover-emoji">💥</div>
-        <h1 class="section-title">GAME OVER</h1>
-        <p class="hl-final-streak">Final streak: <strong>${streak}</strong></p>
-        ${isNewBest ? '<p class="hl-new-best">🏆 New best streak!</p>' : `<p class="section-sub">Best streak: ${best}</p>`}
-        ${Auth.get().user ? '' : '<p class="section-sub">🔒 Log in to save your streak to the leaderboard.</p>'}
-        <div class="hero-actions" style="justify-content:center;margin-top:20px">
-          <button class="btn-pow btn-pow--pink" id="play-again">🔄 PLAY AGAIN</button>
-          <a href="#/games/leaderboard/${GAME_SLUG}" class="btn-pow btn-pow--outline">🏆 Leaderboard</a>
-          <a href="#/games" class="btn-pow btn-pow--outline">🎮 More Games</a>
-        </div>
-      </div>`;
-    root.querySelector('#play-again').addEventListener('click', () => renderHigherLower(root));
+    if (e.key === 'ArrowUp') { e.preventDefault(); guess('higher'); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); guess('lower'); }
+  }
+  document.addEventListener('keydown', onKey);
+  window.addEventListener('hashchange', () => document.removeEventListener('keydown', onKey), { once: true });
+
+  function renderGameOver() {
+    document.removeEventListener('keydown', onKey);
+    run.submit(streak);
+    const stats = recordLocalResult(mode.slug, streak, mode.legacyKey);
+    root.innerHTML = gameOverHTML({
+      emoji: '💥',
+      score: streak,
+      stats,
+      slug: mode.slug,
+      extra: `<p class="section-sub">${mode.emoji} ${escapeHtml(mode.label)} mode · ⭐ ${points} points</p>
+        <p class="section-sub">The run ended on <a href="#/anime/${challenger.mal_id}"><strong>${escapeHtml(challenger.title)}</strong></a> (${escapeHtml(mode.format(mode.value(challenger)))}) vs ${escapeHtml(mode.format(mode.value(champion)))}.</p>`,
+    });
+    wireGameOver(root, {
+      stats,
+      onReplay: () => (seed ? navigate(`#/games/higher-lower?mode=${modeKey}`) : renderHigherLower(root, params)),
+      challenge: {
+        text: `I got a ${streak} streak in AniNest's Higher or Lower (${mode.label}). Beat that!`,
+        path: '/games/higher-lower',
+        params: { mode: modeKey },
+      },
+    });
   }
 
   renderRound();
