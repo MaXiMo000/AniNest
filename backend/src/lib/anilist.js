@@ -216,6 +216,35 @@ export async function anilistSearch({ q, genres, type, status, order_by: orderBy
   };
 }
 
+// Raw candidate list for the watch-source matcher (lib/watchSourceMatcher.js):
+// unlike anilistSearch above (which keeps only english||romaji as a single
+// display title), this returns EVERY title AniList knows for each hit -
+// romaji, english, native, and all synonyms - because the matcher needs to
+// test an upload's series name for exact equality against all of them, not
+// just the one we happen to display. Errors are left to propagate with their
+// status intact (429 = rate limited) so the caller can tell "no match" apart
+// from "couldn't ask".
+export async function anilistFindCandidates(q) {
+  const data = await gql(`
+    query($search: String) {
+      Page(page: 1, perPage: 10) {
+        media(type: ANIME, search: $search, isAdult: false, sort: SEARCH_MATCH) {
+          idMal format popularity
+          title { romaji english native }
+          synonyms
+        }
+      }
+    }
+  `, { search: q });
+  return (data.Page.media || []).filter((m) => m.idMal).map((m) => ({
+    malId: m.idMal,
+    format: m.format,
+    popularity: m.popularity || 0,
+    displayTitle: m.title?.english || m.title?.romaji || 'Untitled',
+    titles: [m.title?.romaji, m.title?.english, m.title?.native, ...(m.synonyms || [])].filter(Boolean),
+  }));
+}
+
 export async function anilistByMalId(malId) {
   const data = await gql(`
     query($idMal: Int) {

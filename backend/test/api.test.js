@@ -19,8 +19,8 @@
 // response rather than a raw crash, and every input-validation/auth/
 // admin-gating edge around anime_watch_sources, including the security-
 // critical parseYouTubeVideoId parser (many malicious inputs) and
-// extractSeriesGuess's episode-detection/title-cleanup (many real upload
-// title shapes) - both pure functions, tested directly and deterministically.
+// parseUploadTitle's episode-detection/title-cleanup (real upload
+// title shapes from the curated channels) - both pure functions, tested directly and deterministically.
 //
 // Run with: npm test
 
@@ -963,19 +963,132 @@ test('admin channel allowlist is exposed and scoped to the curated official chan
   assert.ok(ids.includes('museasia') && ids.includes('anione') && ids.includes('crunchyroll'));
 });
 
-test('extractSeriesGuess pulls a series title + episode label from real upload titles, and rejects non-episode content', async () => {
-  const { extractSeriesGuess } = await import('../src/lib/watchSourceMatcher.js');
+test('parseUploadTitle understands the real upload title shapes, and rejects promo/extra content', async () => {
+  const { parseUploadTitle } = await import('../src/lib/watchSourceMatcher.js');
+  const pick = (t) => { const p = parseUploadTitle(t); return p && { kind: p.kind, series: p.series, season: p.season, episode: p.episode, label: p.label }; };
 
-  assert.deepEqual(extractSeriesGuess('Mushoku Tensei Episode 12 [ENG SUB]'), { seriesGuess: 'Mushoku Tensei', episodeLabel: 'Episode 12' });
-  assert.deepEqual(extractSeriesGuess('Attack on Titan | Episode 1 | Ani-One Asia'), { seriesGuess: 'Attack on Titan', episodeLabel: 'Episode 1' });
-  assert.deepEqual(extractSeriesGuess('Kaiju No. 8 - Ep 5'), { seriesGuess: 'Kaiju No. 8', episodeLabel: 'Episode 5' });
-  assert.deepEqual(extractSeriesGuess('ONE PIECE E1071'), { seriesGuess: 'ONE PIECE', episodeLabel: 'Episode 1071' });
+  // Real titles from the curated channels.
+  assert.deepEqual(pick('Fairy Tail - Episode 008 (S1E08) [English Dub]'),
+    { kind: 'episode', series: 'Fairy Tail', season: 1, episode: 8, label: 'Episode 8 · English Dub' });
+  // Per-season numbering (S3E03) wins over the running "Episode 29".
+  assert.deepEqual(pick('Ascendance of a Bookworm - Episode 29 (S3E03) [English Sub]'),
+    { kind: 'episode', series: 'Ascendance of a Bookworm', season: 3, episode: 3, label: 'Episode 3 · English Sub' });
+  assert.deepEqual(pick('Re:ZERO -Starting Life in Another World- Season 4 | Episode 16 (EP82) [English Sub]'),
+    { kind: 'episode', series: 'Re:ZERO -Starting Life in Another World', season: 4, episode: 16, label: 'Episode 16 · English Sub' });
+  assert.deepEqual(pick('Skeleton Knight in Another World Season 2 - Episode 12 [English Sub]'),
+    { kind: 'episode', series: 'Skeleton Knight in Another World', season: 2, episode: 12, label: 'Episode 12 · English Sub' });
+  assert.deepEqual(pick('Complete SeriesMade in Abyss (S1)'),
+    { kind: 'complete', series: 'Made in Abyss', season: 1, episode: null, label: 'Complete Series' });
+  assert.deepEqual(pick('Complete Series In/Spectre Season 2'),
+    { kind: 'complete', series: 'In/Spectre', season: 2, episode: null, label: 'Complete Series' });
+  assert.deepEqual(pick('《幼女戰記 2》#12 (繁中字幕 | 日語原聲)【Ani-One Asia】'),
+    { kind: 'episode', series: '幼女戰記 2', season: null, episode: 12, label: 'Episode 12 · Chinese subs' });
+  assert.deepEqual(pick('RILAKKUMA Episode 25 DUB'),
+    { kind: 'episode', series: 'RILAKKUMA', season: null, episode: 25, label: 'Episode 25 · Dub' });
 
-  // No episode marker at all - trailers/announcements/AMVs must be
-  // rejected outright, not guessed into a series title.
-  assert.deepEqual(extractSeriesGuess('Crunchyroll Anime Awards 2024 Highlights'), { seriesGuess: null, episodeLabel: null });
-  assert.deepEqual(extractSeriesGuess('Muse Asia Channel Trailer'), { seriesGuess: null, episodeLabel: null });
-  assert.deepEqual(extractSeriesGuess(''), { seriesGuess: null, episodeLabel: null });
+  // Not full episodes - must never be guessed into a series.
+  for (const t of [
+    '《Re:ZERO -Starting Life in Another World- Season 4》 - Preview of Episode 84',
+    'Demon Slayer: Kimetsu no Yaiba Infinity Castle I - Main PV3 | Coming to streaming platforms!',
+    'Demon Slayer: Kimetsu no Yaiba Infinity Castle I - CM3 | Now available on streaming platforms!',
+    'Firefly Wedding - Teaser PV1',
+    'Where is OPM Episode 25? Answering questions that we get 273 times daily',
+    '【Ani-One On Live】《Saga of Tanya the Evil 2》#12 X Micho Teh',
+    '《雞鬥士》作者專訪：櫻谷秀老師分享創作幕後 #1',
+    'Muse Asia Channel Trailer',
+    '',
+  ]) assert.equal(parseUploadTitle(t), null, `expected "${t}" to be rejected`);
+});
+
+test('pickBestCandidate requires EXACT title equality and never attaches a later season to season 1 or a spin-off', async () => {
+  const { pickBestCandidate } = await import('../src/lib/watchSourceMatcher.js');
+
+  // The real bug: an upload of "Ascendance of a Bookworm" S3 was once attached
+  // to "...Side Story" because the shorter title was merely *contained* in it.
+  const wrong = [
+    { titles: ['Ascendance of a Bookworm Side Story'], format: 'TV', popularity: 9, malId: 40841 },
+    { titles: ['Ascendance of a Bookworm'], format: 'TV', popularity: 99, malId: 39587 },
+  ];
+  assert.equal(pickBestCandidate(wrong, 'Ascendance of a Bookworm', 3), null, 'season 3 must not match season 1 or a side story');
+  assert.equal(pickBestCandidate(wrong, 'Ascendance of a Bookworm', 1).malId, 39587, 'season 1 matches only the exact title');
+
+  const withS3 = [...wrong, { titles: ['Honzuki no Gekokujou 3rd Season', 'Ascendance of a Bookworm Season 3'], format: 'TV', popularity: 5, malId: 52347 }];
+  assert.equal(pickBestCandidate(withS3, 'Ascendance of a Bookworm', 3).malId, 52347);
+
+  // Several exact hits: prefer TV over a movie of the same name.
+  const both = [
+    { titles: ['Fairy Tail'], format: 'MOVIE', popularity: 500, malId: 1 },
+    { titles: ['Fairy Tail'], format: 'TV', popularity: 50, malId: 6702 },
+  ];
+  assert.equal(pickBestCandidate(both, 'Fairy Tail', 1).malId, 6702);
+  assert.equal(pickBestCandidate([{ titles: ['Fairy Tail: Dragon Cry'], format: 'MOVIE', popularity: 5, malId: 2 }], 'Fairy Tail', 1), null);
+});
+
+test('unmatched uploads queue for review: group, assign to an anime in one action, dismiss, and take a link down', async () => {
+  const admin = await makeAdminAgent();
+  const malId = 50000 + Math.floor(Math.random() * 10000);
+  const other = 60000 + Math.floor(Math.random() * 10000);
+  const group = `test group ${malId}|1|ep`;
+  const ids = ['aaaaaaaaaa1', 'aaaaaaaaaa2', 'aaaaaaaaaa3'];
+  for (const [i, id] of ids.entries()) {
+    await db.execute({
+      sql: `INSERT INTO watch_source_candidates (youtube_video_id, title, channel_name, group_key, series_guess, season, label)
+            VALUES (?, ?, 'Ani-One Asia', ?, 'Test Show', NULL, ?)`,
+      args: [id + malId % 10, `Test Show #${i + 1}`, group, `Episode ${i + 1} · Chinese subs`],
+    });
+  }
+  const dismissGroup = `test dismiss ${malId}|1|ep`;
+  await db.execute({
+    sql: `INSERT INTO watch_source_candidates (youtube_video_id, title, channel_name, group_key, series_guess, label)
+          VALUES (?, 'Junk #1', 'Ani-One Asia', ?, 'Junk', 'Episode 1')`,
+    args: [`bbbbbbbbb${malId % 10}b`, dismissGroup],
+  });
+
+  const list = await admin.get('/api/admin/watch-sources/candidates');
+  assert.equal(list.status, 200);
+  const row = list.json.data.find((g) => g.group_key === group);
+  assert.equal(row.episodes, 3, 'the three episodes must show up as ONE reviewable group');
+
+  const assign = await admin.post('/api/admin/watch-sources/candidates/assign', { csrf: true, body: { group_key: group, mal_id: malId } });
+  assert.equal(assign.status, 200);
+  assert.equal(assign.json.added, 3);
+
+  const live = await admin.get(`/api/anime/${malId}/watch-sources`);
+  assert.equal(live.json.data.length, 3);
+  assert.ok(live.json.data.some((s) => s.label === 'Episode 2 · Chinese subs'));
+  const after = await admin.get('/api/admin/watch-sources/candidates');
+  assert.ok(!after.json.data.some((g) => g.group_key === group), 'an assigned group leaves the queue');
+
+  const dismiss = await admin.post('/api/admin/watch-sources/candidates/dismiss', { csrf: true, body: { group_key: dismissGroup } });
+  assert.equal(dismiss.status, 204);
+  const afterDismiss = await admin.get('/api/admin/watch-sources/candidates');
+  assert.ok(!afterDismiss.json.data.some((g) => g.group_key === dismissGroup));
+
+  // Taking a wrong link down removes it from the public list...
+  const approved = await admin.get(`/api/admin/watch-sources/approved?mal_id=${malId}`);
+  assert.equal(approved.json.data.length, 3);
+  const rm = await admin.post(`/api/admin/watch-sources/${approved.json.data[0].id}/remove`, { csrf: true });
+  assert.equal(rm.status, 204);
+  const afterRemove = await admin.get(`/api/anime/${malId}/watch-sources`);
+  assert.equal(afterRemove.json.data.length, 2);
+
+  // ...and can then be attached to the right anime instead.
+  await db.execute({
+    sql: `INSERT INTO watch_source_candidates (youtube_video_id, title, channel_name, group_key, series_guess, label)
+          VALUES (?, 'moved', 'Muse Asia', ?, 'Moved', 'Episode 9')`,
+    args: [approved.json.data[0].youtube_video_id, `moved ${other}|1|ep`],
+  });
+  const reassign = await admin.post('/api/admin/watch-sources/candidates/assign', { csrf: true, body: { group_key: `moved ${other}|1|ep`, mal_id: other } });
+  assert.equal(reassign.json.added, 1);
+});
+
+test('review-queue and remove routes are admin-only', async () => {
+  const regular = makeAgent();
+  await regular.get('/api/health');
+  await regular.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  assert.equal((await regular.get('/api/admin/watch-sources/candidates')).status, 404);
+  assert.equal((await regular.post('/api/admin/watch-sources/candidates/assign', { csrf: true, body: { group_key: 'x', mal_id: 1 } })).status, 404);
+  assert.equal((await regular.post('/api/admin/watch-sources/1/remove', { csrf: true })).status, 404);
 });
 
 test('bulk-import requires admin, validates its input, and reports "not configured" without a live call when YOUTUBE_API_KEY is unset', async () => {

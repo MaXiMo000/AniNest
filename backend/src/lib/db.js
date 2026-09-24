@@ -140,6 +140,29 @@ await db.executeMultiple(`
     UNIQUE(mal_id, youtube_video_id)
   );
 
+  -- Real episode uploads the bulk importer could NOT confidently match to
+  -- an anime (Chinese-titled shows, a series whose name AniList spells
+  -- differently, ...). Kept - rather than just reported and forgotten - so
+  -- an admin can review them and assign a whole series to an anime in one
+  -- click (routes/adminWatchSources.js candidates/assign), which turns every
+  -- episode in that group into an approved anime_watch_sources row.
+  -- group_key = normalized series + season + kind, so all episodes of one
+  -- show/season land in one reviewable group. 'dismissed' rows stay so the
+  -- importer doesn't re-queue what an admin already threw away.
+  CREATE TABLE IF NOT EXISTS watch_source_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    youtube_video_id TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    channel_name TEXT,
+    group_key TEXT NOT NULL,
+    series_guess TEXT NOT NULL,
+    season INTEGER,
+    label TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_candidates_group ON watch_source_candidates(status, group_key);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
   CREATE INDEX IF NOT EXISTS idx_reviews_mal_id ON reviews(mal_id);

@@ -11,6 +11,11 @@ export const AdminWatchSources = {
   }),
   pending: () => apiGet('/api/admin/watch-sources/pending'),
   bulkImport: (channel, maxItems) => apiPost('/api/admin/watch-sources/bulk-import', { channel, maxItems }),
+  candidates: () => apiGet('/api/admin/watch-sources/candidates'),
+  assignCandidates: (groupKey, malId) => apiPost('/api/admin/watch-sources/candidates/assign', { group_key: groupKey, mal_id: Number(malId) }),
+  dismissCandidates: (groupKey) => apiPost('/api/admin/watch-sources/candidates/dismiss', { group_key: groupKey }),
+  approvedFor: (malId) => apiGet(`/api/admin/watch-sources/approved?mal_id=${Number(malId)}`),
+  remove: (id) => apiPost(`/api/admin/watch-sources/${id}/remove`),
   approve: (id) => apiPost(`/api/admin/watch-sources/${id}/approve`),
   reject: (id) => apiPost(`/api/admin/watch-sources/${id}/reject`),
 };

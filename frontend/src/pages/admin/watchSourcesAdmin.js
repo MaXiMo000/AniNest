@@ -14,18 +14,20 @@ const watchUrlFor = (id) => `https://www.youtube.com/watch?v=${id}`;
 // reset only on a fresh navigation to this page (mirrors compare.js's
 // module-scoped `picks`).
 let pickedAnime = null;
-let searchResults = null;
 let searchNotice = null; // { kind: 'quotaExceeded' | 'notConfigured' | 'error', message }
 let channels = null;
+
+const MAX_IMPORT_RUNS = 40;
 
 function bulkImportSectionHTML(channelsList) {
   return `
     <div class="watch-box">
       <h3>📥 Import from a channel</h3>
       <p style="color:var(--muted);font-weight:600;margin:0 0 10px">
-        Scans everything a channel has actually uploaded (cheap - a few quota units total, not per-title), keeps only
-        uploads that look like a real numbered episode, and adds it only when the guessed series title confidently
-        matches an AniNest search result. Anything ambiguous is reported below, never guessed in.
+        Reads a channel's whole upload history (a few quota units), keeps only real episodes and "Complete Series"
+        uploads (PVs, CMs, teasers and vlogs are skipped), and adds each series only when its title matches an
+        anime <em>exactly</em>. Anything it isn't sure about goes to <strong>Needs your review</strong> below, grouped
+        by series, so you can assign a whole show in one click. Big channels take several passes — it keeps going by itself.
       </p>
       <form id="bulk-import-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <select id="bulk-import-channel">
@@ -37,31 +39,75 @@ function bulkImportSectionHTML(channelsList) {
     </div>`;
 }
 
-function bulkImportReportHTML(report) {
-  const addedList = report.added.length
-    ? `<details open><summary>✅ Added ${report.added.length}</summary><ul class="bulk-report-list">
-        ${report.added.map((a) => `<li><a href="#/anime/${a.malId}" target="_blank" rel="noopener">${escapeHtml(a.animeTitle)}</a> — ${escapeHtml(a.episodeLabel || '')}</li>`).join('')}
+function bulkImportReportHTML(t, { finished, error }) {
+  const addedList = t.added.size
+    ? `<details open><summary>✅ ${t.addedEpisodes} episodes added across ${t.added.size} anime</summary><ul class="bulk-report-list">
+        ${[...t.added.values()].map((a) => `<li><a href="#/anime/${a.malId}" target="_blank" rel="noopener">${escapeHtml(a.animeTitle)}</a> — ${a.episodes} ${a.episodes === 1 ? 'upload' : 'uploads'}</li>`).join('')}
       </ul></details>` : '';
-  const unmatchedList = report.skippedNoMatch.length
-    ? `<details><summary>❓ Couldn't confidently match ${report.skippedNoMatch.length} (not added — review manually)</summary><ul class="bulk-report-list">
-        ${report.skippedNoMatch.slice(0, 40).map((s) => `<li>${escapeHtml(s.title)} <span style="color:var(--muted)">(guessed "${escapeHtml(s.guess)}")</span></li>`).join('')}
-        ${report.skippedNoMatch.length > 40 ? `<li style="color:var(--muted)">…and ${report.skippedNoMatch.length - 40} more</li>` : ''}
+  const samples = t.samples.length
+    ? `<details><summary>Examples of what was skipped as not-an-episode</summary><ul class="bulk-report-list">
+        ${t.samples.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}
       </ul></details>` : '';
   return `
     <div class="watch-box" style="margin-top:14px">
       <p style="font-weight:700">
-        Scanned ${report.totalUploadsScanned} uploads — ${report.added.length} added,
-        ${report.duplicates} already there, ${report.skippedNoEpisode} not episode-shaped, ${report.skippedNoMatch.length} unmatched.
+        ${finished ? 'Done. ' : 'Working… '}Scanned ${t.scanned} uploads — ${t.addedEpisodes} added,
+        ${t.queuedEpisodes} sent to review (${t.queuedGroups} series), ${t.skippedNotEpisode} skipped as not episodes,
+        ${t.alreadyKnown} already handled.
+        ${t.remaining ? ` <span style="color:var(--yellow)">${t.remaining} series still to check…</span>` : ''}
       </p>
+      ${error ? `<div class="error-box">${error}</div>` : ''}
       ${addedList}
-      ${unmatchedList}
+      ${samples}
     </div>`;
+}
+
+// Big channels have hundreds of distinct series and AniList is rate-limited,
+// so a single request only gets through part of them (see the backend's time
+// budget); each pass skips everything already handled and reports what's
+// left, so this just repeats until nothing is.
+async function runBulkImport(channel, resultEl) {
+  const t = { scanned: 0, alreadyKnown: 0, skippedNotEpisode: 0, samples: [], added: new Map(), addedEpisodes: 0, queuedGroups: 0, queuedEpisodes: 0, remaining: 0 };
+  for (let run = 1; run <= MAX_IMPORT_RUNS; run += 1) {
+    let r;
+    try {
+      r = await AdminWatchSources.bulkImport(channel);
+    } catch (err) {
+      const msg = err.quotaExceeded ? '⏳ YouTube quota is exhausted for today — try again tomorrow.'
+        : err.notConfigured ? '⚙️ YouTube search isn\'t configured (set YOUTUBE_API_KEY).'
+          : `💥 ${escapeHtml(err.message || 'Import failed.')}`;
+      resultEl.innerHTML = bulkImportReportHTML(t, { finished: true, error: msg });
+      return t;
+    }
+    t.scanned = r.totalUploadsScanned;
+    t.alreadyKnown = r.alreadyKnown;
+    t.skippedNotEpisode = r.skippedNotEpisode;
+    if (r.skippedSamples?.length) t.samples = r.skippedSamples;
+    t.addedEpisodes += r.addedEpisodes;
+    t.queuedGroups += r.queuedGroups;
+    t.queuedEpisodes += r.queuedEpisodes;
+    t.remaining = r.remainingGroups;
+    for (const a of r.added) {
+      const prev = t.added.get(a.malId);
+      t.added.set(a.malId, prev ? { ...prev, episodes: prev.episodes + a.episodes } : { ...a });
+    }
+    const finished = r.remainingGroups === 0;
+    resultEl.innerHTML = bulkImportReportHTML(t, { finished });
+    if (finished) return t;
+    // No progress at all (e.g. AniList rate-limiting every call) - stop rather than spin.
+    if (r.addedEpisodes === 0 && r.queuedEpisodes === 0) {
+      resultEl.innerHTML = bulkImportReportHTML(t, { finished: true, error: '⏳ AniList is rate-limiting us right now — run Import again in a minute to continue.' });
+      return t;
+    }
+  }
+  resultEl.innerHTML = bulkImportReportHTML(t, { finished: true, error: 'Stopped after many passes — run Import again to continue.' });
+  return t;
 }
 
 function pickerHTML() {
   return `
     <div class="watch-box">
-      <h3>1. Pick an anime</h3>
+      <h3>Add or manage links for one anime</h3>
       <form class="compare-search-form" id="anime-search-form">
         <input type="text" class="compare-search-input" id="anime-search-input" placeholder="Search an anime..." autocomplete="off" />
         <button type="submit" class="btn-pow btn-pow--sm">🔍</button>
@@ -81,13 +127,14 @@ function pickedAnimeHTML(anime) {
         </div>
         <button class="chip" id="change-anime" style="margin-left:auto">🔄 Change</button>
       </div>
-    </div>`;
+    </div>
+    <div id="approved-section"></div>`;
 }
 
 function searchFormHTML(channelsList) {
   return `
     <div class="watch-box">
-      <h3>2. Search official channels</h3>
+      <h3>Search official channels</h3>
       <form id="yt-search-form" style="display:flex;gap:8px;flex-wrap:wrap">
         <select id="yt-channel" style="flex:0 0 auto">
           ${channelsList.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
@@ -131,6 +178,140 @@ function ytResultsHTML(results) {
     </div>`).join('');
 }
 
+// --- Live links for the picked anime (with remove) --------------------------
+
+async function renderApprovedSection(root) {
+  const el = root.querySelector('#approved-section');
+  if (!el || !pickedAnime) return;
+  try {
+    const { data } = await AdminWatchSources.approvedFor(pickedAnime.mal_id);
+    el.innerHTML = `
+      <div class="watch-box">
+        <h3>Live on this anime's page (${data.length})</h3>
+        ${data.length ? `<ul class="bulk-report-list">${data.map((s) => `
+          <li style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span style="flex:1;min-width:160px">${escapeHtml(s.label || 'Untitled')} <span style="color:var(--muted)">— ${escapeHtml(s.channel_name || 'Unknown channel')}</span></span>
+            <a href="${watchUrlFor(escapeHtml(s.youtube_video_id))}" target="_blank" rel="noopener">Open ↗</a>
+            <button class="btn-pow btn-pow--outline btn-pow--sm" data-remove="${s.id}">🗑 Remove</button>
+          </li>`).join('')}</ul>` : '<div class="compare-results-empty">Nothing live yet.</div>'}
+      </div>`;
+    el.querySelectorAll('[data-remove]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!window.confirm('Take this link down from the site?')) return;
+        btn.disabled = true;
+        try {
+          await AdminWatchSources.remove(btn.dataset.remove);
+          showToast('Removed.');
+          renderApprovedSection(root);
+        } catch (err) {
+          showToast(err.message || 'Something went wrong.');
+          btn.disabled = false;
+        }
+      });
+    });
+  } catch {
+    el.innerHTML = '<div class="error-box">Couldn’t load this anime’s live links.</div>';
+  }
+}
+
+// --- Needs your review: uploads the importer couldn't match ------------------
+
+function looksLatin(s) {
+  const letters = (s.match(/\p{L}/gu) || []);
+  return letters.length > 0 && letters.filter((c) => /[A-Za-z]/.test(c)).length / letters.length > 0.6;
+}
+
+function candidateRowHTML(g) {
+  const seasonNote = g.season && g.season > 1 ? ` · Season ${g.season}` : '';
+  return `
+    <div class="cand-row" data-key="${escapeHtml(g.group_key)}">
+      <div class="cand-head">
+        <strong>${escapeHtml(g.series_guess)}</strong>${seasonNote}
+        <span style="color:var(--muted)"> — ${g.episodes} ${Number(g.episodes) === 1 ? 'upload' : 'uploads'} · ${escapeHtml(g.channel_name || '')}</span>
+      </div>
+      <div style="color:var(--muted);font-size:0.85rem">
+        e.g. ${escapeHtml(g.sample_title)}
+        <a href="${watchUrlFor(escapeHtml(g.sample_video))}" target="_blank" rel="noopener">Watch ↗</a>
+      </div>
+      <form class="cand-search" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input type="text" placeholder="Which anime is this? (type its English/romaji title)" value="${looksLatin(g.series_guess) ? escapeHtml(g.series_guess) : ''}" autocomplete="off" style="flex:1;min-width:200px" />
+        <button type="submit" class="btn-pow btn-pow--sm">🔍</button>
+        <button type="button" class="btn-pow btn-pow--outline btn-pow--sm" data-dismiss>Dismiss</button>
+      </form>
+      <div class="cand-results"></div>
+    </div>`;
+}
+
+async function renderCandidatesSection(root) {
+  const el = root.querySelector('#candidates-section');
+  if (!el) return;
+  try {
+    const { data } = await AdminWatchSources.candidates();
+    el.innerHTML = `
+      <div class="section-head"><h2 class="section-title">🧐 Needs your review (${data.length})</h2></div>
+      <p style="color:var(--muted);font-weight:600;margin:0 0 12px">
+        Real episode uploads the importer wasn't sure which anime they belong to. Each row is one series (all of its
+        episodes) — pick the anime once and every episode is added. Note Ani-One's Chinese-titled uploads carry Chinese subtitles;
+        they're labelled that way on the page.
+      </p>
+      ${data.length ? `<div class="admin-pending-list">${data.map(candidateRowHTML).join('')}</div>` : '<div class="compare-results-empty">Nothing waiting on review.</div>'}
+    `;
+    el.querySelectorAll('.cand-row').forEach((row) => wireCandidateRow(root, row));
+  } catch {
+    el.innerHTML = '<div class="error-box">Couldn’t load the review queue.</div>';
+  }
+}
+
+function wireCandidateRow(root, row) {
+  const key = row.dataset.key;
+  const resultsEl = row.querySelector('.cand-results');
+
+  row.querySelector('.cand-search').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = row.querySelector('input').value.trim();
+    if (!q) return;
+    resultsEl.innerHTML = loadingHTML('SEARCHING');
+    try {
+      const { data } = await Api.search({ q, page: 1 });
+      const list = (data || []).slice(0, 6);
+      resultsEl.innerHTML = list.length
+        ? `<ul class="compare-results-list">${list.map((a) => `
+            <li><button type="button" class="compare-result" data-pick="${a.mal_id}">
+              ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" />` : ''}
+              <span>${escapeHtml(a.title)}</span>
+            </button></li>`).join('')}</ul>`
+        : '<div class="compare-results-empty">No matches — try another spelling.</div>';
+      resultsEl.querySelectorAll('[data-pick]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            const r = await AdminWatchSources.assignCandidates(key, btn.dataset.pick);
+            showToast(`Added ${r.added} uploads.`);
+            renderCandidatesSection(root);
+          } catch (err) {
+            showToast(err.message || 'Something went wrong.');
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch {
+      resultsEl.innerHTML = '<div class="compare-results-empty">Search failed — try again.</div>';
+    }
+  });
+
+  row.querySelector('[data-dismiss]').addEventListener('click', async () => {
+    try {
+      await AdminWatchSources.dismissCandidates(key);
+      showToast('Dismissed.');
+      renderCandidatesSection(root);
+    } catch (err) {
+      showToast(err.message || 'Something went wrong.');
+    }
+  });
+}
+
+// --- Pending user submissions -----------------------------------------------
+
 function pendingRowHTML(row) {
   return `
     <div class="admin-pending-row">
@@ -158,6 +339,7 @@ async function renderPendingSection(root) {
     const { data } = await AdminWatchSources.pending();
     el.innerHTML = `
       <div class="section-head"><h2 class="section-title">🕓 Pending submissions (${data.length})</h2></div>
+      <p style="color:var(--muted);font-weight:600;margin:0 0 12px">Links regular users suggested from an anime's page. (Uploads the importer found itself show up under "Needs your review" above instead.)</p>
       ${data.length ? `<div class="admin-pending-list">${data.map(pendingRowHTML).join('')}</div>` : '<div class="compare-results-empty">Nothing waiting on review.</div>'}
     `;
     el.querySelectorAll('[data-approve]').forEach((btn) => {
@@ -198,11 +380,14 @@ function render(root) {
       <span class="section-sub">Admin only</span>
     </div>
     ${channels ? bulkImportSectionHTML(channels) : loadingHTML('LOADING')}
+    <div id="candidates-section"></div>
     ${pickedAnime ? pickedAnimeHTML(pickedAnime) : pickerHTML()}
     ${pickedAnime && channels ? searchFormHTML(channels) : ''}
     <div id="pending-section"></div>
   `;
   wireEvents(root);
+  renderCandidatesSection(root);
+  renderApprovedSection(root);
   renderPendingSection(root);
 }
 
@@ -215,16 +400,9 @@ function wireEvents(root) {
     submitBtn.disabled = true;
     resultEl.innerHTML = loadingHTML('SCANNING CHANNEL');
     try {
-      const report = await AdminWatchSources.bulkImport(channel);
-      resultEl.innerHTML = bulkImportReportHTML(report);
-      showToast(`Added ${report.added.length} new free episodes!`);
-      renderPendingSection(root);
-    } catch (err) {
-      resultEl.innerHTML = err.quotaExceeded
-        ? '<div class="error-box">⏳ YouTube quota is exhausted for today — try again tomorrow.</div>'
-        : err.notConfigured
-          ? '<div class="error-box">⚙️ YouTube search isn\'t configured (set YOUTUBE_API_KEY).</div>'
-          : `<div class="error-box">💥 ${escapeHtml(err.message || 'Import failed.')}</div>`;
+      const t = await runBulkImport(channel, resultEl);
+      if (t.addedEpisodes) showToast(`Added ${t.addedEpisodes} free episodes!`);
+      renderCandidatesSection(root);
     } finally {
       submitBtn.disabled = false;
     }
@@ -239,22 +417,19 @@ function wireEvents(root) {
     resultsEl.innerHTML = loadingHTML('SEARCHING');
     try {
       const { data } = await Api.search({ q, page: 1 });
-      resultsEl.innerHTML = (data || []).slice(0, 6).map((a) => `
-        <li><button class="compare-result" data-pick-id="${a.mal_id}">
-          ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" />` : ''}
-          <span>${escapeHtml(a.title)}</span>
-        </button></li>`).join('') || '<div class="compare-results-empty">No matches.</div>';
-      if (resultsEl.querySelector('.compare-result')) resultsEl.innerHTML = `<ul class="compare-results-list">${resultsEl.innerHTML}</ul>`;
+      const list = (data || []).slice(0, 6);
+      resultsEl.innerHTML = list.length
+        ? `<ul class="compare-results-list">${list.map((a) => `
+            <li><button class="compare-result" data-pick-id="${a.mal_id}">
+              ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" />` : ''}
+              <span>${escapeHtml(a.title)}</span>
+            </button></li>`).join('')}</ul>`
+        : '<div class="compare-results-empty">No matches.</div>';
       resultsEl.querySelectorAll('[data-pick-id]').forEach((btn) => {
         btn.addEventListener('click', async () => {
-          const { data } = await Api.fullById(btn.dataset.pickId);
-          pickedAnime = data;
-          searchResults = null;
+          const { data: full } = await Api.fullById(btn.dataset.pickId);
+          pickedAnime = full;
           searchNotice = null;
-          if (!channels) {
-            const chRes = await AdminWatchSources.channels().catch(() => ({ data: [] }));
-            channels = chRes.data;
-          }
           render(root);
         });
       });
@@ -265,7 +440,6 @@ function wireEvents(root) {
 
   root.querySelector('#change-anime')?.addEventListener('click', () => {
     pickedAnime = null;
-    searchResults = null;
     searchNotice = null;
     render(root);
   });
@@ -280,7 +454,6 @@ function wireEvents(root) {
     noticeEl.innerHTML = '';
     try {
       const { data } = await AdminWatchSources.search(channel, q);
-      searchResults = data;
       resultsEl.innerHTML = ytResultsHTML(data);
       resultsEl.querySelectorAll('[data-use-video]').forEach((btn) => {
         btn.addEventListener('click', async () => {
@@ -288,7 +461,7 @@ function wireEvents(root) {
           try {
             await AdminWatchSources.add(pickedAnime.mal_id, watchUrlFor(btn.dataset.useVideo), btn.dataset.useChannel, btn.dataset.useTitle);
             showToast('Added and approved!');
-            renderPendingSection(root);
+            renderApprovedSection(root);
           } catch (err) {
             showToast(err.message || 'Something went wrong.');
             btn.disabled = false;
@@ -313,7 +486,7 @@ function wireEvents(root) {
       showToast('Added and approved!');
       root.querySelector('#yt-manual-url').value = '';
       root.querySelector('#yt-manual-channel').value = '';
-      renderPendingSection(root);
+      renderApprovedSection(root);
     } catch (err) {
       showToast(err.message || 'Something went wrong.');
     } finally {
@@ -329,7 +502,6 @@ export async function renderWatchSourcesAdmin(root) {
     return;
   }
   pickedAnime = null;
-  searchResults = null;
   searchNotice = null;
   channels = null;
   root.innerHTML = loadingHTML('LOADING');

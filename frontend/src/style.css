@@ -774,6 +774,23 @@ body.is-admin [data-admin-only] { display: flex; }
   font-family: var(--font-body);
   font-weight: 600;
 }
+.cand-row {
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 14px;
+  padding: 14px;
+  font-weight: 600;
+}
+.cand-row .cand-head { font-size: 1.05rem; margin-bottom: 4px; }
+.cand-search input {
+  padding: 10px 12px;
+  border: 2.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--bg2);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 600;
+}
 .bulk-report-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
 .bulk-report-list li { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
 #bulk-import-result details { margin-top: 10px; }
