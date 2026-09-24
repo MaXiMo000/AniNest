@@ -2069,3 +2069,41 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
   transform: rotate(-6deg);
 }
 @media (prefers-reduced-motion: reduce) { .taste-bar-fill { animation: none; } }
+
+/* Daily Challenge: stats panel */
+.daily-answer-cover { width: 120px; margin: 8px auto; border: 2.5px solid var(--ink); border-radius: 10px; box-shadow: 4px 4px 0 var(--ink); }
+.daily-stats {
+  max-width: 420px;
+  margin: 18px auto 0;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 5px 5px 0 var(--ink);
+  text-align: left;
+}
+.daily-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; }
+.daily-stat strong { display: block; font-family: var(--font-display); font-size: 1.8rem; font-weight: 400; color: var(--yellow); }
+.daily-stat span { font-size: 0.75rem; font-weight: 800; color: var(--muted); }
+.daily-stats-heading { font-size: 1rem; margin: 14px 0 8px; }
+.dist-bars { display: flex; flex-direction: column; gap: 5px; }
+.dist-row { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: center; font-weight: 800; }
+.dist-bar {
+  background: var(--bg2);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 1px 8px;
+  text-align: right;
+  font-weight: 800;
+  font-size: 0.8rem;
+  animation: taste-grow 0.6s ease both;
+  transform-origin: left;
+}
+.dist-bar.is-today { background: var(--green); color: var(--ink); }
+.cal-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; max-width: 230px; }
+.cal-cell { aspect-ratio: 1; border-radius: 4px; background: var(--bg2); border: 1.5px solid var(--ink); }
+.cal-won { background: var(--green); }
+.cal-lost { background: var(--pink-deep); }
+.daily-countdown { font-weight: 800; margin-top: 14px; }
+.daily-countdown strong { font-family: var(--font-display); font-weight: 400; font-size: 1.3rem; color: var(--blue); letter-spacing: 1px; }
+@media (prefers-reduced-motion: reduce) { .dist-bar { animation: none; } }
