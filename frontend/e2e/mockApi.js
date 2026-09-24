@@ -42,6 +42,10 @@ function json(route, body, status = 200) {
 // `user`: null for a logged-out visitor, or { username } for a signed-in one.
 export async function mockApi(page, { user = null } = {}) {
   const today = new Date().toISOString().slice(0, 10);
+  // Opening clips: answered here (a fast 404, so the player shows its
+  // "won't load" state) instead of reaching the real AnimeThemes CDN, whose
+  // speed and reachability vary between machines.
+  await page.route('https://v.animethemes.moe/**', (route) => route.fulfill({ status: 404, contentType: 'text/plain', body: 'not found' }));
   await page.route('http://localhost:8787/**', (route) => {
     const req = route.request();
     if (req.method() === 'OPTIONS') {
