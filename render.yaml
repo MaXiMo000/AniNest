@@ -2,7 +2,12 @@ services:
   - name: aninest-backend
     type: web
     env: node
-    plan: free
+    # Starter ($7/mo, 0.5 CPU, 512 MB): must match the plan set in the Render
+    # dashboard. While this said `free`, every Blueprint sync tried to switch
+    # the service back down to Free ("Update web service aninest-backend plan
+    # to Free") and failed against the paid plan. Starter also never spins
+    # down, so the cold-start wake-up delay described in HANDOFF.md is gone.
+    plan: starter
     rootDir: backend
     buildCommand: npm ci
     startCommand: npm start
