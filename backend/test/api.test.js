@@ -1320,6 +1320,56 @@ test('XP leaderboard is public, ranked by XP, and reports the caller\'s own rank
   assert.ok(mine.json.myXp > 0);
 });
 
+test('persistentCached: fresh copies skip upstream, outages fall back to the stored copy, definitive errors do not', async () => {
+  const { persistentCached } = await import('../src/lib/persistentCache.js');
+  const key = `test:pc:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  let calls = 0;
+  const ok = (value) => async () => { calls += 1; return value; };
+  const fail = (status) => async () => { calls += 1; const err = new Error('upstream down'); if (status) err.status = status; throw err; };
+  const DAY = 24 * 60 * 60 * 1000;
+
+  // Nothing stored + upstream down: the error still propagates (nothing to serve).
+  await assert.rejects(() => persistentCached(`${key}:none`, DAY, fail(502)), /upstream down/);
+
+  // Miss -> asks upstream and stores the answer.
+  assert.deepEqual(await persistentCached(key, DAY, ok({ v: 1 })), { v: 1 });
+  assert.equal(calls, 2);
+  await new Promise((r) => setTimeout(r, 50)); // the write is fire-and-forget
+
+  // Fresh -> served from our database; upstream isn't touched at all.
+  const before = calls;
+  assert.deepEqual(await persistentCached(key, DAY, ok({ v: 999 })), { v: 1 });
+  assert.equal(calls, before, 'a fresh stored copy must not hit the upstream');
+
+  // Stale + upstream OUTAGE (network error, 5xx, rate limit) -> the stored copy is served, however old.
+  for (const status of [undefined, 500, 502, 503, 429]) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.deepEqual(await persistentCached(key, 0, fail(status)), { v: 1 }, `status ${status} should fall back to the stored copy`);
+  }
+
+  // Stale + a DEFINITIVE answer (not found / forbidden) -> must NOT be papered over with the old copy.
+  for (const status of [400, 403, 404]) {
+    // eslint-disable-next-line no-await-in-loop
+    await assert.rejects(() => persistentCached(key, 0, fail(status)), /upstream down/, `status ${status} is a real answer, not an outage`);
+  }
+
+  // Stale + upstream healthy again -> refreshes the stored copy.
+  assert.deepEqual(await persistentCached(key, 0, ok({ v: 2 })), { v: 2 });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(await persistentCached(key, DAY, ok({ v: 999 })), { v: 2 });
+});
+
+test('the anime themes list survives an AnimeThemes outage once it has been fetched', async () => {
+  const { persistentCached } = await import('../src/lib/persistentCache.js');
+  // Same call shape animeSource.themes() uses: a stored list, then the upstream dies.
+  const key = `anime:themes:test-${Date.now()}`;
+  const themes = [{ slug: 'OP1', type: 'OP', title: 'Guren no Yumiya', videoUrl: 'https://v.animethemes.moe/OP1.webm' }];
+  await persistentCached(key, 7 * 24 * 60 * 60 * 1000, async () => themes);
+  await new Promise((r) => setTimeout(r, 50));
+  const outage = async () => { throw new Error('AnimeThemes error 522'); };
+  assert.deepEqual(await persistentCached(key, 0, outage), themes, 'stale list is served while the service is down');
+});
+
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');

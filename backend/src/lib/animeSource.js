@@ -2,12 +2,21 @@ import { jikanGet } from './jikan.js';
 import { anilistTopAnime, anilistSeasonNow, anilistSearch, anilistByMalId, anilistRandomish, anilistSchedule, anilistCharacters } from './anilist.js';
 import { animeThemesFor } from './animeThemes.js';
 import { cached } from './cache.js';
+import { persistentCached } from './persistentCache.js';
 import { logger } from './logger.js';
 
 const TTL = {
   list: 10 * 60 * 1000,
   detail: 30 * 60 * 1000,
   genres: 24 * 60 * 60 * 1000,
+};
+
+// How long our own stored copy counts as fresh before we ask upstream again
+// (it is still served as a last resort when upstream is down, however old).
+const PERSIST = {
+  list: 6 * 60 * 60 * 1000,        // top / season / schedule pages
+  detail: 24 * 60 * 60 * 1000,     // one anime's detail, characters, recommendations
+  themes: 7 * 24 * 60 * 60 * 1000, // opening/ending lists barely ever change
 };
 
 const STATIC_GENRES = [
@@ -24,15 +33,22 @@ const STATIC_GENRES = [
 // Jikan's ~60/min shared globally) and, empirically, far better uptime — and
 // transparently falls back to Jikan if AniList itself has a bad moment. See
 // README for why we bother with two sources at all.
-async function withFallback(key, ttl, primaryName, primary, fallbackName, fallback) {
-  return cached(key, ttl, async () => {
+//
+// `persistMs`, when given, adds a third safety net UNDER both sources: the
+// answer is also kept in our own database (lib/persistentCache.js) and, if
+// AniList AND Jikan are both down, the last stored copy is served instead of
+// an error. Only for bounded key spaces (a given anime, a list page) - never
+// for free-text search.
+async function withFallback(key, ttl, primaryName, primary, fallbackName, fallback, persistMs) {
+  const compute = async () => {
     try {
       return await primary();
     } catch (err) {
       logger.warn({ err, key, primaryName, fallbackName }, `${primaryName} failed, falling back to ${fallbackName}`);
       return fallback();
     }
-  });
+  };
+  return cached(key, ttl, persistMs ? () => persistentCached(`anime:${key}`, persistMs, compute) : compute);
 }
 
 export function topAnime(page = 1, filter) {
@@ -41,6 +57,7 @@ export function topAnime(page = 1, filter) {
     TTL.list,
     'AniList', () => anilistTopAnime(page),
     'Jikan', () => jikanGet('/top/anime', { page, filter, sfw: true }),
+    PERSIST.list,
   );
 }
 
@@ -53,6 +70,7 @@ export function schedule(day) {
     TTL.list,
     'AniList', () => anilistSchedule(day),
     'Jikan', () => jikanGet('/schedules', { filter: day, sfw: true }),
+    PERSIST.list,
   );
 }
 
@@ -62,6 +80,7 @@ export function seasonNow(page = 1) {
     TTL.list,
     'AniList', () => anilistSeasonNow(page),
     'Jikan', () => jikanGet('/seasons/now', { page, sfw: true }),
+    PERSIST.list,
   );
 }
 
@@ -112,6 +131,7 @@ export function fullById(id) {
       return { data: result.full };
     },
     'Jikan', () => jikanGet(`/anime/${id}/full`),
+    PERSIST.detail,
   );
 }
 
@@ -124,6 +144,7 @@ export function recommendations(id) {
       return { data: result?.recommendations || [] };
     },
     'Jikan', () => jikanGet(`/anime/${id}/recommendations`),
+    PERSIST.detail,
   );
 }
 
@@ -155,6 +176,7 @@ export function characters(id) {
       const res = await jikanGet(`/anime/${id}/characters`);
       return { data: normalizeJikanCharacters(res.data || []) };
     },
+    PERSIST.detail,
   );
 }
 
@@ -163,8 +185,13 @@ export function characters(id) {
 // fields, just without a fallback at all. A show with nothing indexed
 // (brand new, or simply never added) resolves to an empty array, not an
 // error - confirmed directly against the live API.
+//
+// Persisted for a week and served stale when AnimeThemes is down (it has had
+// full outages): the opening/ending LIST for a show essentially never
+// changes. The video files themselves still come from AnimeThemes' own
+// host, so during an outage the list shows but playback may not work.
 export function themes(id) {
-  return cached(`themes:${id}`, TTL.detail, () => animeThemesFor(Number(id)));
+  return cached(`themes:${id}`, TTL.detail, () => persistentCached(`anime:themes:${id}`, PERSIST.themes, () => animeThemesFor(Number(id))));
 }
 
 export async function randomAnime() {

@@ -176,6 +176,15 @@ await db.executeMultiple(`
     UNIQUE(user_id, date)
   );
 
+  -- Database-backed copy of upstream API responses (see lib/persistentCache.js):
+  -- survives restarts and is served when Jikan/AniList/AnimeThemes/MangaDex are
+  -- down. value is the JSON response, fetched_at is epoch milliseconds.
+  CREATE TABLE IF NOT EXISTS api_cache (
+    cache_key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_candidates_group ON watch_source_candidates(status, group_key);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);

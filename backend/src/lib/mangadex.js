@@ -13,6 +13,7 @@
 // official sources (MANGA Plus/VIZ/Webtoons), built entirely client-side
 // from a manga's title - see frontend's mangaDetail.js "Read For Free" box.
 import { cached } from './cache.js';
+import { persistentCached } from './persistentCache.js';
 
 const BASE = 'https://api.mangadex.org';
 
@@ -151,7 +152,10 @@ export function mangaSearch({ q, tags, demographic, status, sort, page = 1 } = {
 }
 
 export function mangaById(id) {
-  return cached(`manga:full:${id}`, TTL.detail, async () => {
+  // Also kept in our own database and served from there if MangaDex is down
+  // (lib/persistentCache.js) - but never past a definitive 404, which is how
+  // the content-rating safety check below rejects an unsafe title.
+  return cached(`manga:full:${id}`, TTL.detail, () => persistentCached(`manga:full:${id}`, 24 * 60 * 60 * 1000, async () => {
     const params = [['includes[]', 'cover_art'], ['includes[]', 'author']];
     const json = await mangadexGet(`/manga/${id}`, params);
     if (!json.data) {
@@ -168,7 +172,7 @@ export function mangaById(id) {
       throw err;
     }
     return { data: manga };
-  });
+  }));
 }
 
 // Curated subset of MangaDex's ~80 UUID-keyed tags, verified live against
