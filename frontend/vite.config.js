@@ -41,6 +41,12 @@ export default defineConfig({
       // data while looking live would be actively misleading.
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg}'],
+        // The plain registerSW.js script (see injectRegister above) never
+        // tells a waiting worker to take over, so without these a new deploy
+        // only reached returning visitors after they closed every AniNest tab.
+        // Now the new worker activates at once and the next load is current.
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
   ],
