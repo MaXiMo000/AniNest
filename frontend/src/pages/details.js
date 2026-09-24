@@ -138,20 +138,80 @@ function charactersSectionHTML(characters) {
 // Reuses .tv-frame (from the trailer embed above) for the player shell and
 // .guess-choice (from the games) for the track-list buttons - both already
 // styled, no new CSS needed for a one-off jukebox.
-function themesSectionHTML(themes) {
+const trackLabel = (t) => `${t.slug}${t.title ? ` — ${t.title}` : ''}`;
+
+// Openings first (OP1, OP2, ...) then endings, so the first track is always
+// the opening - it is preselected below, no click needed to get started.
+function sortThemes(themes) {
+  const rank = (t) => (t.type === 'OP' ? 0 : 1);
+  const num = (t) => Number(/(\d+)/.exec(t.slug || '')?.[1]) || 1;
+  return [...themes].sort((a, b) => rank(a) - rank(b) || num(a) - num(b));
+}
+
+// `unavailable` = the themes request FAILED (AnimeThemes.moe is a third-party
+// service and has had outages), as opposed to an anime that simply has no
+// themes indexed. Those two must look different: the second shows nothing,
+// the first says so and offers a retry instead of silently hiding the jukebox.
+function themesSectionHTML(themes, { unavailable = false } = {}) {
+  if (unavailable) {
+    return `
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">🎵 OP/ED Jukebox</h2></div>
+      <p style="color:var(--muted);font-weight:600;margin:0 0 10px">The openings/endings service is temporarily unavailable — it's a third-party outage, not this anime.</p>
+      <button class="chip" id="themes-retry">🔄 Try again</button>
+    </section>`;
+  }
   if (!themes.length) return '';
-  const trackLabel = (t) => `${t.slug}${t.title ? ` — ${t.title}` : ''}`;
+  const sorted = sortThemes(themes);
+  const first = sorted[0];
   return `
     <section class="section">
       <div class="section-head"><h2 class="section-title">🎵 OP/ED Jukebox</h2></div>
       <div class="tv-frame">
-        <div class="tv-screen"><video id="theme-player" style="width:100%;height:100%" controls preload="none"></video></div>
-        <div class="tv-label" id="theme-now-playing">▶ Pick a track below</div>
+        <div class="tv-screen"><video id="theme-player" style="width:100%;height:100%" controls preload="none" src="${escapeHtml(first.videoUrl)}"></video></div>
+        <div class="tv-label" id="theme-now-playing">▶ ${escapeHtml(trackLabel(first))} — press play</div>
       </div>
       <div class="guess-choices" id="theme-track-list" style="margin-top:14px">
-        ${themes.map((t) => `<button class="guess-choice" data-video="${escapeHtml(t.videoUrl)}" data-label="${escapeHtml(trackLabel(t))}">${escapeHtml(trackLabel(t))}</button>`).join('')}
+        ${sorted.map((t, i) => `<button class="guess-choice${i === 0 ? ' is-correct' : ''}" data-video="${escapeHtml(t.videoUrl)}" data-label="${escapeHtml(trackLabel(t))}">${escapeHtml(trackLabel(t))}</button>`).join('')}
       </div>
     </section>`;
+}
+
+function wireThemes(root) {
+  root.querySelectorAll('#theme-track-list .guess-choice').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const player = root.querySelector('#theme-player');
+      if (!player) return;
+      player.src = btn.dataset.video;
+      player.play().catch(() => {}); // browsers can reject autoplay-after-src-swap; controls still let the user hit play themselves
+      root.querySelectorAll('#theme-track-list .guess-choice').forEach((b) => b.classList.remove('is-correct'));
+      btn.classList.add('is-correct');
+      const label = root.querySelector('#theme-now-playing');
+      if (label) label.textContent = `▶ ${btn.dataset.label}`;
+    });
+  });
+}
+
+// Loaded AFTER the page renders instead of inside the page's Promise.all: a
+// dead third-party host takes ~20s to fail, and the whole anime page used to
+// wait on it. Now the page shows immediately and the jukebox fills in (or
+// reports it's unavailable) when it can.
+async function loadThemes(root, id) {
+  const slot = root.querySelector('#themes-slot');
+  if (!slot) return;
+  try {
+    const res = await Api.themes(id);
+    if (!slot.isConnected) return; // navigated to another anime meanwhile
+    slot.innerHTML = themesSectionHTML(res.data || []);
+    wireThemes(root);
+  } catch {
+    if (!slot.isConnected) return;
+    slot.innerHTML = themesSectionHTML([], { unavailable: true });
+    slot.querySelector('#themes-retry')?.addEventListener('click', () => {
+      slot.innerHTML = '<p style="color:var(--muted);font-weight:600">Checking again…</p>';
+      loadThemes(root, id);
+    });
+  }
 }
 
 function reviewCardHTML(r, isMine) {
@@ -259,12 +319,11 @@ function wireReviewForm(root, malId, animeTitle) {
 export async function renderDetails(root, id) {
   root.innerHTML = loadingHTML('LOADING EPISODE DATA');
   try {
-    const [{ data: a }, recRes, reviewsData, charRes, themesRes, watchSourcesRes] = await Promise.all([
+    const [{ data: a }, recRes, reviewsData, charRes, watchSourcesRes] = await Promise.all([
       Api.fullById(id),
       Api.recommendations(id).catch(() => ({ data: [] })),
       Reviews.list(id).catch(() => ({ reviews: [], average: null, count: 0, myReview: null })),
       Api.characters(id).catch(() => ({ data: [] })),
-      Api.themes(id).catch(() => ({ data: [] })),
       WatchSources.forAnime(id).catch(() => ({ data: [] })),
     ]);
 
@@ -272,7 +331,6 @@ export async function renderDetails(root, id) {
     const score = a.score ? a.score.toFixed(1) : '—';
     const recs = (recRes.data || []).slice(0, 12).map((r) => r.entry);
     const characters = charRes.data || [];
-    const themes = themesRes.data || [];
     const watchSources = watchSourcesRes.data || [];
 
     document.title = `${a.title} — AniNest`;
@@ -316,7 +374,7 @@ export async function renderDetails(root, id) {
 
       ${charactersSectionHTML(characters)}
 
-      ${themesSectionHTML(themes)}
+      <div id="themes-slot"></div>
 
       ${reviewsSectionHTML(reviewsData).replace('<section class="section">', '<section class="section" id="reviews-section">')}
 
@@ -379,18 +437,7 @@ export async function renderDetails(root, id) {
       });
     });
 
-    root.querySelectorAll('#theme-track-list .guess-choice').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const player = root.querySelector('#theme-player');
-        if (!player) return;
-        player.src = btn.dataset.video;
-        player.play().catch(() => {}); // browsers can reject autoplay-after-src-swap; controls still let the user hit play themselves
-        root.querySelectorAll('#theme-track-list .guess-choice').forEach((b) => b.classList.remove('is-correct'));
-        btn.classList.add('is-correct');
-        const label = root.querySelector('#theme-now-playing');
-        if (label) label.textContent = `▶ ${btn.dataset.label}`;
-      });
-    });
+    loadThemes(root, id);
 
     wireReviewForm(root, a.mal_id, a.title);
   } catch (err) {

@@ -26,7 +26,10 @@ export async function animeThemesFor(malId) {
   // default User-Agent as bot traffic (confirmed directly: the exact same
   // request succeeds with curl's default UA but 403s with Node's) - a
   // normal browser-like UA is required, not optional.
+  // 8s ceiling: when AnimeThemes is down, Cloudflare's own 522 takes ~20s to
+  // arrive, and every anime page's jukebox request would hang that long.
   const res = await fetch(url, {
+    signal: AbortSignal.timeout(8000),
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       Accept: 'application/json',
