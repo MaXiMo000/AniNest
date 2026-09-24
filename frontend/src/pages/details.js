@@ -7,6 +7,7 @@ import { navigate } from '../lib/router.js';
 import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { powSelectHTML } from '../lib/powSelect.js';
 import { WatchSources } from '../lib/watchSourcesApi.js';
+import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 
 function fmtDate(x) {
   return x?.string || '?';
@@ -47,57 +48,6 @@ function watchBoxHTML(a) {
       <p style="color:var(--muted);font-weight:600;margin:0">We link to official platforms only — no sketchy streams here, gotta support the studios!</p>
       <div class="watch-links">${links}</div>
     </div>`;
-}
-
-// Curated official YouTube uploads (Muse Asia, Ani-One Asia, Crunchyroll's
-// own channel, etc.) - deliberately separate from watchBoxHTML above
-// (licensed-platform links, not embeddable) rather than merged into it, so
-// "actually watchable here for free" never gets visually confused with
-// "here's a link to a paid platform". Always rebuilt from the bare video id
-// the backend returns - never trusts/embeds a raw URL (see
-// backend/src/lib/youtubeUrl.js).
-//
-// One player + an episode list rather than one iframe per source: bulk
-// import can attach 100+ episodes to a long-running show, and a hundred
-// YouTube iframes loading at once would be unusable. Nothing loads until an
-// episode is picked.
-const YT_ID_RE = /^[A-Za-z0-9_-]{11}$/;
-
-function sourceSortKey(s) {
-  const label = s.label || '';
-  if (/^Complete/i.test(label)) return -1; // whole-series compilations first
-  const m = /(\d+)/.exec(label);
-  return m ? Number(m[1]) : 9999;
-}
-
-function freeWatchSectionHTML(sources, malId) {
-  const head = `
-      <div class="section-head">
-        <h2 class="section-title">🆓 Watch Free (Official)</h2>
-        <a href="#/anime/${malId}/submit-watch-link" class="chip">➕ Suggest a link</a>
-      </div>`;
-  const valid = sources.filter((s) => YT_ID_RE.test(s.youtube_video_id));
-  if (!valid.length) {
-    return `
-    <section class="section">
-      ${head}
-      <p style="color:var(--muted);font-weight:600">No free official episodes added yet — know one? Suggest a link above!</p>
-    </section>`;
-  }
-  const sorted = [...valid].sort((a, b) => sourceSortKey(a) - sourceSortKey(b) || (a.label || '').localeCompare(b.label || ''));
-  const buttons = sorted.map((s) => {
-    const text = `${s.label || 'Watch'} — ${s.channel_name || 'Official upload'}`;
-    return `<button class="guess-choice" data-video="${escapeHtml(s.youtube_video_id)}" data-label="${escapeHtml(text)}">${escapeHtml(text)}</button>`;
-  }).join('');
-  return `
-    <section class="section" id="free-watch">
-      ${head}
-      <div class="tv-frame">
-        <div class="tv-screen" id="free-player-screen" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:800">▶ Pick an episode below</div>
-        <div class="tv-label" id="free-now-playing">${sorted.length} free ${sorted.length === 1 ? 'upload' : 'uploads'} available</div>
-      </div>
-      <div class="guess-choices" id="free-episode-list" style="margin-top:14px;max-height:300px;overflow-y:auto">${buttons}</div>
-    </section>`;
 }
 
 function watchStatusHTML(malId) {
@@ -423,19 +373,7 @@ export async function renderDetails(root, id) {
       });
     });
 
-    root.querySelectorAll('#free-episode-list .guess-choice').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const videoId = btn.dataset.video;
-        if (!YT_ID_RE.test(videoId)) return;
-        const screen = root.querySelector('#free-player-screen');
-        // Built from the validated bare id against our own template, never from stored text.
-        screen.style.display = '';
-        screen.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1" title="Free episode" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
-        root.querySelectorAll('#free-episode-list .guess-choice').forEach((b) => b.classList.remove('is-correct'));
-        btn.classList.add('is-correct');
-        root.querySelector('#free-now-playing').textContent = `▶ ${btn.dataset.label}`;
-      });
-    });
+    wireFreeWatch(root, watchSources);
 
     loadThemes(root, id);
 

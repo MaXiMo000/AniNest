@@ -1370,6 +1370,47 @@ test('the anime themes list survives an AnimeThemes outage once it has been fetc
   assert.deepEqual(await persistentCached(key, 0, outage), themes, 'stale list is served while the service is down');
 });
 
+test('free-watch grouping: languages, complete series first, long runs split into ranges', async () => {
+  // The frontend has no test runner of its own; this module is deliberately
+  // import-free so the backend's runner can exercise it directly.
+  const { groupSources, parseSourceLabel } = await import('../../frontend/src/lib/freeWatchGroups.js');
+  const id = (n) => `vid${String(n).padStart(8, '0')}`; // 11 chars, valid shape
+  const src = (n, label, channel = 'Muse Asia') => ({ id: n, youtube_video_id: id(n), label, channel_name: channel });
+
+  assert.deepEqual(parseSourceLabel('Episode 12 · English Sub'), { kind: 'episode', episode: 12, lang: 'English Sub', base: 'Episode 12' });
+  assert.deepEqual(parseSourceLabel('Complete Series · English Dub'), { kind: 'complete', episode: null, lang: 'English Dub', base: 'Complete Series' });
+  assert.equal(parseSourceLabel('Episode 7').lang, 'Other', 'older rows have no language tag');
+  assert.equal(parseSourceLabel('Watch').kind, 'other');
+
+  // A long run: 35 English Sub episodes given OUT of order, + 10 dub, + a compilation, + a manual link.
+  const sources = [];
+  for (let e = 35; e >= 1; e -= 1) sources.push(src(e, `Episode ${e} · English Sub`));
+  for (let e = 1; e <= 10; e += 1) sources.push(src(100 + e, `Episode ${e} · English Dub`));
+  sources.push(src(200, 'Complete Series · English Sub'));
+  sources.push(src(201, 'Watch', 'Crunchyroll'));
+
+  const { languages, defaultLang } = groupSources(sources);
+  assert.equal(defaultLang, 'English Sub', 'English Sub is the default version');
+  assert.deepEqual(languages.map((l) => `${l.lang}:${l.count}`), ['English Sub:36', 'English Dub:10', 'Other:1']);
+
+  const sub = languages[0];
+  assert.deepEqual(sub.groups.map((g) => g.title), ['Complete series', 'Episodes 1–12', 'Episodes 13–24', 'Episodes 25–35'],
+    '35 episodes split into ranges, complete series pinned first');
+  assert.deepEqual(sub.groups[1].items.map((s) => s.parsed.episode), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 'ascending within a range');
+
+  // A short run stays a single flat list (no titled group to click through).
+  const dub = languages[1];
+  assert.equal(dub.groups.length, 1);
+  assert.equal(dub.groups[0].title, null);
+  assert.equal(dub.groups[0].items.length, 10);
+
+  // Bad ids are dropped, an empty input has no default language, a lone episode gets its own title.
+  assert.deepEqual(groupSources([{ youtube_video_id: 'nope', label: 'Episode 1' }]), { languages: [], defaultLang: null });
+  assert.deepEqual(groupSources([]), { languages: [], defaultLang: null });
+  const lone = groupSources([src(1, 'Episode 1 · English Sub'), src(2, 'Episode 2 · English Sub')], { chunkSize: 1, chunkThreshold: 1 });
+  assert.deepEqual(lone.languages[0].groups.map((g) => g.title), ['Episode 1', 'Episode 2']);
+});
+
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');

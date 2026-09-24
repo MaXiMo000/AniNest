@@ -1703,3 +1703,8 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 .xp-breakdown strong { color: var(--yellow); }
 .xp-count { color: var(--muted); }
 .leaderboard-level { font-size: 0.8rem; font-weight: 800; color: var(--muted); white-space: nowrap; }
+
+/* Free-watch episode ranges */
+.free-group { margin-bottom: 10px; }
+.free-group summary { cursor: pointer; font-weight: 800; padding: 6px 2px; color: var(--yellow); }
+.free-group[open] summary { margin-bottom: 6px; }
