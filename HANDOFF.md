@@ -33,7 +33,8 @@ render.yaml         Render Blueprint for both services, including the production
 
 **Frontend routes**: `/`, `/browse`, `/anime/:id`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
 `/tier-list`, `/screenshot-search`, `/studio/:name`, `/person/:name`, `/u/:username`, `/account`, `/login`, `/register`,
-`/manga`, `/manga/:id`, `/manga-favorites`, `/games` (+ `/daily`, `/higher-lower`, `/guess-the-anime`, `/quiz`,
+`/manga`, `/manga/:id`, `/manga-favorites`, `/games` (+ `/daily`, `/manga-daily`, `/higher-lower`, `/guess-the-anime`,
+`/quiz`, `/timeline`, `/name-that-opening`, `/emoji-plot`, `/cast-call`, `/studio-match`, `/source-guess`, `/stats`,
 `/leaderboard/:game`), `/leaderboard/xp`, `/notifications`, `/admin/watch-sources`.
 
 **API mounts** (`app.js`): `auth`, `favorites`, `anime`, `reviews`, `users`, `client-errors`, `games`, `recommendations`,
@@ -42,7 +43,7 @@ render.yaml         Render Blueprint for both services, including the production
 
 **Tables** (`lib/db.js`; `CREATE TABLE IF NOT EXISTS` at boot, new columns added with `ensureColumn`, no migration tool):
 `users`, `sessions`, `favorites`, `reviews`, `manga_favorites`, `manga_reviews`, `game_scores`, `game_runs`,
-`daily_challenges`, `daily_results`, `anime_watch_sources`, `watch_source_candidates`, `notifications`,
+`game_score_log`, `daily_challenges`, `daily_results`, `manga_daily_challenges`, `manga_daily_results`, `anime_watch_sources`, `watch_source_candidates`, `notifications`,
 `manga_chapter_state`, `api_cache`.
 
 ## Data sources and caching
@@ -108,12 +109,35 @@ derived from existing data and never stored, so it applies retroactively and can
 (`submitted_by != reviewed_by`), so admin imports earn nothing. The leaderboard is `GET /api/leaderboard/xp`, cached for 2 minutes.
 Watching an episode and reading a chapter aren't tracked because there's no reliable signal for either.
 
-**Games** (`pages/games/*`): Daily Challenge, Higher/Lower, Guess the Anime and Taste Quiz. Streaks feed leaderboards and XP, so
-score submission is guarded (`routes/games.js`). The player starts a **single-use run** with `POST /:game/start`. `POST /:game/score`
-is accepted only for that run and only once; the run is claimed atomically *before* the checks run. The streak also has to fit
-the elapsed time (1.5s per point for Higher/Lower, 2.5s for Guess the Anime, hard cap 300). That stops instant fakes and replays.
-A bot that actually waits would still get through, because the games run in the browser. Daily results are recorded once per date,
-for today or yesterday only (`POST /api/games/daily/result`).
+**Games** (`pages/games/*`). Every game is listed once in `frontend/src/lib/gameCatalog.js` (hub, leaderboard picker,
+stats page) and every ranked slug once in `backend/src/lib/games.js` (`GAME_RULES`: time floor per round, optional score cap).
+Adding a game means one entry in each plus its page. Shared frontend pieces:
+- `lib/gameKit.js`: server run, local per-game stats (`aninest_game_stats_v1`), game-over screen, challenge links.
+- `lib/gameFx.js`: synthesized sounds (Web Audio, no files), haptics, POW popups, confetti, shake, count-up. One sound toggle;
+  everything respects `prefers-reduced-motion`. Pure decoration: no game logic may depend on it.
+- `lib/rng.js`: seeded shuffles. A `?seed=` challenge link sorts the pool by id and deals the same deck.
+- `lib/choiceGame.js`: the engine behind Studio Match, Source Material, Emoji Plot, Cast Call and Name That Opening. A game
+  only supplies `buildRound()`; returning `null` skips a round (e.g. no openings on AnimeThemes).
+
+Streaks feed leaderboards, badges and XP, so score submission is guarded (`routes/games.js`). The player starts a **single-use
+run** with `POST /:game/start`. `POST /:game/score` is accepted only for that run and only once; the run is claimed atomically
+*before* the checks run. The score has to fit the elapsed time (`minMsPerRound` per game, set just under each client's reveal
+delay; hard cap 300, and 80 for the 60-second Blitz). That stops instant fakes and replays. A bot that actually waits would still
+get through, because the games run in the browser. Accepted scores are also written to `game_score_log`, which powers
+`?period=week` leaderboards and `GET /api/games/me/stats`. Easy mode in Guess the Anime and the Taste Quiz post nothing.
+
+The two dailies record one result per player per date, for today or yesterday only (`POST /api/games/daily/result`,
+`POST /api/games/manga-daily/result`). The manga daily stores its 12 wrong answers with the puzzle so everyone sees the same
+rounds. Badges (`lib/badges.js`) now include daily wins, games variety and a mastery badge per game (20+); the profile's badges
+come out of `computeXp()` so they can't disagree with XP.
+
+**Themes**: dark by default; `data-theme="light"` on `<html>` switches CSS tokens (`style.css` top). `public/theme-init.js`
+applies a saved choice before first paint (the CSP forbids inline scripts). Accent colors used as text go through
+`--text-yellow`/`--text-blue`/`--text-pink2`/`--text-green` so the light theme can darken them; surfaces over cover art
+(`.hero`, `.tv-frame`, `.guess-poster-frame`) stay dark in both themes.
+
+**Profile dashboard**: favorites store `genres` (JSON array) and `episodes`. A save that omits them keeps the stored values
+(`COALESCE` in the upsert), so older favorites fill in when re-saved.
 
 **Notifications** (`lib/notifications.js`, `lib/mangaUpdates.js`): a header bell plus `#/notifications`. You follow a title when
 it's in your favorites and not marked completed or dropped. For anime, a notification is created whenever free episodes go live
@@ -178,18 +202,22 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 - **Shell escaping**: the bash tool collapses doubled backslashes, which silently corrupted regexes written through heredocs or
   `python -c` (a `\b` became a backspace byte). Write source with the Write/Edit tools, and scan for control characters after any scripted edit.
 - `main.js` renders a loading state *before* awaiting auth, because pages read `Auth.get().user` synchronously on their first render.
-- All tests share one database, so pick an unused `mal_id` range for new tests. Taken: 20000-74999, 82000-82899, 90000-90899, 91000-91899.
+- All tests share one database, so pick an unused `mal_id` range for new tests. Taken: 20000-74999, 82000-82899, 83000-83099, 90000-90899, 91000-91899.
 
 ## Testing
 
-`cd backend && npm test` runs 77 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 93 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 
 Live upstreams (AniList, Jikan, MangaDex, trace.moe, AnimeThemes, YouTube) are deliberately **not** called. The tests cover input
 validation, auth and gating, and the pure logic around them: title parsing, series matching, XP, episode grouping, the persistent
-cache, and the manga poll with an injected fake. The frontend has no test runner. Its one pure module (`freeWatchGroups.js`) has no
-imports so the backend suite can test it. Flows behind a login were checked by hand or through their APIs.
+cache, and the manga poll with an injected fake. `freeWatchGroups.js` is still tested from the backend suite.
+
+Frontend: `npm test` runs Vitest (jsdom) on the pure game logic in `frontend/test/`. `npm run test:e2e` runs Playwright in
+`frontend/e2e/`: the real app on the Vite dev server, with every API call answered by `e2e/mockApi.js` (a 60-anime fixture pool,
+dailies, themes, characters, a profile). It plays every game to game over and checks the signed-in score post. `screens.spec.js`
+only takes screenshots when `SCREENSHOTS=1` (with `SHOTS=/path,/path`), for eyeballing layouts.
 
 ## Known limitations and possible next steps
 
@@ -200,7 +228,7 @@ imports so the backend suite can test it. Flows behind a login were checked by h
   each question and checks each answer, and the Daily stops sending its answer to the browser. That's a larger rewrite.
 - Not built, because each needs an outside service: email (verification, password reset, notification emails), 2FA, Redis,
   external error tracking.
-- Ideas: a warm-up job that pre-fills `api_cache` for popular titles, notification preferences, frontend tests.
+- Ideas: a warm-up job that pre-fills `api_cache` for popular titles, notification preferences, server-picked game rounds.
 
 ## Quick start
 

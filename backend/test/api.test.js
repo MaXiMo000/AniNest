@@ -1948,18 +1948,18 @@ test('favorites keep genres and episodes for the profile dashboard, and a save w
   await agent.get('/api/health');
   const user = uniqueUser();
   await agent.post('/api/auth/register', { csrf: true, body: user });
-  const add = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 51001, title: 'Dash Test', genres: ['Action', 'Drama'], episodes: 24 } });
+  const add = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 83001, title: 'Dash Test', genres: ['Action', 'Drama'], episodes: 24 } });
   assert.equal(add.status, 201);
   // A status change from the library page sends neither field.
-  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 51001, title: 'Dash Test', status: 'completed' } });
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 83001, title: 'Dash Test', status: 'completed' } });
   const profile = await agent.get(`/api/users/${user.username}`);
-  const fav = profile.json.favorites.find((f) => f.mal_id === 51001);
+  const fav = profile.json.favorites.find((f) => f.mal_id === 83001);
   assert.deepEqual(fav.genres, ['Action', 'Drama']);
   assert.equal(fav.episodes, 24);
   assert.equal(fav.status, 'completed');
 
-  const tooMany = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 51002, title: 'X', genres: Array.from({ length: 11 }, (_, i) => `G${i}`) } });
+  const tooMany = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 83002, title: 'X', genres: Array.from({ length: 11 }, (_, i) => `G${i}`) } });
   assert.equal(tooMany.status, 400);
-  const badEps = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 51002, title: 'X', episodes: -3 } });
+  const badEps = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 83002, title: 'X', episodes: -3 } });
   assert.equal(badEps.status, 400);
 });

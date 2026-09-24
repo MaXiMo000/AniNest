@@ -28,7 +28,7 @@ jobs:
       - run: npm test
 
   frontend:
-    name: Frontend build
+    name: Frontend build and unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,4 +41,32 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run build
+
+  e2e:
+    name: Browser smoke tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # The real frontend against a mocked API (e2e/mockApi.js): no backend,
+      # database or third-party APIs involved.
+      - run: npm run test:e2e
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/test-results
+          retention-days: 7
