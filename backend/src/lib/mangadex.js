@@ -5,9 +5,9 @@
 //
 // Deliberately metadata-only. This module must never call MangaDex's
 // /chapter or /at-home endpoints, and must never return chapter/page image
-// URLs or chapter content - AniNest's existing stance is "no streaming of
-// actual episodes" for anime (piracy-scraper APIs declined on copyright
-// grounds, see HANDOFF.md), and the manga equivalent holds the same line:
+// URLs or chapter content - on the anime side AniNest only ever embeds
+// official uploads from licensed channels (piracy-scraper APIs were declined
+// on copyright grounds), and the manga equivalent holds the same line:
 // MangaDex's chapter content is scanlation-heavy/mixed-licensing, unlike
 // its metadata. Actual reading happens via generated search-link-out to
 // official sources (MANGA Plus/VIZ/Webtoons), built entirely client-side
@@ -81,6 +81,17 @@ function localized(field, fallback = '') {
   return field.en || Object.values(field)[0] || fallback;
 }
 
+// MangaDex's main title is often a romanization ("Na Honjaman Level-Up") with
+// the English name only among altTitles ("Solo Leveling") - prefer English,
+// and keep the original as the first alt title so the detail page still shows it.
+function titlesOf(a) {
+  const original = localized(a.title, 'Untitled');
+  const title = a.title?.en || (a.altTitles || []).find((t) => t.en)?.en || original;
+  const alts = [original, ...(a.altTitles || []).map((t) => localized(t))]
+    .filter((t) => t && t !== title);
+  return { title, altTitles: [...new Set(alts)] };
+}
+
 function coverFileName(relationships) {
   const cover = relationships.find((r) => r.type === 'cover_art');
   return cover?.attributes?.fileName || null;
@@ -96,8 +107,7 @@ function normalizeManga(raw) {
   const fileName = coverFileName(raw.relationships || []);
   return {
     id: raw.id,
-    title: localized(a.title, 'Untitled'),
-    altTitles: (a.altTitles || []).map((t) => localized(t)).filter(Boolean),
+    ...titlesOf(a),
     description: localized(a.description),
     // MangaDex only returns a cover filename via the cover_art relationship,
     // not a full URL - build the flat image URL server-side so the frontend
@@ -167,7 +177,8 @@ export function mangaById(id) {
   // Also kept in our own database and served from there if MangaDex is down
   // (lib/persistentCache.js) - but never past a definitive 404, which is how
   // the content-rating safety check below rejects an unsafe title.
-  return cached(`manga:full:${id}`, TTL.detail, () => persistentCached(`manga:full:${id}`, 24 * 60 * 60 * 1000, async () => {
+  // v2: stored copies from before English titles were preferred are skipped.
+  return cached(`manga:full:${id}`, TTL.detail, () => persistentCached(`manga:full:v2:${id}`, 24 * 60 * 60 * 1000, async () => {
     const params = [['includes[]', 'cover_art'], ['includes[]', 'author']];
     const json = await mangadexGet(`/manga/${id}`, params);
     if (!json.data) {

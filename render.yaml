@@ -4,9 +4,8 @@ services:
     env: node
     # Starter ($7/mo, 0.5 CPU, 512 MB): must match the plan set in the Render
     # dashboard. While this said `free`, every Blueprint sync tried to switch
-    # the service back down to Free ("Update web service aninest-backend plan
-    # to Free") and failed against the paid plan. Starter also never spins
-    # down, so the cold-start wake-up delay described in HANDOFF.md is gone.
+    # the service back down to Free and failed against the paid plan. Starter
+    # also never spins down, so there is no cold-start delay.
     plan: starter
     rootDir: backend
     buildCommand: npm ci
@@ -17,11 +16,8 @@ services:
         value: '24'
       - key: NODE_ENV
         value: production
-      - key: SESSION_SECRET
-        generateValue: true
-      # Render's free web service plan can't attach a persistent disk at
-      # all, so the database lives on Turso (free, SQLite-compatible)
-      # instead — see backend/src/lib/db.js. Get these from `turso db show`
+      # The database lives on Turso (free, SQLite-compatible) rather than a
+      # Render disk - see backend/src/lib/db.js. Get these from `turso db show`
       # / `turso db tokens create` after creating a free database at
       # turso.tech. sync: false means Render prompts for them in the
       # dashboard rather than storing them in this file.

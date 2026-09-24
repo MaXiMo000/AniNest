@@ -94,6 +94,7 @@ function paginationHTML(state, hasNext) {
 }
 
 export async function renderBrowse(root, params) {
+  document.title = 'Browse Anime — AniNest';
   const state = parseState(params);
   root.innerHTML = `<div class="section-head"><h2 class="section-title">🧭 Browse Anime</h2></div>${skeletonGrid(18)}`;
 

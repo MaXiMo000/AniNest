@@ -519,11 +519,12 @@ function wireEvents(root) {
 }
 
 export async function renderWatchSourcesAdmin(root) {
-  document.title = 'Watch-Source Curation — AniNest';
+  // Non-admins get the ordinary 404 page (and title), same as the API's 404.
   if (!Auth.get().user?.isAdmin) {
     root.innerHTML = '<div class="empty-state"><span class="big-emoji">🌀</span>This page wandered off into the filler dimension.</div>';
     return;
   }
+  document.title = 'Watch-Source Curation — AniNest';
   pickedAnime = null;
   searchNotice = null;
   channels = null;

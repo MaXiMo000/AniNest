@@ -73,7 +73,7 @@ const MEDIA_FIELDS = `
   id idMal
   title { romaji english }
   coverImage { extraLarge large }
-  averageScore episodes format season seasonYear status source
+  averageScore popularity episodes format season seasonYear status source
   description(asHtml: false)
   genres
   studios(isMain: true) { nodes { name } }
@@ -105,7 +105,9 @@ export function normalizeAniListMedia(m) {
     status: STATUS_MAP[m.status] || m.status || null,
     rank: null,
     popularity: null,
-    members: null,
+    // AniList's `popularity` is how many users have it on a list - its
+    // equivalent of MAL's member count (MAL's popularity RANK stays null).
+    members: m.popularity ?? null,
     aired: { string: [m.season, m.seasonYear].filter(Boolean).join(' ') || null },
     duration: null,
     rating: null,

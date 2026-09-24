@@ -21,6 +21,7 @@ function loadTurnstileScript() {
 }
 
 export function renderRegister(root) {
+  document.title = 'Create Account — AniNest';
   if (Auth.get().user) { navigate('#/account'); return; }
 
   root.innerHTML = `

@@ -36,6 +36,7 @@ function favCard(f) {
 }
 
 export async function renderFavorites(root) {
+  document.title = 'My Favorites — AniNest';
   if (!Auth.get().user) {
     root.innerHTML = `
       <div class="empty-state">

@@ -2,6 +2,7 @@
 
 const routes = [];
 let notFoundHandler = () => {};
+const DEFAULT_TITLE = document.title;
 
 export function route(pattern, handler) {
   // pattern like '/anime/:id'
@@ -55,6 +56,9 @@ async function dispatch() {
   document.body.classList.remove('nav-open');
   document.querySelectorAll('.nav-dropdown.is-open').forEach((d) => d.classList.remove('is-open'));
   highlightNav(path, params);
+  // Pages that name themselves set document.title while rendering; the rest
+  // would otherwise keep the previous page's title.
+  document.title = DEFAULT_TITLE;
 
   for (const r of routes) {
     const match = r.regex.exec(path);

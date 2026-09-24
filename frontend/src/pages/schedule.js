@@ -24,6 +24,7 @@ function tabsHTML(activeDay) {
 }
 
 export async function renderSchedule(root, params) {
+  document.title = 'Weekly Schedule — AniNest';
   const requested = (params.get('day') || '').toLowerCase();
   const day = DAYS.includes(requested) ? requested : todayName();
 

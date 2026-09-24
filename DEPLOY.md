@@ -1,47 +1,94 @@
-# Deploying AniNest to Render
+# Deploying AniNest
 
-`render.yaml` at the repo root defines both services as a Blueprint, so the easiest path is:
+AniNest deploys to [Render](https://render.com) as a Blueprint (`render.yaml`) with two services, plus a
+[Turso](https://turso.tech) database:
 
-1. Push this repo to GitHub.
-2. **Create a free database at [turso.tech](https://turso.tech) first** — Render's free-tier web services can't attach a persistent disk at all (confirmed directly: the Blueprint validator rejects a `disk:` block on the free plan), so the database lives on Turso instead. After signing up:
-   ```bash
-   turso db create aninest
-   turso db show aninest --url        # -> TURSO_DATABASE_URL
-   turso db tokens create aninest     # -> TURSO_AUTH_TOKEN
-   ```
-3. In the Render dashboard: **New → Blueprint**, point it at the repo. Render reads `render.yaml` and creates both services, prompting for the `sync: false` values before creating anything:
-   - `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` — paste the values from step 2.
-4. **First deploy will fail to talk cross-service** — that's expected. Render assigns each service's `*.onrender.com` URL only after it exists, so `FRONTEND_ORIGIN` (on the backend) and `VITE_API_URL` (on the frontend) are placeholders in `render.yaml` until you fill in the real ones:
-   - Open **aninest-backend → Environment**, set `FRONTEND_ORIGIN` to the actual frontend URL Render assigned.
-   - Open **aninest-frontend → Environment**, set `VITE_API_URL` to the actual backend URL Render assigned, then trigger a manual redeploy of the frontend (env vars are baked in at build time for a static site, so changing one requires a rebuild).
+| Service | Type | Plan |
+|---|---|---|
+| `aninest-backend` | Node web service (`backend/`) | **Starter** (always on; `render.yaml` must say `plan: starter`) |
+| `aninest-frontend` | Static site (`frontend/dist`) | Free |
+| Database | Turso (SQLite-compatible) | Free tier |
 
-## Things that don't come from the Blueprint automatically
+Pushing to `master` redeploys both services automatically.
 
-- **`SESSION_SECRET`**: `generateValue: true` makes Render create a random one on first deploy — good, don't overwrite it with the value from your local `.env`. If you ever need to force-logout everyone (e.g. suspected compromise), rotate it in the dashboard.
-- **CSP on the frontend**: `render.yaml` already sets the real header version (with `frame-ancestors`, which a `<meta>` tag can't do) alongside the `<meta>` tag in `index.html` (kept for local dev / defense-in-depth). Both use a `*.onrender.com` wildcard for `connect-src` so they don't need editing per-deploy — tighten to your exact backend origin later if you want a stricter policy.
-- **Custom domain / HTTPS**: Render terminates TLS for you automatically on `*.onrender.com` and on custom domains you attach — no action needed, but if you add a custom domain, update `FRONTEND_ORIGIN`/`VITE_API_URL` again.
+## 1. Create the database
 
-## Sanity checks after deploy
+```bash
+turso db create aninest
+turso db show aninest --url        # -> TURSO_DATABASE_URL
+turso db tokens create aninest     # -> TURSO_AUTH_TOKEN
+```
+
+Tables are created automatically when the backend boots. There's no migration step.
+
+## 2. Create the Blueprint
+
+In the Render dashboard choose **New -> Blueprint** and select this repository. Render reads `render.yaml` and asks for the
+`sync: false` values:
+
+| Variable | Service | Required | Value |
+|---|---|---|---|
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | backend | yes | from step 1 |
+| `ADMIN_USERNAMES` | backend | no | comma-separated usernames to make admins (see step 4) |
+| `YOUTUBE_API_KEY` | backend | no | enables the admin page's channel import and search (see step 5) |
+| `TURNSTILE_SECRET_KEY` | backend | no | Cloudflare Turnstile secret, for a bot check on registration |
+| `VITE_TURNSTILE_SITE_KEY` | frontend | no | the matching Turnstile site key |
+
+Leave any optional value blank to switch that feature off.
+
+## 3. Point the services at each other
+
+`render.yaml` assumes the URLs `https://aninest-frontend.onrender.com` and `https://aninest-backend.onrender.com`. If Render gives
+your services different URLs:
+
+- **Backend -> Environment**: set `FRONTEND_ORIGIN` to the frontend's URL. It's the only origin CORS allows.
+- **Frontend -> Environment**: set `VITE_API_URL` to the backend's URL, then **redeploy the frontend**. A static site's variables
+  are baked in at build time.
+- In `render.yaml`, replace `https://aninest-backend.onrender.com` in the frontend's `Content-Security-Policy` header (`img-src`,
+  used by the manga cover proxy) with your backend's URL. Do the same in the `<meta>` CSP in `frontend/index.html`. Browsers
+  enforce both policies, so they have to agree.
+
+## 4. Make yourself an admin
+
+The admin role is applied at every boot from `ADMIN_USERNAMES`, and only to accounts that already exist:
+
+1. Register your account on the live site.
+2. Set `ADMIN_USERNAMES` on the backend to your username. Changing a variable restarts the service.
+3. Log in again. **Watch-Source Curation** now appears in the **More** menu (`#/admin/watch-sources`).
+
+## 5. YouTube Data API key (optional)
+
+In Google Cloud Console, create a project, enable **YouTube Data API v3**, and create an **API key**. No billing is needed. The
+free quota is 10,000 units a day. Importing a channel costs about 1 unit per 50 videos, and a search costs 100. When the quota runs
+out the admin page says so. Pasting links by hand and user submissions keep working without the key.
+
+## Checking a deploy
 
 ```bash
 curl https://aninest-backend.onrender.com/api/health
 # {"ok":true}
 ```
 
-Then open the frontend URL, register a real account, favorite something, and reload — if it's still there, Turso is wired up correctly. To check directly:
+Then on the live site:
+- Register or log in, favorite an anime and reload the page. If it's still there, the database is connected.
+- Open **Manga**. If the covers load, the cover proxy and the CSP `img-src` are right.
+- Open an anime that has free episodes and play one. If it plays, the `frame-src` CSP and the Referrer-Policy are right.
 
-```bash
-turso db shell aninest "SELECT username FROM users"
-```
+To look at the database directly: `turso db shell aninest "SELECT username, is_admin FROM users"`.
 
-## Why Turso instead of Render's own disk/Postgres
+## Pitfalls
 
-Three real constraints ruled those out for a $0/mo personal deployment:
+- **Blueprint sync fails with a plan change**: the `plan:` in `render.yaml` has to match the plan chosen in the dashboard. If you
+  change the plan in the dashboard, change the file as well.
+- **Everyone looks logged out in production**: the frontend and backend are on different sites, so the cookies must be
+  `SameSite=None; Secure`. The backend sets that automatically when `NODE_ENV=production`, so don't change `NODE_ENV`.
+- **Images or embeds blocked**: a new image, media or frame origin has to be added to both CSPs (`render.yaml` and `index.html`).
+- **Changed `VITE_API_URL` but nothing happened**: the frontend needs a rebuild (a manual deploy).
+- **Logging everyone out**: delete the rows in the `sessions` table. Sessions don't depend on any secret.
 
-- **Render disks** require a paid instance type (Starter, ~$7/mo and up) — not available on the free plan at all, which is what surfaced this whole detour.
-- **Render's free Postgres** expires after a fixed trial window and gets deleted — fine for a demo, not for an app meant to keep accounts around indefinitely.
-- **Turso** is free with no expiry for this scale, and since it's SQLite-compatible, the backend's code didn't need a rewrite — `backend/src/lib/db.js` uses the same `@libsql/client` library and the same SQL for both local file mode (dev/tests) and remote Turso mode (production), switching automatically based on whether `TURSO_DATABASE_URL` is set.
+## Why Turso
 
-## Scaling beyond personal use
-
-Turso itself scales fine (it's a real managed database, not a workaround) — if you outgrow its free tier, that's a Turso plan upgrade, not an app rewrite. The one thing that *would* need code changes is dropping SQLite's dialect entirely for Postgres (different `AUTOINCREMENT`/`datetime()` syntax, etc.) — only worth doing if you specifically want Postgres for other reasons, not something scaling alone forces.
+Turso is SQLite-compatible, so the same `@libsql/client` code runs against a local file in development and tests and against Turso
+in production (`backend/src/lib/db.js` picks based on whether `TURSO_DATABASE_URL` is set). Turso's free tier doesn't expire and
+needs no disk on the web service. Outgrowing it means a Turso plan upgrade, not a code change. Moving to Postgres would mean porting
+SQLite-specific SQL (`datetime('now')`, `ON CONFLICT` upserts, `AUTOINCREMENT`).

@@ -3,6 +3,7 @@ import { navigate } from '../lib/router.js';
 import { escapeHtml, showToast } from '../lib/ui.js';
 
 export function renderLogin(root) {
+  document.title = 'Log In — AniNest';
   if (Auth.get().user) { navigate('#/account'); return; }
 
   root.innerHTML = `

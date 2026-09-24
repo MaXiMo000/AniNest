@@ -22,6 +22,7 @@ function importSectionHTML() {
 }
 
 export function renderAccount(root) {
+  document.title = 'My Account — AniNest';
   const { user } = Auth.get();
   if (!user) { navigate('#/login'); return; }
 

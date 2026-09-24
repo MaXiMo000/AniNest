@@ -29,10 +29,9 @@ const STATIC_GENRES = [
 ];
 
 // Every list-style function tries AniList first — a genuine first-party API
-// (not a scraper) with a materially higher rate limit than Jikan (~90/min vs
-// Jikan's ~60/min shared globally) and, empirically, far better uptime — and
-// transparently falls back to Jikan if AniList itself has a bad moment. See
-// README for why we bother with two sources at all.
+// (not a scraper) with, empirically, far better uptime than Jikan — and
+// transparently falls back to Jikan if AniList itself has a bad moment
+// (a 429 included: AniList allows 30 requests/minute).
 //
 // `persistMs`, when given, adds a third safety net UNDER both sources: the
 // answer is also kept in our own database (lib/persistentCache.js) and, if
@@ -123,7 +122,7 @@ export function genres() {
 // content rating, and curated "where to watch" streaming links.
 export function fullById(id) {
   return withFallback(
-    `full:${id}`,
+    `full:v2:${id}`, // v2: AniList copies now carry a member count
     TTL.detail,
     'AniList', async () => {
       const result = await anilistByMalId(Number(id));

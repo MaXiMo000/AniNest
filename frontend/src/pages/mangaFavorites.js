@@ -35,6 +35,7 @@ function favCard(f) {
 }
 
 export async function renderMangaFavorites(root) {
+  document.title = 'Reading List — AniNest';
   if (!Auth.get().user) {
     root.innerHTML = `
       <div class="empty-state">

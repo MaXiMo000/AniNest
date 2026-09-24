@@ -32,7 +32,6 @@ import os from 'node:os';
 
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = path.join(os.tmpdir(), `aninest-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-process.env.SESSION_SECRET = 'test-secret-not-for-production';
 // Many tests below legitimately call /api/auth/* in the same process, all
 // sharing one IP-keyed rate-limit bucket (127.0.0.1) — raise the ceiling so
 // they don't trip each other's limit. The limiter's actual behavior (does it

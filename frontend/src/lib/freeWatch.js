@@ -16,7 +16,11 @@ export function freeWatchSectionHTML(sources, malId) {
         <h2 class="section-title">🆓 Watch Free (Official)</h2>
         <a href="#/anime/${malId}/submit-watch-link" class="chip">➕ Suggest a link</a>
       </div>`;
-  const total = groupSources(sources).languages.reduce((n, l) => n + l.count, 0);
+  const { languages } = groupSources(sources);
+  const total = languages.reduce((n, l) => n + l.count, 0);
+  // With several versions the language tabs say which is which; with just one
+  // there are no tabs, so name it here (e.g. Ani-One's "Chinese subs" uploads).
+  const onlyLang = languages.length === 1 && languages[0].lang !== 'Other' ? ` · ${languages[0].lang}` : '';
   if (!total) {
     return `
     <section class="section">
@@ -29,7 +33,7 @@ export function freeWatchSectionHTML(sources, malId) {
       ${head}
       <div class="tv-frame">
         <div class="tv-screen" id="free-player-screen" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:800">▶ Pick an episode below</div>
-        <div class="tv-label" id="free-now-playing">${total} free ${total === 1 ? 'upload' : 'uploads'} available</div>
+        <div class="tv-label" id="free-now-playing">${total} free ${total === 1 ? 'upload' : 'uploads'} available${escapeHtml(onlyLang)}</div>
       </div>
       <div class="library-tabs" id="free-lang-tabs" style="margin-top:14px"></div>
       <div id="free-episode-list" style="margin-top:10px"></div>

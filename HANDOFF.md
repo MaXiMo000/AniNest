@@ -1,340 +1,211 @@
-# AniNest — Session Handoff
+# AniNest - Developer Handoff
 
-Living document — read this first in a new session, then update it before your context runs out again. Last updated by a session that shipped **the entire "brainstormed feature ideas" backlog (all 8 items) plus achievements/badges — every item ever proposed for this app is now done.** In order: a **Daily Challenge** (Wordle-style, one shared mystery anime a day), **global game leaderboards** for Higher/Lower and Guess the Anime (previously localStorage-only, now persisted server-side), **aggregate recommendations** ("Because you favorited X, Y, Z...") on Home, **studio/voice-actor browse pages**, **AniList list import** on the account page, **screenshot search** via trace.moe, an **OP/ED jukebox** via AnimeThemes.moe on detail pages, a **tier-list maker** for favorites, and finally **achievements/badges** on public profiles and the account page. See the matching detail sections below for each — several real bugs were found and fixed along the way, most worth reading before building anything similar: a stale-cache bug in aggregate recommendations, an AniList duplicate-node quirk (studio/VA pages and the existing detail-page studio list), a frontend re-render bug that would have wiped out a success message, **a genuine spoiler bug in the Daily Challenge** (caught by the user, not by testing - see its detail section, especially worth reading before building any other "same hidden answer, multiple guesses" mechanic), a would-be double-navigation bug in the screenshot-search results caught before it shipped, and **two infrastructure surprises in the jukebox** (a Cloudflare bot-block on Node's default fetch User-Agent, and a CSP `media-src` gap) that would have made the feature silently fail in production had they not been caught by testing the real playback, not just the API response. The tier-list maker's own real risk (canvas export tainting on cross-origin poster images) was confirmed *not* to be a problem, but only after directly testing it - see its detail section. Everything from prior sessions (all three original games, watch status, character/VA lists, recently-viewed, compare mode, min-score filter, PWA install, airing-today ticker, security/logging audit) is unchanged.
+Read this first when picking the project up. It describes the app **as it is now**; the history of why each
+piece looks the way it does is in `git log` (every commit message explains its reasoning). Keep this file current
+when you change something the next person would need to know.
 
-## V2 - what shipped after the "roadmap is done" point (READ THIS FIRST)
+Other docs: [README.md](README.md) (overview, features, security) and [DEPLOY.md](DEPLOY.md) (Render + Turso setup).
 
-Everything below post-dates the statements further down that say there is no remaining roadmap. The
-plan/status for it lives in `ROADMAP_V2.md`. Order the user chose: manga -> free anime -> XP. All three shipped.
+## At a glance
 
-**Manga** (`/api/manga`, `#/manga`): metadata only, from MangaDex (`backend/src/lib/mangadex.js`).
-Content rating is `safe` only (deliberately stricter than the site's original pass - "suggestive" surfaced
-ecchi doujinshi). Reading is link-out to MANGA Plus/VIZ/Webtoons search URLs, never an embedded reader.
-Reading list = `manga_favorites` (separate table: MangaDex ids are UUIDs, `favorites.mal_id` is an INTEGER).
-**Covers are proxied** through `GET /api/manga/cover/:id/:file`: MangaDex answers any browser request with
-another site's `Referer` with a "read this at mangadex.org" placeholder. localhost happens to pass, so this
-ONLY breaks in production - test manga images against prod, not just dev. The route is allowlisted (UUID +
-uuid-named file), size-capped, cached, and exempt from the general rate limiter.
+- **Live**: https://aninest-frontend.onrender.com (static site) and https://aninest-backend.onrender.com (API)
+- **Repo**: https://github.com/MaXiMo000/AniNest. Pushing to `master` auto-deploys both services.
+- **Stack**: Vite + vanilla JS SPA with hash routing | Express + `@libsql/client` (Turso in production, a local SQLite file in dev and tests)
+- **Hosting**: Render. The backend is on the paid **Starter** plan (always on), the database on Turso.
+- **Owner/admin account**: `mxximo`. It is a real account with real data, so be careful with it.
 
-**Free anime watching**: table `anime_watch_sources` (`approved|pending|rejected|removed`), shown on the anime
-detail page as one player + episode list (never one iframe per source - imports attach 100+ episodes).
-- Security invariant: the ONLY way text becomes a stored id is `parseYouTubeVideoId` (`lib/youtubeUrl.js`);
-  embeds are always rebuilt from the bare 11-char id (`youtube-nocookie.com`). Never store or embed a raw URL.
-- Curated official channels (ids verified live, not guessed) in `lib/youtube.js`: Muse Asia, Ani-One Asia, Crunchyroll.
-- **Admin role** (first one in the app): `users.is_admin`, set from the `ADMIN_USERNAMES` env var on every boot
-  (the account must already exist, or redeploy after registering). `requireAdmin` returns 404 to non-admins.
-- Admin page `#/admin/watch-sources`: bulk **Import** per channel, **Needs your review** queue
-  (`watch_source_candidates`, grouped by series+season, assign a whole show in one click), pending user
-  submissions (with embedded preview), and per-anime live links with Remove / Remove all.
-- Import pipeline (`lib/watchSourceMatcher.js`): `parseUploadTitle` -> series/season/episode/language; only real
-  episodes and "Complete Series" uploads pass (PVs/CMs/teasers/vlogs rejected); series match AniList by EXACT
-  title equality (`looseKey`: ignores "the" and spacing), never substring - a substring rule once attached
-  "Ascendance of a Bookworm" S3 to its Side Story. Later seasons accept only season-qualified titles.
-  **AniList allows only 30 requests/min** -> 2.2s pacing; a 429 stops the pass and the UI waits `Retry-After`.
-  Channel history is large (Muse Asia: ~500 episodes in the first 2,000 uploads), so scan depth is 3,000 items.
-- Quota: `channels.list`/`playlistItems.list` cost ~1 unit per 50 videos; `search.list` costs 100. Search is admin-only.
-
-**XP / levels**: derived, not stored (`lib/xp.js`, single loader `lib/xpStats.js` shared by profile + leaderboard).
-Retroactive, not farmable by toggling. Sources and caps are in `XP_RULES`. Admin bulk imports do NOT earn link XP
-(only links someone else approved: `submitted_by != reviewed_by`). New: `daily_results` table +
-`POST /api/games/daily/result` (today/yesterday only, once per date), `GET /api/leaderboard/xp` (cached 2 min),
-`#/leaderboard/xp`, `xpCardHTML` on profile + account pages. "Watched an episode"/"read a chapter" are NOT
-tracked - a YouTube iframe / a link-out gives no signal. Game results are client-reported (pre-existing), hence caps.
-
-**Ops / config (Render)**
-- Backend is on the paid **Starter** plan ($7/mo). `render.yaml` MUST say `plan: starter` - while it said `free`,
-  every Blueprint sync tried to downgrade the service and failed.
-- Backend env vars: `ADMIN_USERNAMES`, `YOUTUBE_API_KEY` (optional), plus the older TURSO_*/SESSION_SECRET/etc.
-- Production CSP is a real **HTTP header in `render.yaml`**, separate from `index.html`'s `<meta>` CSP (dev only).
-  Browsers enforce the intersection, so any new image/frame origin must be added to BOTH.
-
-**Gotchas that cost real time**
-- Frontend `ApiError` now carries extra JSON fields (`quotaExceeded`, `notConfigured`) - callers can branch on them.
-- Bash-tool escaping: doubled backslashes get collapsed, so regexes written via shell heredocs/`python -c` were silently
-  corrupted (a `\b` became a backspace byte). Write files with the Write/Edit tools, and scan for control chars.
-- The dev browser pane isn't logged in to prod; admin flows must be run by the user (never type their password).
-
-**Known limitations / manual follow-ups**
-- Ani-One's Chinese-titled shows can't be auto-matched; they land in the review queue and are labelled "Chinese subs".
-- Numbering follows the channel, not MAL: Attack on Titan Final Season shows one 35-episode run (MAL splits it into
-  parts); Jujutsu Kaisen S2 is labelled Episode 25-47.
-- Frontend has no automated tests; the logged-in XP UI flows were verified by the backend suite, not a browser session.
-
-(Historical - written before V2, see the section above.) **There is no remaining roadmap.** Every feature ever discussed for AniNest - the original weekly-schedule-through-games roadmap, README's old "Ideas for later" list, and all 8 brainstormed feature ideas plus achievements/badges - is shipped. A future session should ask the user what they want next rather than assuming there's a backlog item to pick up (see `ROADMAP_V2.md`, discussed below, for one candidate direction that exists but has not been approved to start).
-
-**Also found this session, not authored by this session**: an uncommitted `ROADMAP_V2.md` appeared in the working directory partway through, written by what appears to be another active session working on this same repo concurrently (a bigger "otaku-os" vision - watchable anime, readable manga, unified XP system). It's untouched by this session and left as-is - read it before planning further work, and be aware another session may be editing files here at the same time.
-
-## Two more real bugs found and fixed after the roadmap was "done" (this session)
-
-The user reported the live deployed site loading as a blank page (header + footer, nothing in between) for a noticeable stretch with zero loading indicator, then asked for a full mobile-responsiveness pass across every page. Both are now fixed:
-
-1. **Blank page on load, no loading feedback** - `frontend/src/main.js`'s `boot()` awaited `Auth.init()` then `Favorites.loadFromServer()` (both real backend calls) *before ever calling* `startRouter()`, and `startRouter()` is the only thing that writes anything into `<main id="app">`. On a warm backend this is imperceptible; on a cold Render free-tier instance (documented below under "Render gotchas" - a spun-down instance can take 20-60s to wake) the page sat completely blank for that whole window, exactly matching what the user saw and screenshotted. Fixed by rendering a loading state into `#app` as the very first line of `boot()`, before the awaits. **Deliberately did not** reorder to call `startRouter()` first and let auth resolve in the background - `account.js`/`login.js`/`register.js` all read `Auth.get().user` synchronously on their first render to decide whether to redirect, and starting the router before `Auth.init()` resolves would incorrectly bounce an already-logged-in user away from `/account` (or fail to redirect an already-logged-in visitor away from `/login`). Verified by simulating a 4s auth delay locally: the loading state covers the wait, and a logged-in user landing straight on `/account` still lands there correctly, not `/login`.
-2. **Broken poster images on the Tier List page** - found while doing the requested mobile pass, not something the tier-list feature's own original testing caught. Every tier card's `<img>` had `crossorigin="anonymous"` (added for the canvas-export feature), but Browse/Favorites/Home all load these exact same AniList/MAL poster URLs *without* `crossorigin`. By the time a user reaches Tier List, the browser usually already has a non-CORS cached response for that URL, and requesting the identical URL again in CORS mode then fails to load at all (confirmed directly: the same URL succeeds plain but fails with `crossOrigin='anonymous'` once already cached that way) - a broken-image icon instead of the poster, for essentially any returning visitor, not a rare edge case. **This also means the original "is canvas export CORS-safe" testing was incomplete** - it only tested one image in isolation, not a real page with pre-existing browser cache state. Fixed by removing `crossorigin` from the display `<img>` entirely (it never needed it - only export does, and export already builds its own separate `Image()` objects rather than reusing these elements) and having the export path's image loader append a cache-busting query param, guaranteeing a fresh CORS-mode fetch regardless of what's already cached. Verified: the exact previously-broken URL now loads under both paths, and a full 226-favorite export still completes with no error. **Lesson for any future feature that needs a CORS-clean image: check whether the same URL is already displayed elsewhere in the app without `crossorigin` first - if so, assume the browser cache will poison a later CORS-mode request for it, and test against a real page with warm cache, not an isolated fresh image.**
-
-**Mobile responsiveness audit** (the second half of the user's ask): every route in the app (all ~20 pages, including login-gated ones, dynamic ones like `/anime/:id`, `/studio/:name`, `/person/:name`, `/u/:username`, and both empty/filled states of Compare) was checked at 375px width for horizontal overflow (`document.body.scrollWidth > document.documentElement.clientWidth`) plus a visual screenshot pass on the more complex ones (Home, Details, Tier List with 226 real cards, Compare's filled comparison table, the mobile hamburger nav's open state, Schedule's day-tabs, Games hub, Higher/Lower's live gameplay screen). Every page passed with zero horizontal overflow - the only real issue found was the Tier List image bug above (a broken-image icon, not a layout/overflow problem, but still a real "not looking good" bug the user's ask was aimed at). One screenshot-capture artifact from the browser-automation tool itself (duplicated-looking content mid-scroll on Compare) was investigated and confirmed **not** a real bug via direct DOM inspection (exactly 1 header, 1 footer, 2 compare slots) before being dismissed - worth remembering that this tool's screenshots can occasionally glitch during rapid scroll+capture sequences, so a suspicious screenshot should be cross-checked against the actual DOM before treating it as a finding.
-
-## What this is
-
-A comic-book styled anime discovery site — browse/search/filter anime, watch official trailers, save favorites, leave ratings/reviews, check a weekly airing schedule. Full-stack, deployed free (Render + Turso + Cloudflare).
-
-- **Live**: https://aninest-frontend.onrender.com (frontend), https://aninest-backend.onrender.com (backend)
-- **Repo**: https://github.com/MaXiMo000/AniNest (public)
-- **Stack**: Vite + vanilla JS frontend, Express + `@libsql/client` (Turso/SQLite) backend, no framework either side
-- **Owner's account on the live site**: username `mxximo` (their real account, migrated in — see "Data migration" below, don't touch its data carelessly)
-
-## Architecture at a glance
+## Layout
 
 ```
-AniNest/
-  frontend/   Vite + vanilla JS SPA, hash-based routing (#/browse, #/anime/123, ...)
-  backend/    Express API — auth, favorites, reviews, anime-data proxy/cache
-    src/app.js       Express app assembly (importable, used by tests)
-    src/server.js    Thin entrypoint: listen() + signal handling
-    src/lib/db.js    Turso/local-SQLite client (same code, two modes)
-    test/            22 integration tests, node:test + fetch, no mocking framework
-  render.yaml   Render Blueprint (both services)
-  DEPLOY.md     Deployment steps
-  README.md     Feature list + security writeup
+frontend/src/
+  main.js             route table, auth + nav wiring, notification polling
+  lib/                API clients, stores, router, shared UI helpers (ui.js), free-watch player
+  pages/              one module per route (pages/games/*, pages/admin/*)
+backend/src/
+  app.js              Express assembly (imported by the tests)
+  server.js           listen(), graceful shutdown, background jobs (manga-chapter polling)
+  lib/                upstream API clients and domain logic
+  routes/             one router per area, each mounted flat under /api/<area>
+  middleware/         session (attachUser / requireAuth / requireAdmin), csrf, rateLimits
+backend/test/api.test.js   the integration suite
+render.yaml         Render Blueprint for both services, including the production CSP header
 ```
 
-No streaming of actual episodes/movies (would require piracy-scraper APIs — declined on copyright grounds). Trailers are official YouTube embeds; "Where to Watch" links to legit platforms.
-
-## Everything built this session, roughly in order
-
-1. **Full backend added** — Express + auth (bcrypt, httpOnly sessions, CSRF) + favorites tied to accounts, replacing the original localStorage-only frontend-only version.
-2. **Security hardening pass** — found and fixed a real stored-XSS gap (favorites `image` field wasn't escaped in `src=` attributes), timing-safe CSRF comparison, per-user favorites cap, CSP as a real header (not just `<meta>`), 17-test suite, crash safety nets (`uncaughtException`/`unhandledRejection`, graceful shutdown).
-3. **Rebrand** AnimeVerse → AniNest.
-4. **Deployed to Render** via Blueprint (`render.yaml`) — hit real platform constraints along the way (see "Render gotchas" below).
-5. **Migrated DB to Turso** — Render's free tier can't attach a persistent disk at all; SQLite-on-disk was a non-starter there. `@libsql/client` supports both local-file (dev/tests) and remote-Turso (prod) through identical code.
-6. **Found and fixed a critical `SameSite` cookie bug** (see "The big one" below) — this was the real cause of login/register never working in production, not the Turnstile widget everyone suspected.
-7. **Weekly schedule page** (`#/schedule`) with an AniList fallback (Jikan's `/schedules` is just as flaky as everything else Jikan).
-8. **Reviews & ratings** — users rate + review any anime; aggregate community score shown next to MAL's official score on detail pages.
-9. **Turnstile bot-check on registration** — added, removed (while chasing the CSRF bug, wrongly suspected), re-added properly once the real bug was found and fixed.
-
-## The big one: SameSite cookie bug (read this if anything auth-related seems broken again)
-
-**Symptom**: registration/login always failed with "Invalid or missing CSRF token", no matter what.
-
-**Root cause**: both the session cookie (`aninest_sid`) and CSRF cookie (`aninest_csrf`) used `SameSite=Lax`. `onrender.com` is a registered public suffix, so `aninest-frontend.onrender.com` and `aninest-backend.onrender.com` are genuinely different **sites** for cookie purposes (not just different origins). `SameSite=Lax` cookies are never sent on cross-site `fetch()` calls — only same-site requests or top-level navigations — and `credentials: 'include'` does not override that. Every request looked like a brand-new, cookie-less client to the server.
-
-This silently broke **all session persistence**, not just the visible CSRF error — nobody could ever stay logged in on the deployed site, even before Turnstile existed.
-
-**Fix**: `sameSite: isProd ? 'none' : 'lax'` (with `secure: isProd`, required for `None`) in both `backend/src/routes/auth.js` (`cookieOpts`) and `backend/src/middleware/csrf.js` (`ensureCsrfCookie`). Local dev keeps `Lax` since `localhost:5173`/`localhost:8787` differ only by port, which *is* same-site.
-
-**How it was actually diagnosed** (useful pattern if something similar recurs): called `GET /api/auth/me` three times in a row from the browser and compared the returned CSRF token each time. If it's genuinely round-tripping, all three match; if the cookie never comes back, the server thinks each request is a new client and mints a fresh token every time. That's a fast, decisive test for "is a cookie actually being sent back" that doesn't require guessing.
-
-**Verified fixed**: registered a fresh account, reloaded the page (session persisted), favorited an anime, reloaded again (favorite persisted). All via real browser interaction against the live deployed site, not just curl.
-
-## Data migration note
-
-The Turso migration (item 5 above) only changed the *code* to support Turso — it didn't copy existing data. The owner's real account (`mxximo`, 4 favorites) existed only in the local dev SQLite file and was **not** in the live Turso database until manually migrated (raw `INSERT` preserving original IDs, verified via a join query). If you're troubleshooting "missing data" again, check whether it's a similar local-vs-remote split before assuming corruption.
-
-## Render gotchas hit this session (so you don't re-discover them)
-
-- **Free tier can't attach a persistent disk at all.** Not a config bug — a hard platform rule. This is why the DB is on Turso, not local SQLite-on-disk.
-- **`render.yaml` schema surprises**: it's `env: node` / `env: static`, not `runtime: node/static` (despite Render's own docs suggesting `runtime`). Custom headers are flat `{path, name, value}` entries (repeat one per header), not nested. Routes use `{type: rewrite, source, destination}` — no `path` field at all. All of this was verified against real, currently-deployed `render.yaml` files on GitHub after Render's own docs (fetched via WebFetch) turned out to describe a different/inaccurate shape.
-- **Free-tier cold start**: an idle service spins down and takes 20-60s to wake on the next request; the first couple of parallel requests on wake can transiently 502 even though nothing is actually broken. Don't panic-debug a fresh 502 without first checking if it self-resolves in the next request.
-- **Blueprint auto-sync**: pushing to `master` auto-deploys both services. Header/env config syncs can land faster than a full code rebuild — if you check a deploy log entry from Render's dashboard, confirm it's actually the *latest* one (Render keeps full history, and clicking an older entry shows its log even though newer commits have since deployed on top of it — this caused real confusion this session).
-
-## Anime data source: AniList is now primary, Jikan is the fallback
-
-Previous sessions hit repeated Jikan 504s ("MyAnimeList may be down/unavailable") — Jikan is an unofficial scraper/proxy in front of MyAnimeList, not a first-party API, so it inherits every hiccup MAL's own infrastructure has, plus its own. This session **swapped the primary/fallback order** in `backend/src/lib/animeSource.js`'s `withFallback()` calls for `topAnime`, `schedule`, `seasonNow`, `search`, and `randomAnime`: AniList (first-party GraphQL API, ~90 req/min, no proxy in front of it) is now tried first, Jikan second. Verified working end-to-end (registered a test account, browsed lists, opened a detail page, favorited, reviewed — all served by AniList with no Jikan calls needed).
-
-Two endpoints deliberately kept Jikan-first:
-- **`genres()`** — lightweight, rarely fails, and the static fallback list is instant; not worth a network round-trip to AniList.
-- **`fullById()`** (anime detail pages) — now tries **AniList first**, but falls back to **Jikan**, kept specifically because Jikan/MAL has fields AniList's schema doesn't: `rank`, `popularity`, `duration`, MAL's own content `rating`, and curated official "where to watch" streaming links. If AniList is up (the common case), detail pages lose those fields (they render as `—` / fall back to a Crunchyroll search link) — a known, accepted tradeoff for reliability, not a bug.
-
-**Still open, worth considering next** if AniList+Jikan together ever aren't enough:
-1. **MyAnimeList's own official API v2** (free client ID at myanimelist.net/apiconfig) — talks to MAL directly, no scraper in between. Needs its own client module (shape like `anilist.js`) and new pagination/field mapping in `animeSource.js`. Bigger lift than the swap above.
-2. **Kitsu API** (kitsu.io/api/edge) — third free option, JSON:API shaped, not evaluated at all yet. Would slot in as a third fallback tier in `withFallback()`. Lower priority — only worth it if AniList+Jikan have simultaneous bad days often enough to matter.
-3. **Wider "more APIs" ask from the user**: they've flagged wanting broader resilience across *all* the list/filter/schedule surfaces, not just a primary/fallback pair — worth scoping properly (which endpoints, how many tiers, is a 3-way fallback chain actually simpler or more fragile than 2-way) before building rather than bolting on more sources reactively.
-
-## What's tested vs. not
-
-- `backend/test/api.test.js`: 22 integration tests, `npm test` in `backend/`. Covers auth lifecycle, CSRF (including the double-submit mechanics), favorites CRUD + the XSS-normalization fix, reviews CRUD + aggregate scoring + validation, rate limiting, input validation. Deliberately does **not** hit live Jikan/AniList (would make it flaky and burn shared rate-limit budget) — those routes are tested for input validation only.
-- Frontend has no automated tests — every frontend verification this session was manual (real browser interaction via the browser tool, or temporary in-page mocks for UI-only checks like card rendering).
-- Schedule feature's AniList fallback was verified once, directly, by forcing a Jikan failure and confirming real data came back — not covered by the automated suite (would need network access, same reasoning as other Jikan/AniList routes).
-
-## Roadmap (user-approved priority order, from an earlier discussion of "what would make this feel like a real community, not just a catalog") — ALL DONE
-
-Done: **#1 weekly schedule**, **#2 reviews & ratings**, **#3 public profile pages**, **#4 all three games**, every item from README's old "Ideas for later" list, **all 8** brainstormed feature ideas (**daily challenge**, **global leaderboards**, **aggregate recommendations**, **studio/VA browse pages**, **AniList list import**, **screenshot search**, **OP/ED jukebox**, **tier-list maker**), and **#5 achievements/badges** (see detail below). Nothing is left on this roadmap - see "Achievements/badges" below for the last item's detail.
-
-### #6 detail: brainstormed feature ideas, in recommended order
-
-All 8 items are **done**. Items 1 and 2 are detailed under "Daily Challenge + global leaderboards" below; item 3 under "Aggregate recommendations"; item 4 under "Studio/voice-actor browse pages"; item 5 under "AniList list import"; item 6 under "Screenshot search via trace.moe"; item 7 under "OP/ED jukebox via AnimeThemes.moe"; item 8 under "Tier-list maker".
-
-1. ~~**Daily anime challenge (Wordle-style)**~~ — **done.**
-2. ~~**Global game leaderboards**~~ — **done.**
-3. ~~**Aggregate recommendations**~~ — **done.**
-4. ~~**Studio/voice-actor browse pages**~~ — **done.**
-5. ~~**Import an existing MAL/AniList list**~~ — **done** (AniList-by-username only, not MAL XML - see detail below for why).
-6. ~~**Screenshot search via trace.moe**~~ — **done.**
-7. ~~**Opening/ending song jukebox**~~ — **done.**
-8. ~~**Tier-list maker**~~ — **done this session.**
-
-### Daily Challenge + global leaderboards (this session)
-
-**Daily Challenge** (`#/games/daily`, `frontend/src/pages/games/dailyChallenge.js`):
-
-- Backend picks and persists one mystery anime per UTC calendar date in a new `daily_challenges` table (`backend/src/lib/dailyChallenge.js`, `GET /api/games/daily` in `backend/src/routes/games.js`). Persisted in the DB rather than the existing in-memory cache **specifically** so a Render free-tier cold start/redeploy mid-day can't hand a later visitor a different puzzle — the first successful pick for a date wins for everyone, permanently (`INSERT ... ON CONFLICT(date) DO NOTHING` then re-select, so a request that loses a pick race still returns whatever actually landed).
-- The pick itself: fetch `topAnime` pages 1-10 (same data source as everywhere else, so it benefits from the existing AniList→Jikan fallback and cache), filter to entries with a score/title/image/long-enough synopsis, sort by `mal_id` for determinism, then index in with `djb2(dateString) % pool.length`. Not cryptographic, doesn't need to be — the only requirement is "the same date always maps to the same index."
-- **Mechanic — deliberately NOT the plain single-guess Guess the Anime flow.** An early version eliminated wrong choices from one fixed set of 4 and re-guessed among the rest; since the answer is always one of the 4, that guarantees a win every time and has zero real stakes, which defeats the point of "Wordle-style." The shipped version instead runs up to 4 **separate rounds** against the same answer, redrawing 3 fresh distractors each round (never repeating one already shown) and unblurring the poster a little more each round (`BLUR_STEPS = [18, 12, 6, 0]`). Getting all 4 rounds wrong is a genuine loss — the answer is then revealed and the shareable result shows all-red. This reuses the shared `synopsisSnippet`/`pickChoices` helpers, now extracted to `frontend/src/lib/guessMechanic.js` (also used by `guessTheAnime.js`, refactored in place — behavior unchanged there).
-- Result (win or lose) is cached client-side in `localStorage` under `aninest_daily_<date>` (the *server's* date string, not the client's local date, so the "come back tomorrow" boundary always matches the shared puzzle's actual UTC boundary regardless of the visitor's timezone) — revisiting the page the same day shows the stored result screen instead of letting you replay.
-- Share text is a Wordle-style block (`AniNest Daily Challenge #N — X/4`, an emoji grid, a link back to `#/games/daily`) copied via `navigator.clipboard.writeText`. **Not verified in a real browser** — this session's browser-automation sandbox denies clipboard permissions outright (`NotAllowedError`), which exercised the code's own failure-toast path correctly but couldn't confirm a real copy succeeds. Worth a real-browser click-through before fully trusting it.
-- Puzzle numbering is anchored to a fixed epoch constant (`EPOCH_MS` in `dailyChallenge.js`, currently 2026-09-20) — only affects the *number* shown, never which anime gets picked.
-- **A real spoiler bug shipped in this feature and was caught and fixed in a follow-up pass** (flagged by the user, not caught during initial testing): `guess()` unconditionally marked the actual answer's button `is-correct` (green) on *every* guess, including a wrong one with attempts still remaining. Since the Daily Challenge redraws fresh distractors but keeps the **same fixed answer** across all 4 rounds, that green highlight handed the whole puzzle away after a single wrong guess - the player would just recognize the same (now-known) title in every later round. This is safe in Guess the Anime (a wrong guess ends that round immediately, and the next round's answer is a brand-new random pick, so revealing never leaks into a future guess against the same answer) but wrong here specifically because the answer repeats. Fixed so the reveal (green correct / muted others / fully unblurred poster) only happens on a genuinely terminal guess - a correct answer, or the 4th/final wrong one; a non-final wrong guess now only marks the button the player actually clicked, leaving the real answer's button completely unstyled. Verified directly by inspecting button classes mid-round (not just the rendered screen) after a non-final wrong guess, after the final wrong guess, and after a correct guess. **Lesson for any future "same hidden answer, multiple guesses" mechanic: an unconditional reveal-all-buttons step that's fine for a single-attempt game becomes a spoiler the moment the same answer can be guessed at again.**
-
-**Global leaderboards** (`backend/src/routes/games.js`, `frontend/src/pages/games/leaderboard.js`):
-
-- New `game_scores` table (`user_id`, `game`, `best_streak`, `UNIQUE(user_id, game)`). `game` is a plain string slug validated against `backend/src/lib/games.js`'s `GAMES` array at the route layer, not a DB `CHECK` — adding a third leaderboard-tracked game later is a code-only change.
-- `POST /api/games/:game/score` (auth required) only ever **raises** a user's recorded best (`best_streak = MAX(best_streak, excluded.best_streak)` in the upsert) — a stale/lower streak from a second tab or a replayed request can never overwrite a better one already on record. `GET /api/games/:game/leaderboard` is public (no account needed to view, same spirit as public profiles), returns the top 20 by streak, and — if the caller is signed in — their own rank/best even when outside the top 20.
-- Anonymous play was kept fully intact (the open question flagged in the brainstorm doc): Higher/Lower and Guess the Anime never require login to play. `higherLower.js`/`guessTheAnime.js` only call `Games.submitScore()` on game-over when `Auth.get().user` is truthy and the run's streak is > 0; logged-out players see "🔒 Log in to save your streak to the leaderboard." on the game-over screen instead, and their local best in `localStorage` still works exactly as before.
-- Each game's hub card and game-over screen now link to `#/games/leaderboard/<slug>`; the hub also has two direct leaderboard links below the grid.
-
-**Testing**: 7 new backend integration tests in `backend/test/api.test.js` cover auth-required-to-write/public-to-read, unknown-game-slug rejection, streak validation, the raise-only upsert behavior, and leaderboard sort order under concurrent players — all without touching live Jikan/AniList (pure DB/route logic). `/api/games/daily` itself is **not** covered by the automated suite, same reasoning as the existing `/api/anime/*` routes (it hits live upstream APIs to build its pool) — it was instead verified manually end-to-end: registered a test account, played the daily challenge to both a win (2/4, correct answer was "STEEL BALL RUN JoJo's Bizarre Adventure 1st STAGE") and a loss (0/4, all wrong), confirmed `GET /api/games/daily` returns an identical answer across repeated calls and after the puzzle row already exists, and confirmed both games' leaderboards update correctly (including the raise-only behavior and the logged-out messaging) via real browser interaction. Full backend suite (29 tests) passes.
-
-**Known limitation**: like the existing three games' pool (`animePool.js`), the Daily Challenge's distractor pool draws from `topAnime`/genre-search calls that occasionally 502 individually under heavy load (pre-existing Jikan/AniList flakiness, already caught per-fetch with `.catch(() => ({ data: [] }))`) — not a regression from this session, just worth knowing if a report of "the pool feels thin" comes in on a bad upstream day.
-
-### Aggregate recommendations (this session)
-
-New Home page section, "🔀 Recommended For You" (`backend/src/routes/recommendations.js`, `frontend/src/pages/home.js`) — "Because you favorited X, Y, Z..." surfaced from a user's own favorites, no new upstream API.
-
-- `GET /api/recommendations/mine` (auth required): takes the caller's 15 most-recently-favorited anime as seeds (not all of them — a user can have up to 500 favorites, and bounding this keeps it to a sane number of upstream calls and keeps results grounded in *current* taste), fetches each seed's existing per-anime recommendations (`animeSource.recommendations()`, the same function `details.js`'s "If You Like This" rail already uses), then tallies how many seed's recommendation lists each candidate anime appears in. Higher overlap = stronger signal it fits this user's actual taste rather than just one favorite's. Top 10 by (count, then score) come back, each anime's normal fields plus `count` and `becauseOf` (which seed titles recommended it, capped at 3 - not currently shown per-card in the UI, just returned for a future use).
-- Needs at least 3 favorites to return anything (`MIN_SEEDS_FOR_RECOMMENDATIONS`) - below that, returns `{ basedOn: [...], recommendations: [] }` immediately with no upstream calls at all.
-- **A real caching bug was found and fixed mid-session**, worth remembering for any future per-user cache: the aggregation result was originally cached (`backend/src/lib/cache.js`'s `cached()`, 15min TTL) keyed only by user id, wrapping the *entire* handler including the "fewer than 3 favorites" short-circuit. A brand-new account naturally hits Home (0 favorites → cached empty result) before favoriting anything - once they then favorited enough anime to qualify, the stale cached *empty* result kept being served for the rest of the TTL window, so the section silently never appeared even though real recommendations were now computable. Fixed by moving the favorites lookup **outside** the cache and only wrapping the actual expensive part (the upstream aggregation calls, only reached once there are enough seeds) in `cached()` - the free DB-only check now always runs fresh. Caught by manually walking through the exact flow a new user would (register → land on Home with 0 favorites → favorite a few → return to Home) rather than by the automated tests, which is why it's called out explicitly here: **if a future per-user cache wraps a cheap early-exit branch alongside an expensive one, split them the same way.**
-- Home renders the section's skeleton immediately (if signed in) but fetches recommendations separately from the page's main `Promise.allSettled` batch, since it can take a few seconds cold (up to 15 upstream calls) and has its own auth-gated endpoint; the section removes itself entirely (not an empty state) if there aren't enough favorites yet or the fetch fails.
-- **Testing**: 2 new backend tests (auth-required, and the sub-3-favorites short-circuit returning correctly without any network call - the only part of this feature testable without hitting live Jikan/AniList, same reasoning as `/api/games/daily`). Full backend suite is now 31 tests. Verified the real aggregation manually: registered a test account, favorited 4 top-rated anime (Re:Zero S4, Gintama S3, Frieren, Gintama: THE VERY FINAL), confirmed the section populated with a real, non-overlapping set of recommendations and the correct "Because you favorited..." subtitle, and confirmed it's absent entirely for a logged-out visitor.
-
-### Studio/voice-actor browse pages (this session)
-
-New `#/studio/:name` and `#/person/:name` pages, linked from every studio name and voice-actor name already shown on anime detail pages (`frontend/src/pages/details.js`'s Studios info-box and character rail).
-
-- **No new upstream API** - AniList's own GraphQL schema has root `Studio(search: String)` and `Staff(search: String)` queries that do the name-lookup directly (`Studio.media` and `Staff.characterMedia` connections), so there's no need to crawl every anime's `characters()` ourselves to build a reverse index. Added as `anilistStudioByName()`/`anilistStaffByName()` in `backend/src/lib/anilist.js`, served by `GET /api/studios/:name` / `GET /api/people/:name` (`backend/src/routes/browse.js`), both public and cached 1h (a studio/VA's past-credits list barely changes day to day).
-- **No Jikan fallback** for these two, unlike everywhere else in `anilist.js` - Jikan's equivalent would need a two-step name→id→anime-list lookup with a materially different response shape, for a discovery feature that's a nice-to-have, not core. If AniList is down, these pages just show a retry prompt.
-- **Two real AniList API quirks were found and fixed mid-session** (confirmed directly against the live API with raw `curl`, not assumed):
-  1. **A "not found" search isn't a clean null** - `Studio(search: "...")`/`Staff(search: "...")` for a name with no match returns a GraphQL-level error (`"Not Found."`, `status: 404`) *alongside* `data: { Studio: null }`, not just a quiet null. The shared `gql()` helper already treated any `errors` array as a hard failure, which would have surfaced a "not found" search as a misleading 502 instead of a clean 404. Fixed by having `gql()` attach the upstream `status` to the thrown error, and adding a `gqlOrNull()` wrapper (used only by these two functions) that resolves to `null` specifically on a 404, still throwing for anything else. Every other caller in `anilist.js` is unaffected - none of them read `.status`, and none of them expect a null result for a normal lookup.
-  2. **Duplicate nodes in `Studio.media` and `Staff.characterMedia`** - a studio or VA credited more than one way on the same title (e.g. animation studio *and* separately as a licensor) makes AniList's own connection return that title's node twice, confirmed directly (`ufotable`'s `media` list had 5 of its first 6 nodes duplicated). Fixed with a `dedupeMediaByMalId()` helper for studios, and a merge-by-`mal_id` `Map` for staff roles (which also correctly combines multiple characters played in the same anime into one entry's `characterNames` instead of one card per character). **This same quirk also affects `normalizeAniListMedia`'s own `studios` field** - i.e. every anime detail page could already show a studio name twice in its info box, not just the new browse pages - fixed at the source with a `dedupeStudios()` helper so every caller benefits, not just this feature.
-- Both pages reuse the existing `cardGrid()` for the anime list and the `account-page`/`account-avatar` styling (from public profiles) for the header - no new page-level CSS beyond two link-color rules (`.studio-link`, and making the existing `.va-name` a real link).
-- **Testing**: no new automated tests - like `/api/games/daily`, there's no network-free input-validation edge worth asserting (the `:name` param accepts any string, capped at 100 chars). Verified manually end-to-end: looked up a real studio (Kyoto Animation, ufotable) and a real voice actor (Kana Hanazawa) both directly via `curl` against the live AniList API first (to pin down the exact schema before writing code) and then through the running app, confirmed a nonexistent name returns a clean 404/empty-state instead of an error screen, confirmed the duplicate-entry fixes actually deduplicated (12 unique anime for ufotable, was 24 raw/12 duplicated before the fix), and clicked through the full path from a detail page's studio link and voice-actor link to their respective browse pages in a real browser.
-
-### AniList list import (this session)
-
-New "📥 Import from AniList" form on `/account` (`frontend/src/pages/account.js`) - enter a public AniList username, and their whole anime list gets pulled into this account's favorites with statuses mapped across.
-
-- **AniList-by-username only, MAL XML export deliberately not built** - the roadmap note for this item mentioned either option. AniList's public GraphQL already has a clean, structured `MediaListCollection(userName, type: ANIME)` query (no file to export/upload, no parsing); a MAL XML importer would mean accepting an uploaded file and parsing XML server-side, which is real additional attack surface (XXE - XML external entity injection - if the parser isn't explicitly configured to refuse external entities/DTDs) for a nice-to-have onboarding feature. Not implemented this session; if it's ever wanted, use a parser with external entity resolution hard-disabled, never the platform default parser configuration.
-- `POST /api/import/anilist` (auth required, `backend/src/routes/import.js`): fetches the target user's list via a new `anilistUserAnimeList()` in `anilist.js`, maps AniList's `MediaListStatus` enum onto AniNest's own four-value enum (`CURRENT`/`REPEATING` → `watching`, `PLANNING` → `plan_to_watch`, `COMPLETED` → `completed`, `DROPPED` → `dropped`, `PAUSED` → left unclassified - AniNest has no "on hold" concept, and guessing it into the wrong bucket would be worse than leaving it blank), then **`db.batch()`s** the upsert in one round trip rather than looping individual `db.execute()` calls - this codebase hadn't used `@libsql/client`'s batch API before, so its upsert behavior was verified directly against a real in-memory DB before relying on it (confirmed: a batch of statements targeting the same row via `ON CONFLICT DO UPDATE` applies in order, later ones correctly winning).
-- Respects the existing 500-favorites cap (`MAX_FAVORITES_PER_USER`, duplicated from `favorites.js` rather than shared - one stable number, not worth coupling the two route files over) - only counts against it for genuinely new rows, same rule as the regular favorites endpoint. An already-favorited title always gets its title/image/score/status overwritten from AniList on import, unlike a plain heart-toggle (which never touches status unless the request explicitly includes it) - that's intentional here, since the whole point of "import" is "make my AniNest list match my AniList list."
-- Same "not found is a GraphQL error, not a null" AniList quirk as Studio/Staff (confirmed directly via `curl` before writing code) - `anilistUserAnimeList()` reuses the existing `gqlOrNull()` helper, so an unknown username returns a clean 404 rather than a misleading 502.
-- **A real frontend bug was caught before it shipped**: the first draft called `renderAccount(root)` again right after writing a success message into the DOM, which would have wiped that exact message out before anyone could read it (the whole page re-renders from scratch). Fixed by updating just the favorites-count link's text and resetting the form in place, instead of a full re-render - **a success message written just before a full re-render of its own container never survives to be seen; update in place or delay the re-render.**
-- **Testing**: 2 new backend tests (auth-required, and empty/missing username rejected without any network call - same reasoning as the other AniList-backed routes this session, nothing else is testable without hitting the live API). Full suite is now 33 tests. Verified the real import manually end-to-end against a real, large public AniList list (`Kiyon`, 222 anime across Completed/Planning/Dropped/Watching): first import showed "222 new, 0 updated" with statuses distributed correctly (137 completed, 65 plan-to-watch, 15 watching, 5 dropped, 4 unclassified from PAUSED entries), confirmed via a raw `GET /api/favorites` call; a second import of the same list correctly showed "0 new, 222 updated" (nothing double-counted); and a nonexistent username showed the clean 404 message in the UI instead of a generic error.
-
-### Screenshot search via trace.moe (this session)
-
-New `#/screenshot-search` page (`frontend/src/pages/screenshotSearch.js`), linked from a "📸 Search by screenshot" chip on Browse's header. Upload any frame from an anime and get back candidate matches, each linking straight to that anime's own detail page.
-
-- `POST /api/screenshot-search` (`backend/src/routes/screenshotSearch.js`, `backend/src/lib/traceMoe.js`) proxies to [trace.moe](https://trace.moe), a free, keyless API - same never-call-a-third-party-API-from-the-browser rule as Jikan/AniList. **No multer, no multipart/form-data**: the frontend POSTs the raw file bytes with the file's own `Content-Type` (`frontend/src/lib/http.js` gained `apiPostFile()` for this), and the route reads them with `express.raw({ type: ['image/jpeg','image/png','image/webp'], limit: 5MB })` - the browser's `<input type="file">` value goes over the wire unmodified, no new dependency needed.
-- **Public, no auth required** (a discovery feature like Browse/Search, not tied to an account) - but flagged prominently in the UI that this shares a **very** small daily quota: confirmed directly via `curl` against the live trace.moe API that anonymous access gets **100 searches/day total**, and that quota is shared across every AniNest visitor (they all go through this one server, unlike Jikan's per-minute limit which at least resets fast). No queueing/rationing was added - this is a nice-to-have, not core functionality, so trace.moe's own error is passed straight through if the quota's exhausted for the day.
-- **Two real response-shape problems found via direct `curl` testing before writing the parsing code**, both fixed in `traceMoe.js`:
-  1. trace.moe indexes adult anime too; every other AniList query in this app passes `isAdult: false` explicitly (see `anilist.js`), so the same filter is applied here on trace.moe's `anilist.isAdult` field.
-  2. **The same frame can match the same anime more than once** (confirmed: a test image returned "Revisions" 3 times at slightly different scenes) - results are deduped by `mal_id`, keeping the first (highest-similarity, since trace.moe already sorts descending) occurrence, so the list reads as distinct candidate anime instead of one title repeated.
-  3. Results with no MAL id are dropped entirely - every other page on this site (detail, favorites, reviews) is keyed by `mal_id`, so a result without one can't be opened or favorited anyway.
-- **A real frontend bug was caught and fixed before it shipped, not after**: the first draft of each result card was a real `<a href="#/anime/:id">` styled with the shared `.anime-card` class. Every other card in this app is a plain `<article data-id="...">` relying on the app's one global delegated click handler (`wireCardEvents` in `main.js`) for navigation - that handler has no `data-id` to read off a real anchor, so clicking it would have set the hash to `#/anime/undefined` for an instant via the delegated handler before the native anchor click corrected it to the right URL a moment later, a visible flicker/double-navigation. Fixed by matching the established pattern (`<article data-id>`, no native href) instead of introducing a new one. **Lesson: any new card reusing `.anime-card` must be a plain element with `data-id`, never a real anchor - the delegated handler and a native `<a>` will fight over the navigation.**
-- The built-in browser-automation sandbox used for testing this session can't drive a native OS file picker, so verification used the standard `DataTransfer`-based trick (construct a `File`, assign it to the `<input>`'s `.files`, dispatch a `change` event) to exercise the *real* event handler rather than mocking around it - confirmed end-to-end: a synthetic canvas-drawn test image returned real (low-confidence, as expected for a non-anime image) matches with correct title/episode/timestamp, clicking a result card navigated cleanly to its detail page with no flicker, and selecting a non-image file was rejected client-side with a toast before any network request went out.
-- **Testing**: 2 new backend tests confirm a non-image Content-Type and an empty image body are both rejected with a 400 *before* trace.moe is ever called (pure body-parser/route logic, no network) - the actual match-finding itself isn't covered by the automated suite, same reasoning as every other route this session that hits a live third-party API. Full backend suite is now 35 tests.
-
-### OP/ED jukebox via AnimeThemes.moe (this session)
-
-New "🎵 OP/ED Jukebox" section on anime detail pages (`frontend/src/pages/details.js`) - a shared video player plus a track list; clicking a track (e.g. "OP1 — Gurenge") loads and plays that opening/ending right there on the page.
-
-- `GET /api/anime/:id/themes` (`backend/src/routes/anime.js`, `backend/src/lib/animeThemes.js`, wrapped in `animeSource.themes()` with the same 30min detail TTL as characters/recommendations) queries [AnimeThemes.moe](https://animethemes.moe)'s `/anime` endpoint filtered by MAL id via its cross-reference ("resources") filter - the exact filter syntax (`filter[resource][site]=MyAnimeList&filter[resource][external_id]=...`) was confirmed directly against the live API with `curl` before writing any code, same discipline as every other new external API this session. No Jikan/AniList fallback - neither has an equivalent, so this is a single-source lookup like `fullById`'s Jikan-only fields; a show with nothing indexed just returns an empty array (confirmed directly - AnimeThemes returns `{"anime":[]}` cleanly for no match, not an error), so the section simply doesn't render rather than showing an empty state.
-- A theme (e.g. "OP1") can have multiple `animethemeentries` - different episode-range cuts of the same song as a show's staff swapped opening footage over its run (confirmed: Kimetsu no Yaiba's OP1 alone has 4 versions). The jukebox only needs one representative clip, so `animeThemesFor()` always takes the earliest/main entry, then its highest-resolution video variant - not every historical cut.
-- **Two real infrastructure problems were found by testing actual playback, not just the JSON response** - both would have made this feature silently do nothing in production if only the API response had been checked:
-  1. **AnimeThemes.moe sits behind Cloudflare, which blocks Node's `fetch()` default User-Agent as bot traffic** - confirmed directly: the *exact same request* succeeds with `curl`'s default User-Agent but returns a 403 (an HTML Cloudflare challenge page, not JSON) from Node's own `fetch()`. Fixed by sending an explicit browser-like `User-Agent` + `Accept: application/json` header from `animeThemes.js`. **Lesson: a working `curl` test doesn't guarantee Node's `fetch()` will succeed against the same host - Cloudflare (and similar) can and do discriminate by client fingerprint, not just IP/rate.**
-  2. **The video failed to load in the browser with `MEDIA_ELEMENT_ERROR: Media load rejected by URL safety check`** even though the API call itself succeeded - this app's CSP had no `media-src` directive, so `<video>`/`<audio>` fell back to `default-src 'self'` and silently blocked `https://v.animethemes.moe`. Fixed by adding `media-src 'self' https://v.animethemes.moe` to **both** CSP definitions that must stay in sync (`frontend/index.html`'s `<meta>` tag for dev, and `render.yaml`'s response header for the deployed site - see the existing comment there explaining why both exist). **Lesson: a new third-party media/font/connect/etc. host needs its own CSP allowance, and this app's CSP is defined in two places that don't share source - checking one and not the other silently ships a broken feature to only one of dev/prod.**
-- Reuses existing CSS entirely: `.tv-frame`/`.tv-screen` (from the trailer embed) for the player shell, `.guess-choice` (from the games) for the track-list buttons. No new CSS.
-- **Testing**: no new automated tests - like the other AnimeThemes-adjacent routes this session, there's no network-free validation edge beyond the id-param check already covered by the existing "anime routes validate the id param" test (extended to also assert `/themes`). Verified manually end-to-end after both infrastructure fixes: loaded Demon Slayer's detail page, saw all 3 real themes (OP1 "Gurenge", ED1 "from the edge", ED2 "Kamado Tanjiro no Uta"), clicked one and confirmed via the video element's own state (`paused: false`, `readyState: 4`, `error: null`, advancing `currentTime`) that it was genuinely playing - not just that a UI element appeared - then switched tracks and confirmed the player swapped source and the active-track highlight moved correctly.
-
-### Tier-list maker (this session)
-
-New `#/tier-list` page (`frontend/src/pages/tierList.js`), linked from a "🏆 Make a Tier List" chip on Favorites. Drag favorited anime into S/A/B/C/D/F rows, export the result as a PNG. **Purely client-side, exactly as the roadmap note scoped it** - no new backend route at all, just the favorites data already loaded into the existing `Favorites` store.
-
-- **Native HTML5 drag-and-drop** (`draggable="true"` + `dragstart`/`dragover`/`drop`), no library - each tier row and the "Unranked" pool are drop zones; dropping a card updates a `{ mal_id: tierKey }` placement object and re-renders. Placement is saved to `localStorage` per-username (`aninest_tierlist_<username>`, mirroring the per-date key pattern the Daily Challenge already uses) so a ranking survives a reload; opening the page also silently drops any saved placement for a title that's since been unfavorited, so a stale id can't linger.
-- **The real risk going in was canvas export tainting**: the poster images come from AniList's or MyAnimeList's CDN, cross-origin from the app itself, and drawing a tainted cross-origin image onto a `<canvas>` permanently blocks `toDataURL()`/`toBlob()` with a `SecurityError` - which would have made "export as image" silently unusable for exactly the images this feature exists to export. **Confirmed safe, but only by testing it directly, not by assuming**: `curl`-ing both CDNs showed MyAnimeList's already sends `Access-Control-Allow-Origin: *` unconditionally, while AniList's CDN sends nothing to a plain request but *dynamically echoes back a matching `Access-Control-Allow-Origin` when a request actually carries an `Origin` header* (confirmed with `curl -H "Origin: ..."`) - exactly what a real browser `<img>` with `crossOrigin="anonymous"` sends. Every poster `<img>` used for export sets `crossorigin="anonymous"`, and a real end-to-end test (load a live AniList-hosted poster into an `Image()`, draw it to a canvas, call `toDataURL()`) confirmed zero taint error. **Lesson: "does the CDN send CORS headers" isn't a yes/no fact you can check with a plain request - some APIs (AniList's here) only reflect them back when a real Origin header is present, which a plain `curl`/`fetch` without one won't show.** A per-image `try/catch` around the actual draw calls is still in place regardless, so one unexpected failure degrades to a blank thumbnail in the export rather than aborting the whole thing.
-- Export layout is computed, not fixed: each tier's band height is derived from how many cards are in it and how many fit per row at a fixed 1000px canvas width, so a tier with 40 favorites wraps onto multiple rows within its own band instead of overflowing or getting clipped. Tier label colors are read from this app's own CSS custom properties (`getComputedStyle(document.documentElement).getPropertyValue('--pink')`, etc.) rather than hardcoded hex values, so the exported image's colors stay in sync with the site's theme if it's ever restyled.
-- Reuses `emptyHTML()` for the "no favorites yet" state and the existing `btn-pow`/`section-head`/`hero-actions` classes for chrome; only genuinely new CSS is the tier rows/labels/cards themselves.
-- **Testing**: frontend-only feature, nothing for the backend suite to cover (still 35 tests, unchanged). Verified manually end-to-end against a real account with 226 favorites (a good stress case for the "many cards" layout math): dragged a card between the unranked pool and a tier via synthetic `DragEvent`s (the browser-automation sandbox used this session can't perform a native OS drag gesture, so - same principle as the screenshot-search file-picker workaround - a constructed `DataTransfer` was dispatched through real `dragstart`/`dragover`/`drop` events to exercise the actual handlers), confirmed the move persisted across a reload, confirmed Reset clears all placements, confirmed Export completes with no error and no failure toast, and directly confirmed the CORS/canvas-taint risk above against a live AniList poster URL rather than only inferring it from the absence of an error during a UI click.
-
-### Achievements/badges (this session) — the last roadmap item
-
-Badge pills now show up on public profiles (`#/u/:username`) and the account page - e.g. 💖 Archivist (100+ favorites), ✅ Marathoner (25+ completed), 🎮 Unbeatable (30+ game streak).
-
-- **Deliberately kept "cheap" the way the roadmap note scoped it**: no new table, no unlock events, nothing to migrate or backfill. `backend/src/lib/badges.js`'s `computeBadges()` is a pure function over data the app already has (favorites count, reviews count, completed-status count, best game streak, account age) - a badge is recomputed fresh every time a profile loads, not stored or awarded. If a user's 6th favorite pushes them over a threshold, the badge just appears next time their profile is requested.
-- Folded into the **existing** `GET /api/users/:username` handler (`backend/src/routes/users.js`) rather than a new route - that handler already had `db` access and was already the one place that assembles "everything public about this user." Added four more `COUNT`/`MAX` queries (favorites, reviews, completed favorites, best `game_scores.best_streak`) alongside the two it already ran, all in the same `Promise.all`.
-- **Each category shows only its highest tier reached**, not every threshold ever crossed - a user with 200 favorites sees "Archivist" alone, not "Collector" + "Curator" + "Archivist" stacked. Implemented as an ordered highest-first tier list per category with a first-match-wins lookup, not a loop that pushes every passing threshold.
-- The account page loads badges **lazily** (a separate `Users.profile()` call after the initial render, same pattern Home already uses for its recommendations rail) by reusing the *public* profile endpoint for the signed-in user's own username - one endpoint serves both "my badges" and "someone else's badges," no separate authenticated route needed. The rendering itself (`badgesRowHTML()`) was extracted into the shared `ui.js` (it was first written inline in `profile.js`, then pulled out once account.js needed the identical markup) so the two pages can't drift out of sync.
-- **Testing**: unlike almost everything else added this session, badges involve **zero third-party APIs** - every input is this app's own DB, so the real computation is fully covered, not just an input-validation edge. 2 new backend tests: one drives a fresh account through real activity (5 favorites via the actual `POST /api/favorites`, one real review, one real game-score submission) and asserts the exact badge set that comes back from `GET /api/users/:username`; another pushes a single category (25 favorites) past two thresholds at once and asserts only the highest tier's badge appears, not both. Full backend suite is now 37 tests. Verified visually end-to-end against real accumulated session data (not synthetic test fixtures): `gamestester1` - who by this point in the session had 226 favorites and 137 AniList-imported anime marked `completed` - correctly shows "Archivist" (gold, 100+ favorites) and "Marathoner" (gold, 25+ completed) and correctly does *not* show a game-streak badge (their actual best recorded streak was 3, under the 5-streak bronze threshold) or a reviews badge (0 reviews); a separate near-empty test account (`watchtester`, 1 favorite, 0 reviews, created days ago) correctly renders with no badges row at all rather than an empty placeholder.
-
-### This session's 7 features (the old README "Ideas for later" list, done in priority order)
-
-1. **Watch status** — `favorites` table gained a nullable `status` column (`backend/src/lib/db.js`, idempotent `ALTER TABLE` migration via `ensureColumn()`) with values `watching`/`plan_to_watch`/`completed`/`dropped`. It's metadata on a favorites row, not a separate table - setting a status on something not yet favorited implicitly favorites it too. `POST /api/favorites` (`backend/src/routes/favorites.js`) only overwrites `status` when the request body actually includes that key (checked via `hasOwnProperty`, not just truthiness) - a plain heart-toggle never sends the field, so it can't accidentally clear an existing status. The favorites cap (500) now only applies to genuinely new rows, not status updates on existing ones (this was a latent bug fixed as part of the same change). Frontend: `WATCH_STATUSES` in `frontend/src/lib/ui.js` (shared list of value/emoji/label), a status-pill row on anime detail pages (`details.js`), and the `/favorites` page now has filter tabs by status (`favorites.js`) - clicking the active status again clears it.
-2. **Character & voice-actor lists** — new `GET /api/anime/:id/characters`, AniList-first (`anilistCharacters()` in `anilist.js`) falling back to Jikan's `/anime/{id}/characters` (normalized to the same shape in `animeSource.js`). Rendered as a horizontal rail on detail pages with a small voice-actor photo overlaid on each character's poster corner.
-3. **"Continue browsing"** — two independent halves: (a) `frontend/src/lib/recentlyViewed.js` records the last 20 viewed anime to `localStorage`, shown as a "Continue Browsing" rail on Home (only when non-empty); `imageOf()` in `api.js` was extended to also accept the flat `{image: "url"}` shape these entries use, so the existing `cardRail()`/`animeCard()` helpers work on them unmodified. (b) `frontend/src/lib/router.js` now remembers scroll position per-hash and restores it specifically on browser Back/Forward (`popstate`), not on ordinary link navigation (which still resets to top) - it distinguishes the two via a `popstate` listener setting a "restoring" flag before the `hashchange` dispatch runs. Restoration is approximate (async image loading shifts page height between save and restore) - documented as an accepted trade-off, not a bug.
-4. **Compare mode** — new `#/compare` page (`frontend/src/pages/compare.js`), two independent search-and-pick slots, then a stat-by-stat table (score/episodes/members/year/type/status/genres) with a 🏆 marker on whichever side wins each numeric stat. Purely client-side, no backend changes.
-5. **Rating-aware filters** — `min_score` param added to `GET /api/anime/search` (`backend/src/routes/anime.js` → `animeSource.search()`). Applied as a local post-filter on the already-normalized results rather than translated into each upstream's own query syntax (Jikan has a native `min_score`, AniList's equivalent works on a 0-100 scale) - simpler, and behaves identically regardless of which source served the page. Trade-off: a filtered page can come back with fewer than the usual ~20 results. Browse's "This Season" tab (which uses `seasonNow`, not `search`) filters client-side instead, since that endpoint has no server-side min-score support.
-6. **PWA install** — added `vite-plugin-pwa` (new devDependency) rather than hand-rolling a service worker, since it correctly precaches Vite's hashed build filenames via Workbox. Manifest + icon (`frontend/public/icon.svg`, an SVG re-creating the header's gradient-circle nest logo) + an "📲 Install App" button in the footer wired to `beforeinstallprompt` (`main.js`). **Important**: `devOptions.enabled` is deliberately NOT set - under `vite dev` the plugin injects its own inline registration snippet regardless of `injectRegister`, which the site's strict CSP (no `unsafe-inline` in `script-src`) blocks outright. `injectRegister: 'script'` is used instead, which emits a real same-origin `<script src="/registerSW.js">` - verified this produces zero CSP violations and correct output via `npm run build` (check `dist/registerSW.js` has no inline script, and `dist/index.html`'s injected `<script>` tag has a `src`, not inline code). **Not fully verified end-to-end**: actual service-worker *registration* couldn't be confirmed in this session's browser-automation sandbox - it failed identically even for a trivial one-line control service worker unrelated to this app's code, strongly suggesting the sandbox itself disables/restricts the Service Worker API rather than there being a real bug. Worth a real-device/real-browser check (Chrome DevTools → Application → Service Workers, or an actual "Add to Home Screen" prompt) before trusting this fully in production.
-7. **Real-time "airing today" ticker** — Home page ticker (`tickerHTML()` in `home.js`) using the existing `/api/anime/schedule` endpoint with today's weekday (`todayName()`, exported from `schedule.js` to avoid a second copy of the JS-weekday-to-string mapping). Seamless CSS marquee: the item list is duplicated once inside a single flex track, animated `translateX(0)` → `translateX(-50%)`, which loops without a visible jump. Pauses on hover; disabled (falls back to a plain scrollable row) under `prefers-reduced-motion`.
-
-### #4 detail: the three games (done last session, user explicitly asked not to rush these — best-effort UI, not just functional)
-
-All three live under `#/games` (hub, `frontend/src/pages/games/hub.js`), share the anime pool helper (`frontend/src/lib/animePool.js` — samples `topAnime` across pages `[1,4,8,12,16,20]`, not just page 1, so the data spread is wide enough to be interesting), and the `shuffle()` util (`frontend/src/lib/shuffle.js`). All are purely client-side — no backend/account involvement, streaks/results are per-browser via `localStorage`.
-
-- **Higher/Lower** (`#/games/higher-lower`, `higherLower.js`) — guess whether a "challenger" anime's score is higher/lower than the current "champion"; correct guesses chain the streak, wrong ends it. Best streak in `localStorage` key `aninest_hl_best`.
-- **Guess the Anime** (`#/games/guess-the-anime`, `guessTheAnime.js`) — blurred poster (CSS `filter: blur()`, unblurs on reveal) + a redacted synopsis snippet (strips the `(Source: ...)` citation and blacks out any literal occurrence of the answer's own title) + 4 multiple-choice title buttons. Best streak: `aninest_gta_best`. **Known limitation**: redaction only blacks out the exact answer title string — recap/compilation-film entries often name the *parent series* instead (e.g. a "BOCCHI THE ROCK! Recap Part 1" synopsis says "Bocchi the Rock!"), which isn't caught and makes those specific rounds nearly free. Not worth fixing unless it turns out to be a big fraction of rounds in practice.
-- **Taste Quiz** (`#/games/quiz`, `quiz.js`) — 5 fixed multiple-choice questions, each option tagged with one genre. Tallies picks, then searches the pool for the highest-scored anime matching the most-picked genre (falling back to the next-ranked genre, then to the pool's overall best-scored anime, if no match) and shows it as a "Your Match!" result card linking to its detail page. **Deliberately restricted to genres in AniList's own genre enum** (no MAL-only tags like "Shounen"/"Shoujo") — since AniList is now the primary pool source, a genre AniList doesn't have would never match anything and silently fall through every time.
-
-### UI note: the header's logged-in user chip
-
-Fixed this session — `.user-chip` (`frontend/src/style.css`) used `border: 2.5px solid var(--ink)`, and `--ink` (#16101f, near-black) is nearly invisible against the header's own dark background, so the chip looked like unbordered floating text. This is a trap worth remembering for *any* new UI on the header/dark hero areas: the app's whole "comic ink outline" look only works where the bordered element sits on a *lighter* panel than the outline color — on the dark header itself, use a bright accent border (this fix used `var(--purple)`, brightening to `var(--pink2)` on hover) instead of `var(--ink)`.
-
-### #3 detail: public profile pages (done this session)
-
-- Backend: `GET /api/users/:username` (`backend/src/routes/users.js`, mounted at `/api/users` in `app.js`) — public, unauthenticated, returns only `{ username, createdAt }` + that user's favorites + reviews. Never returns email/password_hash. 404s for a non-matching or malformed username (reuses the same `[a-zA-Z0-9_]{3,20}` shape the registration form enforces) rather than leaking existence via a different error.
-- Frontend: `frontend/src/pages/profile.js`, routed at `#/u/:username` (`main.js`). Favorites render as a card grid (flat data from the `favorites` table — no fav-toggle button, this isn't the viewer's own list). Reviews are capped at 12 shown and each one is enriched with the anime's title/poster via `Api.fullById()` (the reviews table itself only stores `mal_id`, not a title) — fine at this size since `fullById` is already cached both server- and client-side; would need rethinking if a single user's review count ever got large.
-- Reviewer usernames in the reviews section on anime detail pages (`details.js` → `reviewCardHTML`) are now links to `#/u/<username>`. The account page (`account.js`) also links to the signed-in user's own public profile.
-- No privacy toggle exists — a registered user's favorites and reviews are always publicly visible under their username. That was an implicit simplification, not an explicit user decision — revisit if that's ever a concern.
-
-## Security/logging/responsiveness audit (this session)
-
-Asked explicitly to check whether everything built so far was secure, cached, logged, and responsive. Findings:
-
-- **Security**: no new vulnerabilities found. Re-verified the auth/CSRF/rate-limit/CORS/helmet stack is unchanged and every new frontend file added this and last session (`compare.js`, `quiz.js`, `higherLower.js`, `guessTheAnime.js`, `profile.js`, the watch-status/character-list additions to `details.js`) consistently escapes anything derived from an API response or user input before it reaches `innerHTML` — spot-checked by grepping every `${...}` interpolation next to an `innerHTML` assignment across those files. The one pre-existing pattern worth flagging if it's ever reused carelessly: `ensureColumn()` in `db.js` builds `ALTER TABLE` SQL by string concatenation — safe today because it's only ever called with hardcoded literals (`'favorites'`, `'status'`, `'TEXT'`), never anything derived from a request, but it would stop being safe the moment someone passed request-derived input into it.
-- **Caching**: anime data already caches server-side (`backend/src/lib/cache.js`, in-memory, 10min/30min/24h TTLs by endpoint) and browser-side (`frontend/src/lib/api.js`, 5min). This is genuinely adequate for a single-instance, free-tier deployment — there's no second instance for an in-memory cache to be *inconsistent* with. **Redis was deliberately not added** — it would help with one specific gap (an in-memory cache resets on every Render free-tier cold start/redeploy, so the first requests after a wake-up always hit Jikan/AniList fresh even for data that was cached minutes before the sleep), but doing it for real needs an external Redis (Render's own free tier has none) — e.g. Upstash's free tier — which means a `REDIS_URL`/token only the user can create. Flagged as a live decision, not implemented speculatively.
-- **Logging**: was plain scattered `console.log`/`console.error`/`console.warn`. Replaced with structured JSON logging via `pino` (`backend/src/lib/logger.js`) plus `pino-http` for automatic per-request logs (method/path/status/duration/request-id) in `app.js`. This alone is "centralized" in the sense that matters for a Render deployment — Render already aggregates one service's stdout into one log stream; the change is that the stream is now structured/filterable instead of free-form strings, and a real log-search tool could be pointed at it later without any code changes. **Frontend errors now flow into the same stream**: `frontend/src/lib/errorReporter.js` catches `window.onerror`/`unhandledrejection` and POSTs to a new public `POST /api/client-errors` (validated, rate-limited by the existing global limiter, capped at 20 reports/session client-side to prevent an error-loop from spamming logs) — verified end-to-end by throwing a real error in the browser and confirming the exact message/stack/URL landed in the backend's log output. **Also flagged, not implemented**: real error *tracking/alerting* (Sentry or similar) needs the user's own account + DSN — logging-to-stdout tells you an error happened if you go looking; it doesn't page anyone.
-- **Responsiveness**: checked every piece of UI added this session at mobile width (375px) via computed styles/scrollWidth (no horizontal overflow anywhere: watch-status pills, character rail, airing-today ticker, Browse's toolbar/min-score slider, the games hub grid) — all already correctly wrap/stack via the CSS added alongside each feature. Nothing needed fixing.
-
-## Game pool diversity fix (this session)
-
-The shared anime pool (`frontend/src/lib/animePool.js`) that all three games draw from was built entirely from "top anime" pages — measured directly, that gave Horror only 3 candidates, Mecha 2, Sports 8, Music 10 (out of a 120-anime pool). That meant the Taste Quiz recommending, say, "Horror" would almost always return the exact same 1-2 anime, and Higher/Lower and Guess the Anime were both drawing from the same too-small, non-diverse set. Fixed by widening the pool to 278 anime from three sources: a wider top-anime page spread `[1,3,6,10,15,20,30,40]`, the current season, and — the actual fix — one dedicated top-rated **search per genre** (matching the Taste Quiz's own 16 genre options), which brought every thin genre up to 20+ candidates. Verified: retook the quiz with an answer path that wins on Horror five times in a row and got 4 distinct recommended anime (previously would have been the same 1-2 every time).
-
-## Known TODOs / things a future session should double check
-
-- **Turnstile keys**: re-added to code, but the user needs to re-enter `TURNSTILE_SECRET_KEY` (backend) and `VITE_TURNSTILE_SITE_KEY` (frontend) in Render's dashboard if they weren't retained from before removal — check whether registration currently shows the widget live before assuming it's configured.
-- **CSP `connect-src`** uses a `*.onrender.com` wildcard for portability across Render redeploys — fine for now, but if a custom domain ever gets added, tighten it to the exact origin.
-- **No email verification / password reset / 2FA** — explicitly out of scope (needs real email infrastructure), flagged repeatedly, not forgotten.
-- **Rate limits are env-overridable** (`RATE_LIMIT`, `AUTH_RATE_LIMIT`) specifically so the test suite can raise them without touching production defaults — don't "fix" this by hardcoding, it's intentional.
-- Any Turso/GitHub credentials shared in chat during this session should be treated as already-rotated-or-should-be — don't reuse a token pasted in an old conversation transcript as if it's still the live one without checking.
-
-## Quick reference: running it locally
+**Frontend routes**: `/`, `/browse`, `/anime/:id`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
+`/tier-list`, `/screenshot-search`, `/studio/:name`, `/person/:name`, `/u/:username`, `/account`, `/login`, `/register`,
+`/manga`, `/manga/:id`, `/manga-favorites`, `/games` (+ `/daily`, `/higher-lower`, `/guess-the-anime`, `/quiz`,
+`/leaderboard/:game`), `/leaderboard/xp`, `/notifications`, `/admin/watch-sources`.
+
+**API mounts** (`app.js`): `auth`, `favorites`, `anime`, `reviews`, `users`, `client-errors`, `games`, `recommendations`,
+`studios`, `people`, `import`, `screenshot-search`, `manga`, `manga-favorites`, `manga-reviews`, `notifications`,
+`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, and `GET /api/health`.
+
+**Tables** (`lib/db.js`; `CREATE TABLE IF NOT EXISTS` at boot, new columns added with `ensureColumn`, no migration tool):
+`users`, `sessions`, `favorites`, `reviews`, `manga_favorites`, `manga_reviews`, `game_scores`, `game_runs`,
+`daily_challenges`, `daily_results`, `anime_watch_sources`, `watch_source_candidates`, `notifications`,
+`manga_chapter_state`, `api_cache`.
+
+## Data sources and caching
+
+| Source | Used for | Notes |
+|---|---|---|
+| AniList (GraphQL) | primary for anime lists, detail, search, characters | **30 requests/minute**. A 429 carries `Retry-After`. |
+| Jikan (MyAnimeList) | fallback for everything above; also fills MAL-only fields (rank, duration, rating, streaming links) when it serves detail | slow and sometimes flaky |
+| MangaDex | all manga metadata and covers | metadata only, `safe` rating only, behind Cloudflare (needs a browser User-Agent) |
+| AnimeThemes.moe | OP/ED jukebox | third party with occasional full outages; also behind Cloudflare |
+| trace.moe | screenshot search | small shared daily quota |
+| YouTube Data API v3 | admin channel import and search | import costs about 1 unit per 50 videos, a search costs 100 (10,000/day free) |
+
+Only the backend calls upstreams. Two caches sit in front of them:
+
+1. `lib/cache.js`: in memory, per process, cleared on every deploy.
+2. `lib/persistentCache.js`: the `api_cache` table. A fresh copy is served without calling the upstream. If the upstream
+   **fails** (network error, 5xx, timeout, 429), the stored copy is served however old it is. A definitive 4xx is never
+   hidden, so a manga later re-rated as adult stays rejected. Only bounded key spaces use it: anime detail, characters and
+   recommendations (24h), top/season/schedule (6h), OP/ED lists (7d), manga detail (24h). Free-text search never does.
+   **If you change the shape of a cached payload, bump its key** (`full:v2:`, `manga:full:v2:`) so old rows are ignored.
+
+## Features: how they work
+
+**Anime.** `lib/animeSource.js` `withFallback()` tries AniList, then Jikan, then the stored copy. Favorites carry a watch
+status (watching / plan_to_watch / completed / dropped), capped at 500 per user. Reviews are 1-10 plus text, one per user per
+title. Badges (`lib/badges.js`) are computed from counts; nothing is stored.
+
+**Manga** (`routes/manga.js`, `lib/mangadex.js`). Search with a curated tag list, demographic, status and sort; detail; a
+reading list with status (`manga_favorites`); reviews (`manga_reviews`). English titles are preferred: MangaDex's main title is
+often a romanization, so the English alt title is used when there is one. Reading is a **link-out** to MANGA Plus, VIZ and
+Webtoons search pages. There is no embedded reader, and the code must never call MangaDex's `/chapter` or `/at-home` endpoints.
+Covers are **proxied** through `GET /api/manga/cover/:id/:file`: MangaDex replaces images requested with another site's
+`Referer` with a "read it on mangadex.org" placeholder. localhost is not affected, so this only shows up in production. The route
+only accepts a UUID plus a UUID-named file, caps the size, caches, and is exempt from the general rate limiter.
+
+**Free official episodes** (`anime_watch_sources`, status `approved | pending | rejected | removed`). The anime page shows one
+player, language tabs and episode ranges (`lib/freeWatch.js`; the grouping logic is the pure `lib/freeWatchGroups.js`). The
+curated official channels (Muse Asia, Ani-One Asia, Crunchyroll, with ids verified live) are in `lib/youtube.js`.
+- **Invariant**: text becomes a stored video id only through `parseYouTubeVideoId` (`lib/youtubeUrl.js`), and embeds are always
+  rebuilt from the bare 11-character id on `youtube-nocookie.com`. Never store or embed a raw URL.
+- Any signed-in user can suggest a link (`POST /api/anime-watch-sources`); it lands as `pending`. Links an admin adds are approved directly.
+- **Admin page** (`#/admin/watch-sources`): bulk **Import** per channel, the **Needs your review** queue (`watch_source_candidates`,
+  grouped by series and season so a whole show is assigned in one click), pending user submissions with a preview, and per-anime
+  links with Remove / Remove all. A removed link is set to `removed`, so the next import looks at it again.
+- **Import matching** (`lib/watchSourceMatcher.js`): `parseUploadTitle` pulls out series, season, episode and language, and rejects
+  PVs, CMs, teasers, previews and vlogs. A series matches an AniList entry only on an **exact** title match (`looseKey` ignores
+  "the" and spacing; later seasons accept only season-qualified titles). An earlier substring rule attached *Ascendance of a
+  Bookworm* S3 to its side story, which is why matching is exact. Each group is looked up once, paced at 2.2s per call for AniList's
+  limit. A 429 ends the pass, and the admin UI waits out `Retry-After` and continues. Unmatched groups go to the review queue.
+- **Admin role**: `users.is_admin`, set from `ADMIN_USERNAMES` on **every boot**. The account must exist first; otherwise register
+  and restart. `requireAdmin` answers non-admins with **404**, and the admin page shows the normal not-found page, so neither
+  reveals that it exists.
+
+**OP/ED jukebox**: `GET /api/anime/:id/themes`. It loads *after* the rest of the page, so a dead host can't block the page.
+Openings sort first and OP1 is preselected. An outage shows "temporarily unavailable" with a retry button, which is worded
+differently from "this anime has none". The list is persisted, but the video files are hosted by AnimeThemes, so during an outage
+a cached list can appear while playback still fails.
+
+**XP and levels** (`lib/xp.js` is pure; `lib/xpStats.js` is the one DB loader, shared by the profile and the leaderboard). XP is
+derived from existing data and never stored, so it applies retroactively and can't be farmed by toggling favorites.
+`level = floor(sqrt(xp / 50)) + 1`. Sources and caps are in `XP_RULES`. Links count only when someone *else* approved them
+(`submitted_by != reviewed_by`), so admin imports earn nothing. The leaderboard is `GET /api/leaderboard/xp`, cached for 2 minutes.
+Watching an episode and reading a chapter aren't tracked because there's no reliable signal for either.
+
+**Games** (`pages/games/*`): Daily Challenge, Higher/Lower, Guess the Anime and Taste Quiz. Streaks feed leaderboards and XP, so
+score submission is guarded (`routes/games.js`). The player starts a **single-use run** with `POST /:game/start`. `POST /:game/score`
+is accepted only for that run and only once; the run is claimed atomically *before* the checks run. The streak also has to fit
+the elapsed time (1.5s per point for Higher/Lower, 2.5s for Guess the Anime, hard cap 300). That stops instant fakes and replays.
+A bot that actually waits would still get through, because the games run in the browser. Daily results are recorded once per date,
+for today or yesterday only (`POST /api/games/daily/result`).
+
+**Notifications** (`lib/notifications.js`, `lib/mangaUpdates.js`): a header bell plus `#/notifications`. You follow a title when
+it's in your favorites and not marked completed or dropped. For anime, a notification is created whenever free episodes go live
+(import, review-queue assignment, approved submission, admin add). For manga, a background job in `server.js` runs every 6h
+(first run 2 minutes after boot; off in tests or with `MANGA_POLL=off`) and compares MangaDex's `latestUploadedChapter` id for each
+followed manga. The first time a manga is seen only records a baseline. Each user gets one unread notification per title, and its
+count grows. Notification failures are logged and never break the action that triggered them.
+
+**Also in the app**: recommendations built from your favorites, studio and voice-actor pages, AniList list import, screenshot
+search (trace.moe), a client-side tier-list maker, compare mode, the weekly schedule, PWA install, a recently viewed rail, and an
+optional Turnstile check on registration.
+
+## Configuration
+
+Backend (`backend/.env.example` locally; the Render dashboard in production, where `sync: false` values are prompted for):
+
+| Variable | Purpose |
+|---|---|
+| `PORT`, `NODE_ENV` | basics |
+| `FRONTEND_ORIGIN` | the only origin CORS allows (comma-separated for more than one) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | production database. Unset means a local file at `backend/data/aninest.db` (or `DB_PATH`) |
+| `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot |
+| `YOUTUBE_API_KEY` | optional; enables admin import and search. Without it, admins can still paste links and users can still submit them |
+| `TURNSTILE_SECRET_KEY` | optional bot check on registration (the frontend needs `VITE_TURNSTILE_SITE_KEY` too) |
+| `RATE_LIMIT`, `AUTH_RATE_LIMIT` | limiter ceilings (defaults: 120/min per IP, 10 per 15 min on auth). The tests raise them |
+| `MANGA_POLL` | `off` disables the manga-chapter job |
+| `LOG_LEVEL` | pino log level |
+
+Frontend (baked in at build time, so changing one needs a rebuild): `VITE_API_URL`, `VITE_TURNSTILE_SITE_KEY`.
+
+Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256 hashes. No secret is involved, so there is no
+`SESSION_SECRET`. To log everyone out, clear the `sessions` table.
+
+## Conventions and invariants
+
+- Every write route validates input with `zod`, and every SQL value is a bound argument. Auth is `attachUser` (global) plus
+  `requireAuth` or `requireAdmin` per router. User-scoped queries always include `user_id` in the `WHERE`. Mutating requests need the
+  CSRF double-submit header `x-csrf-token`.
+- Escape every dynamic value that goes into HTML (`escapeHtml`), attributes included. URLs from users are re-parsed with `new URL()`.
+- **The CSP is defined twice** and browsers enforce the stricter of the two: the `<meta>` tag in `frontend/index.html` and the real
+  header in `render.yaml`. A new image, media or frame origin must go into **both**. (`img-src` includes the backend origin for the
+  cover proxy; `frame-src` includes YouTube.)
+- Manga stays `safe`-rated. Never add MangaDex chapter or at-home calls. Never store or embed an unvalidated URL.
+- Routers are mounted flat (`/api/favorites`, `/api/manga-favorites`, ...), so each file is one auth boundary. Mount a specific path
+  before a `/:param` router that could swallow it; that's why `/api/leaderboard` is not under `/api/users`.
+- A new third-party integration gets a small `lib/` client and a route, runs only on the backend, and is cached (`persistentCached`
+  for bounded keys).
+- Pages set `document.title` while rendering; the router resets it to the default first.
+- The frontend `ApiError` carries extra JSON fields from error responses (`err.quotaExceeded`, `err.notConfigured`, ...).
+
+## Gotchas that cost real time
+
+- **Cross-site cookies**: the frontend and backend are different sites (`onrender.com` is a public suffix), so production cookies must be
+  `SameSite=None; Secure`. Dev uses Lax. With Lax in production, no cookie ever comes back and every request looks logged out.
+- **Blueprint plan drift**: `render.yaml` must say `plan: starter` to match the dashboard. While it said `free`, every sync tried to
+  downgrade the service and failed.
+- **Render Blueprint schema**: `env: node` / `env: static`, flat `headers` entries, and `routes` as `{type, source, destination}`.
+- **MangaDex Referer trap** and the **Cloudflare User-Agent** requirement (MangaDex, AnimeThemes), both described above.
+- **AniList allows 30 requests a minute**. Pacing imports for 80/min made every pass stall.
+- The dev browser isn't logged in to production, and credentials must never be typed on the owner's behalf. Admin actions in
+  production are done by the owner.
+- **Shell escaping**: the bash tool collapses doubled backslashes, which silently corrupted regexes written through heredocs or
+  `python -c` (a `\b` became a backspace byte). Write source with the Write/Edit tools, and scan for control characters after any scripted edit.
+- `main.js` renders a loading state *before* awaiting auth, because pages read `Auth.get().user` synchronously on their first render.
+- All tests share one database, so pick an unused `mal_id` range for new tests. Taken: 20000-74999, 82000-82899, 90000-90899, 91000-91899.
+
+## Testing
+
+`cd backend && npm test` runs 77 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
+`ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
+
+Live upstreams (AniList, Jikan, MangaDex, trace.moe, AnimeThemes, YouTube) are deliberately **not** called. The tests cover input
+validation, auth and gating, and the pure logic around them: title parsing, series matching, XP, episode grouping, the persistent
+cache, and the manga poll with an injected fake. The frontend has no test runner. Its one pure module (`freeWatchGroups.js`) has no
+imports so the backend suite can test it. Flows behind a login were checked by hand or through their APIs.
+
+## Known limitations and possible next steps
+
+- Ani-One's Chinese-titled shows can't be matched automatically. They land in the review queue and are labelled "Chinese subs".
+  Episode numbers follow the channel, not MAL (e.g. *Attack on Titan Final Season* is one 35-episode run, and *Jujutsu Kaisen* S2
+  is numbered 25-47).
+- Game results come from the browser. They're time-checked but not authoritative. Making them authoritative means the server picks
+  each question and checks each answer, and the Daily stops sending its answer to the browser. That's a larger rewrite.
+- Not built, because each needs an outside service: email (verification, password reset, notification emails), 2FA, Redis,
+  external error tracking.
+- Ideas: a warm-up job that pre-fills `api_cache` for popular titles, notification preferences, frontend tests.
+
+## Quick start
 
 ```bash
-# backend (http://localhost:8787)
-cd backend && npm install && cp .env.example .env && npm run dev
-
-# frontend (http://localhost:5173), separate terminal
-cd frontend && npm install && npm run dev
-
-# tests
+cd backend && npm install && cp .env.example .env && npm run dev    # http://localhost:8787
+cd frontend && npm install && npm run dev                            # http://localhost:5173
 cd backend && npm test
 ```
-
-See `README.md` for the full feature list and security writeup, `DEPLOY.md` for Render deployment steps.
