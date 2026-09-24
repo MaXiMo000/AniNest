@@ -1,6 +1,7 @@
 import { imageOf } from './api.js';
 import { Favorites } from './store.js';
 import { MangaFavorites } from './mangaStore.js';
+import { mangaImg } from './mangaImage.js';
 import { navigate } from './router.js';
 
 // Shared between the detail page (setting a status) and the library page
@@ -133,7 +134,7 @@ export function cardRail(list, renderer = animeCard) {
 }
 
 export function mangaCard(manga) {
-  const img = manga.image !== undefined ? manga.image : (manga.coverImage || '');
+  const img = mangaImg(manga.image !== undefined ? manga.image : (manga.coverImage || ''));
   const isFav = MangaFavorites.has(manga.id);
   const meta = [manga.format, manga.status, manga.year].filter(Boolean).join(' · ');
   const id = manga.id || '';

@@ -580,6 +580,20 @@ test('manga route validates the id param without needing MangaDex', async () => 
   assert.equal(res.status, 400);
 });
 
+test('manga cover proxy only accepts a UUID + uuid-named image file, never an arbitrary path', async () => {
+  const agent = makeAgent();
+  const good = 'a1c7c817-4e59-43b7-9365-09675a149a6f';
+  for (const [id, file] of [
+    ['not-a-uuid', `${good}.jpg`],
+    [good, 'evil.php'],
+    [good, '..%2F..%2Fetc%2Fpasswd'],
+    [good, `${good}.svg`],
+  ]) {
+    const res = await agent.get(`/api/manga/cover/${id}/${file}`);
+    assert.equal(res.status, 400, `expected ${id}/${file} to be rejected`);
+  }
+});
+
 test('manga tags route returns the curated list without needing MangaDex', async () => {
   const agent = makeAgent();
   const res = await agent.get('/api/manga/tags');

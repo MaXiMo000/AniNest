@@ -1,5 +1,6 @@
 import { MangaFavorites } from '../lib/mangaStore.js';
 import { Auth } from '../lib/authStore.js';
+import { mangaImg } from '../lib/mangaImage.js';
 import { emptyHTML, escapeHtml, skeletonGrid, READ_STATUSES } from '../lib/ui.js';
 
 const FILTERS = [
@@ -22,7 +23,7 @@ function favCard(f) {
   return `
     <article class="manga-card" data-manga-id="${escapeHtml(id)}">
       <div class="poster-wrap">
-        ${f.image ? `<img src="${escapeHtml(f.image)}" alt="${escapeHtml(f.title)}" loading="lazy" />` : ''}
+        ${f.image ? `<img src="${escapeHtml(mangaImg(f.image))}" alt="${escapeHtml(f.title)}" loading="lazy" />` : ''}
         <span class="card-type">${escapeHtml(f.format || 'Manga')}</span>
         <button class="fav-btn is-fav" data-manga-fav-id="${escapeHtml(id)}" title="Remove favorite">💖</button>
       </div>

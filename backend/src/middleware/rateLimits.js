@@ -10,6 +10,10 @@ export const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests — slow down a little.' },
+  // A manga browse page loads ~20 covers at once; counting those against the
+  // same budget as API calls would 429 real users mid-page. The cover route
+  // is strictly allowlisted, size-capped and cached (see routes/manga.js).
+  skip: (req) => req.path.startsWith('/api/manga/cover/'),
 });
 
 // Auth endpoints get a much tighter limit to blunt credential-stuffing /

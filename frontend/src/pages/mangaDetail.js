@@ -1,6 +1,7 @@
 import { MangaApi } from '../lib/mangaApi.js';
 import { loadingHTML, errorHTML, escapeHtml, wireRetry, showToast, READ_STATUSES } from '../lib/ui.js';
 import { MangaFavorites } from '../lib/mangaStore.js';
+import { mangaImg } from '../lib/mangaImage.js';
 import { navigate } from '../lib/router.js';
 
 // The manga analog of details.js's watchBoxHTML fallback branch. There's no
@@ -50,7 +51,7 @@ export async function renderMangaDetail(root, id) {
 
     root.innerHTML = `
       <div class="detail-hero" style="background:linear-gradient(160deg, rgba(123,47,247,0.25), rgba(18,12,34,0.9)), var(--panel)">
-        <img class="detail-poster" src="${escapeHtml(m.coverImage || '')}" alt="${escapeHtml(m.title)}" />
+        <img class="detail-poster" src="${escapeHtml(mangaImg(m.coverImage))}" alt="${escapeHtml(m.title)}" />
         <div class="detail-main">
           <h1 class="detail-title">${escapeHtml(m.title)}</h1>
           ${m.altTitles?.[0] && m.altTitles[0] !== m.title ? `<p class="detail-title-en">${escapeHtml(m.altTitles[0])}</p>` : ''}
