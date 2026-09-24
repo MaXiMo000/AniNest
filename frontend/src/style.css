@@ -1862,3 +1862,97 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
   0%, 60% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* ===================== Game setup screens ===================== */
+.setup-heading { font-size: 1.3rem; margin: 22px 0 12px; }
+.setup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.setup-grid--two { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.setup-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: var(--panel);
+  color: var(--text);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 4px 4px 0 var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.15s ease;
+}
+.setup-option strong { font-family: var(--font-display); font-size: 1.25rem; letter-spacing: 0.5px; font-weight: 400; }
+.setup-option span { color: var(--muted); }
+.setup-option:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+.setup-option.is-selected { border-color: var(--yellow); box-shadow: 4px 4px 0 var(--yellow); background: color-mix(in srgb, var(--purple) 30%, var(--panel)); }
+.setup-option-emoji { font-size: 1.8rem; color: inherit !important; }
+.setup-option-best { font-weight: 800; color: var(--yellow) !important; margin-top: 4px; }
+.setup-actions { justify-content: center; margin-top: 26px; }
+.setup-note { text-align: center; margin-top: 10px; }
+
+.mode-tag {
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 0.9rem;
+  background: var(--yellow);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  padding: 1px 8px;
+  transform: rotate(-3deg);
+}
+
+/* Guess the Anime: clues, typed answers, blitz clock, recap */
+.clue-chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 12px 0; }
+.clue-btn { display: block; margin: 12px auto 0; }
+.clue-cost { opacity: 0.7; font-size: 0.8em; }
+.clue-done { text-align: center; margin: 10px 0 0; }
+.guess-choice kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  background: var(--bg2);
+  border: 1.5px solid var(--ink);
+  border-radius: 4px;
+  margin-right: 6px;
+  color: var(--muted);
+}
+.typed-answer { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.typed-answer input {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 1rem;
+}
+.typed-answer input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0, 217, 255, 0.25); }
+.blitz-bar {
+  height: 14px;
+  background: var(--bg2);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 10px 0 0;
+}
+.blitz-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--pink), var(--yellow));
+  transition: width 1s linear;
+}
+.recap { max-width: 460px; margin: 14px auto 0; text-align: left; }
+.recap summary { cursor: pointer; font-weight: 800; text-align: center; }
+.recap-list { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 4px; font-weight: 700; }
+.recap-list a:hover { color: var(--pink2); }
+.recap-list .is-wrong { opacity: 0.8; }
