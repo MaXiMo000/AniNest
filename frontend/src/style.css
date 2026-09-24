@@ -2107,3 +2107,100 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 .daily-countdown { font-weight: 800; margin-top: 14px; }
 .daily-countdown strong { font-family: var(--font-display); font-weight: 400; font-size: 1.3rem; color: var(--blue); letter-spacing: 1px; }
 @media (prefers-reduced-motion: reduce) { .dist-bar { animation: none; } }
+
+/* New games: shared choice arena, emoji clue, cast list, opening player, timeline */
+.choice-arena.is-loading { opacity: 0.5; pointer-events: none; }
+.choice-prompt { text-align: center; }
+.choice-cover { width: 180px; }
+.choice-title { margin: 6px 0 0; font-size: clamp(1.2rem, 3vw, 1.6rem); }
+.emoji-clue {
+  font-size: clamp(2.6rem, 11vw, 4.4rem);
+  letter-spacing: 6px;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 18px;
+  padding: 18px 10px;
+  box-shadow: 6px 6px 0 var(--ink);
+  animation: fx-pop-in 0.4s ease;
+}
+.cast-list { list-style: none; padding: 0; margin: 0 auto; max-width: 420px; display: flex; flex-direction: column; gap: 8px; }
+.cast-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 700;
+}
+.cast-list li span { color: var(--muted); font-size: 0.88rem; }
+.opening-player { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.opening-video { width: 0; height: 0; opacity: 0; }
+.opening-video.is-revealed { width: min(100%, 420px); height: auto; opacity: 1; border: 2.5px solid var(--ink); border-radius: 12px; }
+.opening-visual { display: flex; gap: 6px; align-items: flex-end; height: 70px; }
+.opening-visual span {
+  width: 14px;
+  height: 35%;
+  background: linear-gradient(var(--pink), var(--yellow));
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+}
+.opening-visual.is-playing span { animation: eq 0.8s ease-in-out infinite alternate; }
+.opening-visual span:nth-child(2) { animation-delay: 0.15s; }
+.opening-visual span:nth-child(3) { animation-delay: 0.3s; }
+.opening-visual span:nth-child(4) { animation-delay: 0.1s; }
+.opening-visual span:nth-child(5) { animation-delay: 0.25s; }
+@keyframes eq { from { height: 15%; } to { height: 100%; } }
+.opening-status { margin: 0; }
+
+.timeline-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+.timeline-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--panel);
+  color: var(--text);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 800;
+  text-align: left;
+  transition: transform 0.12s ease, border-color 0.15s ease;
+}
+.timeline-card:hover:not(:disabled) { transform: translate(-2px, -3px); }
+.timeline-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; border: 2px solid var(--ink); }
+.timeline-card.is-picked { border-color: var(--yellow); }
+.timeline-card.is-right { border-color: var(--green); box-shadow: 5px 5px 0 var(--green); }
+.timeline-card.is-wrong { border-color: var(--pink); box-shadow: 5px 5px 0 var(--pink); }
+.timeline-title { font-size: 0.88rem; line-height: 1.25; }
+.timeline-year { font-family: var(--font-display); font-size: 1.4rem; color: var(--yellow); letter-spacing: 1px; animation: fx-pop-in 0.3s ease; }
+.timeline-order {
+  position: absolute;
+  top: -12px;
+  left: -10px;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--yellow);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  border: 2.5px solid var(--ink);
+  border-radius: 50%;
+  z-index: 1;
+  animation: fx-pop-in 0.25s ease;
+}
+@media (max-width: 560px) { .timeline-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .opening-visual.is-playing span { animation: none; height: 70%; } .emoji-clue { animation: none; } }

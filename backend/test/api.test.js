@@ -1800,7 +1800,7 @@ test('a score that arrives faster than the game allows is rejected, per game', a
   await agent.get('/api/health');
   await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
   const start = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
-  // 10 timeline rounds need 40s; claim them after ~10s.
+  // 10 timeline rounds need 25s; claim them after ~10s.
   await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 10_000, start.json.runId] });
   const res = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 10, run_id: start.json.runId } });
   assert.equal(res.status, 400);

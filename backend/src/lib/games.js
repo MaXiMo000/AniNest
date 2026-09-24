@@ -13,13 +13,13 @@ export const GAME_RULES = {
   'hl-year': { label: 'Higher or Lower: Release Year', minMsPerRound: 1500 },
   'guess-the-anime': { label: 'Guess the Anime', minMsPerRound: 2500 },
   'gta-hard': { label: 'Guess the Anime: Hard', minMsPerRound: 2500 },
-  'gta-blitz': { label: 'Guess the Anime: Blitz', minMsPerRound: 900, maxScore: 80 },
-  'name-that-opening': { label: 'Name That Opening', minMsPerRound: 3000 },
-  timeline: { label: 'Timeline', minMsPerRound: 4000 },
-  'studio-match': { label: 'Studio Match', minMsPerRound: 2000 },
-  'emoji-plot': { label: 'Emoji Plot', minMsPerRound: 2000 },
+  'gta-blitz': { label: 'Guess the Anime: Blitz', minMsPerRound: 750, maxScore: 80 },
+  'name-that-opening': { label: 'Name That Opening', minMsPerRound: 2000 },
+  timeline: { label: 'Timeline', minMsPerRound: 2500 },
+  'studio-match': { label: 'Studio Match', minMsPerRound: 1500 },
+  'emoji-plot': { label: 'Emoji Plot', minMsPerRound: 1500 },
   'source-guess': { label: 'Source Material', minMsPerRound: 1500 },
-  'cast-call': { label: 'Cast Call', minMsPerRound: 2500 },
+  'cast-call': { label: 'Cast Call', minMsPerRound: 1500 },
 };
 
 export const GAMES = Object.keys(GAME_RULES);

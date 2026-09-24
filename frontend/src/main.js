@@ -18,6 +18,8 @@ import { renderGuessTheAnime } from './pages/games/guessTheAnime.js';
 import { renderQuiz } from './pages/games/quiz.js';
 import { renderDailyChallenge, renderMangaDailyChallenge } from './pages/games/dailyChallenge.js';
 import { renderLeaderboard } from './pages/games/leaderboard.js';
+import { renderChoiceGame } from './pages/games/choiceGames.js';
+import { renderTimeline } from './pages/games/timeline.js';
 import { renderCompare } from './pages/compare.js';
 import { renderXpLeaderboard } from './pages/xpLeaderboard.js';
 import { renderNotifications } from './pages/notifications.js';
@@ -97,6 +99,10 @@ route('/games/manga-daily', () => renderMangaDailyChallenge(app));
 route('/games/higher-lower', ({ params }) => renderHigherLower(app, params));
 route('/games/guess-the-anime', ({ params }) => renderGuessTheAnime(app, params));
 route('/games/quiz', () => renderQuiz(app));
+route('/games/timeline', ({ params }) => renderTimeline(app, params));
+for (const slug of ['studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']) {
+  route(`/games/${slug}`, ({ params }) => renderChoiceGame(app, slug, params));
+}
 route('/games/leaderboard/:game', ({ path }) => renderLeaderboard(app, path.game));
 route('/compare', () => renderCompare(app));
 route('/leaderboard/xp', () => renderXpLeaderboard(app));
