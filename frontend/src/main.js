@@ -20,6 +20,7 @@ import { renderDailyChallenge, renderMangaDailyChallenge } from './pages/games/d
 import { renderLeaderboard } from './pages/games/leaderboard.js';
 import { renderChoiceGame } from './pages/games/choiceGames.js';
 import { renderTimeline } from './pages/games/timeline.js';
+import { renderGameStats } from './pages/games/stats.js';
 import { renderCompare } from './pages/compare.js';
 import { renderXpLeaderboard } from './pages/xpLeaderboard.js';
 import { renderNotifications } from './pages/notifications.js';
@@ -103,7 +104,8 @@ route('/games/timeline', ({ params }) => renderTimeline(app, params));
 for (const slug of ['studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']) {
   route(`/games/${slug}`, ({ params }) => renderChoiceGame(app, slug, params));
 }
-route('/games/leaderboard/:game', ({ path }) => renderLeaderboard(app, path.game));
+route('/games/leaderboard/:game', ({ path, params }) => renderLeaderboard(app, path.game, params));
+route('/games/stats', () => renderGameStats(app));
 route('/compare', () => renderCompare(app));
 route('/leaderboard/xp', () => renderXpLeaderboard(app));
 route('/notifications', () => renderNotifications(app));
