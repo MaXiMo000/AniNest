@@ -47,8 +47,8 @@ export function normalizeTitle(str = '') {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/^the /, '')
-    .trim();
+    .trim()
+    .replace(/^the /, '');
 }
 
 // A typed guess is right when it matches the main or English title, or is
