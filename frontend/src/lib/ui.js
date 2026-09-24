@@ -38,6 +38,29 @@ export function badgesRowHTML(badges) {
   return `<div class="badges-row">${badges.map((b) => `<span class="badge-pill badge-${b.tier}" title="${escapeHtml(b.desc)}">${b.emoji} ${escapeHtml(b.label)}</span>`).join('')}</div>`;
 }
 
+// Level + XP bar + "where it came from" breakdown, shared by the public
+// profile and the account page. The numbers all come from the backend's
+// computeXp() (backend/src/lib/xp.js) - nothing here recalculates XP, so the
+// page can never disagree with the leaderboard.
+export function xpCardHTML(xp) {
+  if (!xp) return '';
+  const pct = Math.max(0, Math.min(100, Math.round(xp.progress * 100)));
+  const toNext = Math.max(0, xp.nextLevelAt - xp.total);
+  const rows = (xp.breakdown || []).map((r) => `
+    <li><span>${r.emoji} ${escapeHtml(r.label)}${r.count > 1 ? ` <span class="xp-count">×${r.count}</span>` : ''}</span><strong>+${r.xp}</strong></li>`).join('');
+  return `
+    <div class="xp-card">
+      <div class="xp-head">
+        <span class="xp-level">LV ${xp.level}</span>
+        <span class="xp-title">${escapeHtml(xp.title)}</span>
+        <span class="xp-total">${xp.total.toLocaleString()} XP</span>
+      </div>
+      <div class="xp-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div class="xp-bar-fill" style="width:${pct}%"></div></div>
+      <div class="xp-next">${toNext.toLocaleString()} XP to level ${xp.level + 1}</div>
+      ${rows ? `<details class="xp-details"><summary>Where this XP comes from</summary><ul class="xp-breakdown">${rows}</ul></details>` : ''}
+    </div>`;
+}
+
 export function showToast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg;

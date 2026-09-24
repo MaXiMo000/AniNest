@@ -54,6 +54,7 @@ export function renderGamesHub(root) {
     <div class="games-leaderboard-links">
       <a href="#/games/leaderboard/higher-lower">🏆 Higher/Lower Leaderboard</a>
       <a href="#/games/leaderboard/guess-the-anime">🏆 Guess the Anime Leaderboard</a>
+      <a href="#/leaderboard/xp">⭐ XP Leaderboard</a>
     </div>
   `;
 }

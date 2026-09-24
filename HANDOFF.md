@@ -2,7 +2,65 @@
 
 Living document — read this first in a new session, then update it before your context runs out again. Last updated by a session that shipped **the entire "brainstormed feature ideas" backlog (all 8 items) plus achievements/badges — every item ever proposed for this app is now done.** In order: a **Daily Challenge** (Wordle-style, one shared mystery anime a day), **global game leaderboards** for Higher/Lower and Guess the Anime (previously localStorage-only, now persisted server-side), **aggregate recommendations** ("Because you favorited X, Y, Z...") on Home, **studio/voice-actor browse pages**, **AniList list import** on the account page, **screenshot search** via trace.moe, an **OP/ED jukebox** via AnimeThemes.moe on detail pages, a **tier-list maker** for favorites, and finally **achievements/badges** on public profiles and the account page. See the matching detail sections below for each — several real bugs were found and fixed along the way, most worth reading before building anything similar: a stale-cache bug in aggregate recommendations, an AniList duplicate-node quirk (studio/VA pages and the existing detail-page studio list), a frontend re-render bug that would have wiped out a success message, **a genuine spoiler bug in the Daily Challenge** (caught by the user, not by testing - see its detail section, especially worth reading before building any other "same hidden answer, multiple guesses" mechanic), a would-be double-navigation bug in the screenshot-search results caught before it shipped, and **two infrastructure surprises in the jukebox** (a Cloudflare bot-block on Node's default fetch User-Agent, and a CSP `media-src` gap) that would have made the feature silently fail in production had they not been caught by testing the real playback, not just the API response. The tier-list maker's own real risk (canvas export tainting on cross-origin poster images) was confirmed *not* to be a problem, but only after directly testing it - see its detail section. Everything from prior sessions (all three original games, watch status, character/VA lists, recently-viewed, compare mode, min-score filter, PWA install, airing-today ticker, security/logging audit) is unchanged.
 
-**There is no remaining roadmap.** Every feature ever discussed for AniNest - the original weekly-schedule-through-games roadmap, README's old "Ideas for later" list, and all 8 brainstormed feature ideas plus achievements/badges - is shipped. A future session should ask the user what they want next rather than assuming there's a backlog item to pick up (see `ROADMAP_V2.md`, discussed below, for one candidate direction that exists but has not been approved to start).
+## V2 - what shipped after the "roadmap is done" point (READ THIS FIRST)
+
+Everything below post-dates the statements further down that say there is no remaining roadmap. The
+plan/status for it lives in `ROADMAP_V2.md`. Order the user chose: manga -> free anime -> XP. All three shipped.
+
+**Manga** (`/api/manga`, `#/manga`): metadata only, from MangaDex (`backend/src/lib/mangadex.js`).
+Content rating is `safe` only (deliberately stricter than the site's original pass - "suggestive" surfaced
+ecchi doujinshi). Reading is link-out to MANGA Plus/VIZ/Webtoons search URLs, never an embedded reader.
+Reading list = `manga_favorites` (separate table: MangaDex ids are UUIDs, `favorites.mal_id` is an INTEGER).
+**Covers are proxied** through `GET /api/manga/cover/:id/:file`: MangaDex answers any browser request with
+another site's `Referer` with a "read this at mangadex.org" placeholder. localhost happens to pass, so this
+ONLY breaks in production - test manga images against prod, not just dev. The route is allowlisted (UUID +
+uuid-named file), size-capped, cached, and exempt from the general rate limiter.
+
+**Free anime watching**: table `anime_watch_sources` (`approved|pending|rejected|removed`), shown on the anime
+detail page as one player + episode list (never one iframe per source - imports attach 100+ episodes).
+- Security invariant: the ONLY way text becomes a stored id is `parseYouTubeVideoId` (`lib/youtubeUrl.js`);
+  embeds are always rebuilt from the bare 11-char id (`youtube-nocookie.com`). Never store or embed a raw URL.
+- Curated official channels (ids verified live, not guessed) in `lib/youtube.js`: Muse Asia, Ani-One Asia, Crunchyroll.
+- **Admin role** (first one in the app): `users.is_admin`, set from the `ADMIN_USERNAMES` env var on every boot
+  (the account must already exist, or redeploy after registering). `requireAdmin` returns 404 to non-admins.
+- Admin page `#/admin/watch-sources`: bulk **Import** per channel, **Needs your review** queue
+  (`watch_source_candidates`, grouped by series+season, assign a whole show in one click), pending user
+  submissions (with embedded preview), and per-anime live links with Remove / Remove all.
+- Import pipeline (`lib/watchSourceMatcher.js`): `parseUploadTitle` -> series/season/episode/language; only real
+  episodes and "Complete Series" uploads pass (PVs/CMs/teasers/vlogs rejected); series match AniList by EXACT
+  title equality (`looseKey`: ignores "the" and spacing), never substring - a substring rule once attached
+  "Ascendance of a Bookworm" S3 to its Side Story. Later seasons accept only season-qualified titles.
+  **AniList allows only 30 requests/min** -> 2.2s pacing; a 429 stops the pass and the UI waits `Retry-After`.
+  Channel history is large (Muse Asia: ~500 episodes in the first 2,000 uploads), so scan depth is 3,000 items.
+- Quota: `channels.list`/`playlistItems.list` cost ~1 unit per 50 videos; `search.list` costs 100. Search is admin-only.
+
+**XP / levels**: derived, not stored (`lib/xp.js`, single loader `lib/xpStats.js` shared by profile + leaderboard).
+Retroactive, not farmable by toggling. Sources and caps are in `XP_RULES`. Admin bulk imports do NOT earn link XP
+(only links someone else approved: `submitted_by != reviewed_by`). New: `daily_results` table +
+`POST /api/games/daily/result` (today/yesterday only, once per date), `GET /api/leaderboard/xp` (cached 2 min),
+`#/leaderboard/xp`, `xpCardHTML` on profile + account pages. "Watched an episode"/"read a chapter" are NOT
+tracked - a YouTube iframe / a link-out gives no signal. Game results are client-reported (pre-existing), hence caps.
+
+**Ops / config (Render)**
+- Backend is on the paid **Starter** plan ($7/mo). `render.yaml` MUST say `plan: starter` - while it said `free`,
+  every Blueprint sync tried to downgrade the service and failed.
+- Backend env vars: `ADMIN_USERNAMES`, `YOUTUBE_API_KEY` (optional), plus the older TURSO_*/SESSION_SECRET/etc.
+- Production CSP is a real **HTTP header in `render.yaml`**, separate from `index.html`'s `<meta>` CSP (dev only).
+  Browsers enforce the intersection, so any new image/frame origin must be added to BOTH.
+
+**Gotchas that cost real time**
+- Frontend `ApiError` now carries extra JSON fields (`quotaExceeded`, `notConfigured`) - callers can branch on them.
+- Bash-tool escaping: doubled backslashes get collapsed, so regexes written via shell heredocs/`python -c` were silently
+  corrupted (a `\b` became a backspace byte). Write files with the Write/Edit tools, and scan for control chars.
+- The dev browser pane isn't logged in to prod; admin flows must be run by the user (never type their password).
+
+**Known limitations / manual follow-ups**
+- Ani-One's Chinese-titled shows can't be auto-matched; they land in the review queue and are labelled "Chinese subs".
+- Numbering follows the channel, not MAL: Attack on Titan Final Season shows one 35-episode run (MAL splits it into
+  parts); Jujutsu Kaisen S2 is labelled Episode 25-47.
+- Frontend has no automated tests; the logged-in XP UI flows were verified by the backend suite, not a browser session.
+
+(Historical - written before V2, see the section above.) **There is no remaining roadmap.** Every feature ever discussed for AniNest - the original weekly-schedule-through-games roadmap, README's old "Ideas for later" list, and all 8 brainstormed feature ideas plus achievements/badges - is shipped. A future session should ask the user what they want next rather than assuming there's a backlog item to pick up (see `ROADMAP_V2.md`, discussed below, for one candidate direction that exists but has not been approved to start).
 
 **Also found this session, not authored by this session**: an uncommitted `ROADMAP_V2.md` appeared in the working directory partway through, written by what appears to be another active session working on this same repo concurrently (a bigger "otaku-os" vision - watchable anime, readable manga, unified XP system). It's untouched by this session and left as-is - read it before planning further work, and be aware another session may be editing files here at the same time.
 

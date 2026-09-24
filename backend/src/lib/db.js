@@ -162,6 +162,20 @@ await db.executeMultiple(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- One row per user per UTC date the daily challenge was played (won or
+  -- lost), so the XP system can award it once per day. The result used to
+  -- live only in the browser (localStorage). The UNIQUE constraint is what
+  -- makes replays and duplicate requests idempotent.
+  CREATE TABLE IF NOT EXISTS daily_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    won INTEGER NOT NULL,
+    rounds INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, date)
+  );
+
   CREATE INDEX IF NOT EXISTS idx_candidates_group ON watch_source_candidates(status, group_key);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);

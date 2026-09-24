@@ -20,6 +20,33 @@ gamesRouter.get('/daily', asyncRoute(async (req, res) => {
   res.json(await getDailyChallenge());
 }));
 
+const dailyResultSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  won: z.boolean(),
+  rounds: z.number().int().min(1).max(4),
+});
+
+const isoDay = (offsetDays) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+
+// Records that the signed-in user played a given day's daily challenge, so
+// the XP system can award it once per date (the result used to exist only
+// in localStorage). Only today's or yesterday's UTC date is accepted - the
+// window covers a player finishing just past midnight - so old dates can't
+// be back-filled for XP. ON CONFLICT DO NOTHING makes replays idempotent,
+// and a second POST can't flip a recorded loss into a win.
+gamesRouter.post('/daily/result', requireAuth, asyncRoute(async (req, res) => {
+  const parsed = dailyResultSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
+  const { date, won, rounds } = parsed.data;
+  if (date !== isoDay(0) && date !== isoDay(-1)) return res.status(400).json({ error: 'That daily challenge is no longer open.' });
+
+  const result = await db.execute({
+    sql: 'INSERT INTO daily_results (user_id, date, won, rounds) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, date) DO NOTHING',
+    args: [req.user.id, date, won ? 1 : 0, rounds],
+  });
+  res.json({ recorded: Number(result.rowsAffected) > 0 });
+}));
+
 const MAX_STREAK = 100_000; // defensive sanity ceiling, not a real gameplay cap
 
 const scoreSchema = z.object({

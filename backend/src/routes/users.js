@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { computeBadges } from '../lib/badges.js';
+import { xpForUser } from '../lib/xpStats.js';
 
 export const usersRouter = Router();
 
@@ -56,5 +57,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
     favorites: favoritesResult.rows,
     reviews: reviewsResult.rows,
     badges,
+    // Derived, not stored - see lib/xp.js. Same computation the XP leaderboard uses.
+    xp: await xpForUser(user.id),
   });
 }));

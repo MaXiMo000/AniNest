@@ -1147,6 +1147,179 @@ test('bulk-import requires admin, validates its input, and reports "not configur
   assert.equal(res.json.notConfigured, true);
 });
 
+test('computeXp: every source, its caps, and the level boundaries', async () => {
+  const { computeXp, levelFor, XP_RULES } = await import('../src/lib/xp.js');
+  const base = { favoritesCount: 0, completedCount: 0, mangaFavoritesCount: 0, mangaCompletedCount: 0, reviewsCount: 0, streaks: [], dailyPlayed: 0, dailyWon: 0, approvedLinks: 0 };
+  const xp = (over) => computeXp({ ...base, ...over });
+
+  assert.equal(xp({}).total, 0);
+  assert.equal(xp({}).level, 1);
+  assert.equal(xp({ favoritesCount: 4 }).total, 20);
+  assert.equal(xp({ mangaFavoritesCount: 4 }).total, 20);
+  assert.equal(xp({ reviewsCount: 3 }).total, 3 * XP_RULES.review + 50, '3 reviews = 75 + the Critic badge (50)');
+  assert.equal(xp({ completedCount: 2, mangaCompletedCount: 1 }).breakdown.find((r) => r.id === 'completed').xp, 45);
+  // Daily: a win is worth 30 (not 10 + 30), a played-and-lost day 10.
+  assert.equal(xp({ dailyPlayed: 3, dailyWon: 1 }).breakdown.find((r) => r.id === 'daily').xp, 30 + 2 * 10);
+
+  // Caps: nothing can be scaled up past them, however large the raw count is.
+  assert.equal(xp({ favoritesCount: 5000 }).breakdown.find((r) => r.id === 'favorites').xp, 200 * 5);
+  assert.equal(xp({ streaks: [100000] }).breakdown.find((r) => r.id === 'streaks').xp, 50 * 10);
+  assert.equal(xp({ approvedLinks: 9999 }).breakdown.find((r) => r.id === 'links').xp, 100 * 50);
+
+  // Level curve: L2 at 50, L3 at 200, L5 at 800, L10 at 4050.
+  for (const [points, level] of [[0, 1], [49, 1], [50, 2], [199, 2], [200, 3], [799, 4], [800, 5], [4049, 9], [4050, 10]]) {
+    assert.equal(levelFor(points).level, level, `${points} XP should be level ${level}`);
+  }
+  const l3 = levelFor(300);
+  assert.equal(l3.levelStart, 200);
+  assert.equal(l3.nextLevelAt, 450);
+  assert.ok(Math.abs(l3.progress - 0.4) < 1e-9);
+  assert.equal(levelFor(0).title, 'Newbie Nakama');
+});
+
+test('profile XP is derived from existing activity (retroactive), with an exact total', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const fresh = await agent.get(`/api/users/${user.username}`);
+  assert.equal(fresh.json.xp.total, 0);
+  assert.equal(fresh.json.xp.level, 1);
+
+  for (let i = 0; i < 6; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await agent.post('/api/favorites', { csrf: true, body: { mal_id: 80000 + i, title: `XP fav ${i}` } });
+  }
+  await agent.post('/api/reviews', { csrf: true, body: { mal_id: 80000, rating: 8 } });
+  await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 10 } });
+
+  // 6 favorites 30 + 1 review 25 + streak 10 -> 100 = 155, plus three bronze
+  // badges (Collector, Critic, Warming Up) at 50 each = 150.
+  const profile = await agent.get(`/api/users/${user.username}`);
+  assert.equal(profile.json.xp.total, 305);
+  assert.equal(profile.json.xp.level, 3);
+  assert.equal(profile.json.xp.breakdown.find((r) => r.id === 'badges').xp, 150);
+});
+
+test('toggling a favorite on and off never mints XP', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  for (let i = 0; i < 8; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await agent.post('/api/favorites', { csrf: true, body: { mal_id: 81000, title: 'Toggle me' } });
+    // eslint-disable-next-line no-await-in-loop
+    await agent.delete('/api/favorites/81000', { csrf: true });
+  }
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 81000, title: 'Toggle me' } });
+  const profile = await agent.get(`/api/users/${user.username}`);
+  assert.equal(profile.json.xp.total, 5, 'one favorite currently held = 5 XP, however many times it was toggled');
+});
+
+test('daily challenge results: auth required, once per date, only recent dates, win vs loss', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal((await anon.post('/api/games/daily/result', { csrf: true, body: { date: today, won: true, rounds: 2 } })).status, 401);
+
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+
+  const first = await agent.post('/api/games/daily/result', { csrf: true, body: { date: today, won: false, rounds: 4 } });
+  assert.equal(first.status, 200);
+  assert.equal(first.json.recorded, true);
+  // Replaying - even claiming a win - can't re-award or flip the recorded loss.
+  const again = await agent.post('/api/games/daily/result', { csrf: true, body: { date: today, won: true, rounds: 1 } });
+  assert.equal(again.json.recorded, false);
+  const loss = await agent.get(`/api/users/${user.username}`);
+  assert.equal(loss.json.xp.breakdown.find((r) => r.id === 'daily').xp, 10, 'a played-and-lost day is 10 XP');
+
+  const old = new Date(Date.now() - 5 * 86_400_000).toISOString().slice(0, 10);
+  assert.equal((await agent.post('/api/games/daily/result', { csrf: true, body: { date: old, won: true, rounds: 1 } })).status, 400, 'old dates cannot be back-filled');
+  for (const body of [{ date: 'nope', won: true, rounds: 1 }, { date: today, won: 'yes', rounds: 1 }, { date: today, won: true, rounds: 9 }, {}]) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal((await agent.post('/api/games/daily/result', { csrf: true, body })).status, 400);
+  }
+
+  const winner = makeAgent();
+  await winner.get('/api/health');
+  const w = uniqueUser();
+  await winner.post('/api/auth/register', { csrf: true, body: w });
+  await winner.post('/api/games/daily/result', { csrf: true, body: { date: today, won: true, rounds: 2 } });
+  const won = await winner.get(`/api/users/${w.username}`);
+  assert.equal(won.json.xp.breakdown.find((r) => r.id === 'daily').xp, 30, 'a win is 30 XP');
+});
+
+test('free-watch link XP counts links an admin approved for someone else, never the admin\'s own imports', async () => {
+  const admin = await makeAdminAgent();
+  const adminName = (await admin.get('/api/auth/me')).json.user.username;
+  const submitter = makeAgent();
+  await submitter.get('/api/health');
+  const su = uniqueUser();
+  const reg = await submitter.post('/api/auth/register', { csrf: true, body: su });
+  const submitterId = reg.json.user.id;
+  const adminId = (await admin.get('/api/auth/me')).json.user.id;
+  const malId = 82000 + Math.floor(Math.random() * 900);
+
+  // A regular user's link, approved by the admin: counts for the submitter.
+  await db.execute({
+    sql: "INSERT INTO anime_watch_sources (mal_id, youtube_video_id, label, status, submitted_by, reviewed_by) VALUES (?, ?, 'Episode 1', 'approved', ?, ?)",
+    args: [malId, 'xpLinkUser1', submitterId, adminId],
+  });
+  // The admin's own bulk-import style rows (submitted_by = reviewed_by): must not count.
+  for (let i = 0; i < 5; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await db.execute({
+      sql: "INSERT INTO anime_watch_sources (mal_id, youtube_video_id, label, status, submitted_by, reviewed_by) VALUES (?, ?, 'Episode 1', 'approved', ?, ?)",
+      args: [malId, `xpLinkAdm${i}x`, adminId, adminId],
+    });
+  }
+
+  const sub = await submitter.get(`/api/users/${su.username}`);
+  assert.equal(sub.json.xp.breakdown.find((r) => r.id === 'links').xp, 50);
+  const adm = await admin.get(`/api/users/${adminName}`);
+  assert.equal(adm.json.xp.breakdown.find((r) => r.id === 'links'), undefined, 'admin imports earn no link XP');
+});
+
+test('XP leaderboard is public, ranked by XP, and reports the caller\'s own rank', async () => {
+  // Cached for a couple of minutes by design, so this test seeds its users
+  // and reads the board in a single fresh-cache window via a unique top user.
+  const big = makeAgent();
+  await big.get('/api/health');
+  const b = uniqueUser();
+  await big.post('/api/auth/register', { csrf: true, body: b });
+  await db.execute({
+    sql: "UPDATE users SET created_at = datetime('now', '-400 days') WHERE username = ?",
+    args: [b.username],
+  });
+  for (let i = 0; i < 30; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await big.post('/api/favorites', { csrf: true, body: { mal_id: 83000 + i, title: `Big ${i}` } });
+  }
+  await big.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 40 } });
+
+  const { cacheSet } = await import('../src/lib/cache.js');
+  cacheSet('leaderboard:xp', undefined, 0); // drop any cached table so this run sees the users above
+
+  const anon = makeAgent();
+  const board = await anon.get('/api/leaderboard/xp');
+  assert.equal(board.status, 200);
+  assert.equal(board.json.myRank, null, 'a signed-out caller has no rank');
+  const xps = board.json.leaderboard.map((r) => r.xp);
+  assert.deepEqual(xps, [...xps].sort((x, y) => y - x), 'sorted by XP, highest first');
+  assert.ok(board.json.leaderboard.some((r) => r.username === b.username));
+  assert.ok(board.json.leaderboard.every((r) => r.xp > 0 && r.level >= 1 && r.title));
+
+  const mine = await big.get('/api/leaderboard/xp');
+  assert.ok(mine.json.myRank >= 1);
+  assert.ok(mine.json.myXp > 0);
+});
+
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');

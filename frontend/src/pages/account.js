@@ -3,7 +3,7 @@ import { Favorites } from '../lib/store.js';
 import { Import } from '../lib/importApi.js';
 import { Users } from '../lib/usersApi.js';
 import { navigate } from '../lib/router.js';
-import { escapeHtml, showToast, badgesRowHTML } from '../lib/ui.js';
+import { escapeHtml, showToast, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
 
 function importSectionHTML() {
   return `
@@ -38,7 +38,9 @@ export function renderAccount(root) {
         <a href="#/u/${encodeURIComponent(user.username)}" class="btn-pow btn-pow--outline">👤 View Public Profile</a>
         <button id="logout-btn" class="btn-pow btn-pow--outline">🚪 Log Out</button>
       </div>
+      <div id="xp-card"></div>
       <div id="badges-row"></div>
+      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
     </div>
 
     ${importSectionHTML()}
@@ -49,9 +51,11 @@ export function renderAccount(root) {
   // "my own" badges. Loaded separately from the initial render so opening
   // Account doesn't wait on it.
   Users.profile(user.username)
-    .then(({ badges }) => {
+    .then(({ badges, xp }) => {
       const el = root.querySelector('#badges-row');
       if (el) el.innerHTML = badgesRowHTML(badges);
+      const xpEl = root.querySelector('#xp-card');
+      if (xpEl) xpEl.innerHTML = xpCardHTML(xp);
     })
     .catch(() => {});
 

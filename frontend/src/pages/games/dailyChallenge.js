@@ -1,5 +1,6 @@
 import { getAnimePool } from '../../lib/animePool.js';
 import { Games } from '../../lib/gamesApi.js';
+import { Auth } from '../../lib/authStore.js';
 import { synopsisSnippet, pickChoices } from '../../lib/guessMechanic.js';
 import { escapeHtml, loadingHTML, errorHTML, wireRetry, showToast } from '../../lib/ui.js';
 
@@ -87,8 +88,17 @@ export async function renderDailyChallenge(root) {
     return;
   }
 
+  // The server records one result per player per date (that's what the XP
+  // system awards). Idempotent, so it is safe to re-send an existing result -
+  // which also covers a result played before this was recorded server-side.
+  const recordResult = (result) => {
+    if (!Auth.get().user) return;
+    Games.submitDailyResult(challenge.date, Boolean(result.won), Math.min(4, Math.max(1, result.attempts.length))).catch(() => {});
+  };
+
   const existing = loadResult(challenge.date);
   if (existing) {
+    recordResult(existing);
     root.innerHTML = resultHTML(challenge, existing);
     wireCopyButton(root, challenge, existing);
     return;
@@ -103,6 +113,7 @@ export async function renderDailyChallenge(root) {
   function finish(won) {
     const result = { attempts: [...attempts], won };
     saveResult(challenge.date, result);
+    recordResult(result);
     root.innerHTML = resultHTML(challenge, result);
     wireCopyButton(root, challenge, result);
   }

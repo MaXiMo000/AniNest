@@ -1,6 +1,6 @@
 import { Users } from '../lib/usersApi.js';
 import { Api, imageOf } from '../lib/api.js';
-import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML } from '../lib/ui.js';
+import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
 
 // Public profiles show up to this many reviews, each enriched with the
 // anime's title/poster via our own cached anime proxy (fine at this size —
@@ -53,7 +53,7 @@ export async function renderProfile(root, username) {
     return;
   }
 
-  const { user, favorites, reviews, badges } = data;
+  const { user, favorites, reviews, badges, xp } = data;
   const joined = user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : null;
   document.title = `${user.username} — AniNest`;
 
@@ -75,7 +75,9 @@ export async function renderProfile(root, username) {
         <span class="stat-pill">💖 ${favorites.length} favorite${favorites.length === 1 ? '' : 's'}</span>
         <span class="stat-pill">💬 ${reviews.length} review${reviews.length === 1 ? '' : 's'}</span>
       </div>
+      ${xpCardHTML(xp)}
       ${badgesRowHTML(badges)}
+      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
     </div>
 
     <section class="section">
