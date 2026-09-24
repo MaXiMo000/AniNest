@@ -75,6 +75,19 @@ export async function mockApi(page, { user = null } = {}) {
         distractors: MANGA.slice(1, 13),
       });
     }
+    if (p === '/api/users/tester') {
+      return json(route, {
+        user: { username: 'tester', createdAt: '2026-01-01 00:00:00' },
+        favorites: POOL.slice(0, 12).map((a, i) => ({
+          mal_id: a.mal_id, title: a.title, image: a.images.jpg.image_url, score: a.score, type: a.type,
+          status: ['completed', 'watching', 'plan_to_watch', 'dropped', null][i % 5], genres: a.genres.map((g) => g.name), episodes: a.episodes,
+        })),
+        reviews: [],
+        mangaReviews: [],
+        badges: [{ id: 'variety-bronze', tier: 'bronze', emoji: '🕹️', label: 'Game Hopper', desc: 'Scored in 3+ different games' }],
+        xp: { total: 120, level: 2, levelStart: 50, nextLevelAt: 200, progress: 0.47, title: 'Newbie Nakama', breakdown: [] },
+      });
+    }
     if (p === '/api/games/me/stats') return json(route, { games: {}, daily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] }, mangaDaily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] } });
     if (/^\/api\/games\/[^/]+\/leaderboard$/.test(p)) return json(route, { leaderboard: [{ username: 'alice', best_streak: 12 }], myRank: null, myBest: null });
     if (/^\/api\/games\/[^/]+\/start$/.test(p)) return json(route, { runId: 'a'.repeat(32) }, 201);

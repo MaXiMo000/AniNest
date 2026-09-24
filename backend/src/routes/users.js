@@ -12,6 +12,15 @@ function asyncRoute(fn) {
 // possibly be a real username, so we 404 without touching the database.
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 
+function parseGenres(raw) {
+  try {
+    const list = JSON.parse(raw || '[]');
+    return Array.isArray(list) ? list.filter((g) => typeof g === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // Public, unauthenticated: only non-sensitive fields ever leave this route
 // (username, join date, favorites, reviews) — never email or password_hash.
 usersRouter.get('/:username', asyncRoute(async (req, res) => {
@@ -32,7 +41,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
 
   const [favoritesResult, reviewsResult, xp] = await Promise.all([
     db.execute({
-      sql: 'SELECT mal_id, title, image, score, type, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT 200',
+      sql: 'SELECT mal_id, title, image, score, type, status, genres, episodes, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT 200',
       args: [user.id],
     }),
     db.execute({
@@ -49,7 +58,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
 
   res.json({
     user: { username: user.username, createdAt: user.created_at },
-    favorites: favoritesResult.rows,
+    favorites: favoritesResult.rows.map(({ genres, ...row }) => ({ ...row, genres: parseGenres(genres) })),
     reviews: reviewsResult.rows,
     mangaReviews: mangaReviewsResult.rows,
     badges,

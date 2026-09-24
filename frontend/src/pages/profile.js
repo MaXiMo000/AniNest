@@ -3,6 +3,7 @@ import { Api, imageOf } from '../lib/api.js';
 import { MangaApi } from '../lib/mangaApi.js';
 import { mangaImg } from '../lib/mangaImage.js';
 import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
+import { profileStats, STATUS_ORDER } from '../lib/profileStats.js';
 
 // Public profiles show up to this many reviews, each enriched with the
 // anime's title/poster via our own cached anime proxy (fine at this size —
@@ -20,6 +21,53 @@ function favCard(f) {
       </div>
       <div class="card-body"><div class="card-title">${escapeHtml(f.title)}</div></div>
     </article>`;
+}
+
+// Taste dashboard: stat tiles, a watch-status bar (legend with counts, so it
+// never relies on color alone) and top genres as labeled bars.
+function dashboardHTML(favorites) {
+  const st = profileStats(favorites);
+  if (!st.total) return '';
+  const tiles = [
+    ['💖', st.total, 'Favorites'],
+    ['✅', st.completionRate == null ? '—' : `${st.completionRate}%`, 'Completion rate'],
+    ['⏱️', st.hoursWatched ? `${st.hoursWatched.toLocaleString()}h` : '—', `≈ time watched (${st.episodesWatched.toLocaleString()} eps)`],
+    ['★', st.averageScore ?? '—', 'Avg score of favorites'],
+  ];
+  const segments = STATUS_ORDER.filter((s) => st.byStatus[s.value] > 0);
+  const maxGenre = Math.max(1, ...st.topGenres.map(([, n]) => n));
+  return `
+    <section class="section">
+      <div class="section-head"><h2 class="section-title">📊 Taste Dashboard</h2></div>
+      <div class="stats-tiles">
+        ${tiles.map(([emoji, value, label]) => `<div class="stats-tile"><strong>${emoji} ${escapeHtml(String(value))}</strong><span>${escapeHtml(label)}</span></div>`).join('')}
+      </div>
+      <div class="dash-grid">
+        ${st.tracked ? `
+        <div class="dash-card">
+          <h3 class="dash-heading">Watch status</h3>
+          <div class="status-bar" role="img" aria-label="${segments.map((s) => `${s.label}: ${st.byStatus[s.value]}`).join(', ')}">
+            ${segments.map((s) => `<span class="status-seg status-${s.value}" style="flex:${st.byStatus[s.value]}" title="${s.label}: ${st.byStatus[s.value]}"></span>`).join('')}
+          </div>
+          <ul class="status-legend">
+            ${segments.map((s) => `<li><span class="status-swatch status-${s.value}"></span>${s.emoji} ${s.label} <strong>${st.byStatus[s.value]}</strong></li>`).join('')}
+          </ul>
+        </div>` : ''}
+        ${st.topGenres.length ? `
+        <div class="dash-card">
+          <h3 class="dash-heading">Top genres</h3>
+          <div class="genre-bars">
+            ${st.topGenres.map(([g, n]) => `
+              <div class="genre-bar" title="${escapeHtml(g)}: ${n}">
+                <span class="genre-bar-label">${escapeHtml(g)}</span>
+                <span class="genre-bar-track"><span class="genre-bar-fill" style="width:${Math.round((n / maxGenre) * 100)}%"></span></span>
+                <span class="genre-bar-value">${n}</span>
+              </div>`).join('')}
+          </div>
+          <p class="dash-note">From ${st.withGenres} of ${st.total} favorites (older saves fill in when re-saved).</p>
+        </div>` : ''}
+      </div>
+    </section>`;
 }
 
 function reviewRowHTML(r, anime) {
@@ -108,6 +156,8 @@ export async function renderProfile(root, username) {
       ${badgesRowHTML(badges)}
       <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
     </div>
+
+    ${dashboardHTML(favorites)}
 
     <section class="section">
       <div class="section-head"><h2 class="section-title">💖 Favorites</h2></div>

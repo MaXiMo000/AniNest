@@ -307,6 +307,11 @@ async function ensureColumn(table, column, ddl) {
   }
 }
 await ensureColumn('favorites', 'status', 'TEXT');
+// Genre names (JSON array) and episode count, saved with a favorite so the
+// public profile can chart taste and time watched without refetching every
+// anime. Older favorites fill in the next time they're saved.
+await ensureColumn('favorites', 'genres', 'TEXT');
+await ensureColumn('favorites', 'episodes', 'INTEGER');
 await ensureColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's

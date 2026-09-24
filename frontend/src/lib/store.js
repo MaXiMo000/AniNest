@@ -28,7 +28,16 @@ function toEntry(anime, status) {
     score: anime.score ?? null,
     type: anime.type || null,
     status,
+    // For the profile dashboard. Left out (not sent) when unknown, so a save
+    // from a shape without them never wipes what the server already has.
+    genres: genreNames(anime),
+    episodes: Number.isInteger(anime.episodes) ? anime.episodes : undefined,
   };
+}
+
+function genreNames(anime) {
+  const names = (anime.genres || []).map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean).slice(0, 10);
+  return names.length ? names : undefined;
 }
 
 export const Favorites = {

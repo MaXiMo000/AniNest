@@ -34,6 +34,12 @@
   --page-glow-2: rgba(0, 217, 255, 0.25);
   --page-glow-3: rgba(255, 45, 120, 0.25);
   --scrim: rgba(18, 12, 34, 0.75);
+  /* Watch-status chart colors (profile dashboard). Always shown with a
+     labeled legend, never color alone. */
+  --status-watching: #00d9ff;
+  --status-plan: #ffd23f;
+  --status-completed: #17e8a0;
+  --status-dropped: #ff2d78;
   color-scheme: dark;
 }
 
@@ -57,6 +63,10 @@
   --page-glow-2: rgba(0, 217, 255, 0.14);
   --page-glow-3: rgba(255, 45, 120, 0.1);
   --scrim: rgba(255, 255, 255, 0.85);
+  --status-watching: #00a6c7;
+  --status-plan: #e0a800;
+  --status-completed: #0fae78;
+  --status-dropped: #e0115f;
   color-scheme: light;
 }
 :root[data-theme="light"] #fx-layer { mix-blend-mode: multiply; }
@@ -2348,3 +2358,32 @@ a.game-card:hover .game-card-art span { transform: scale(1.18) rotate(-8deg); }
   .board-picker { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
   .board-picker .chip { flex: 0 0 auto; }
 }
+
+/* Profile: taste dashboard */
+.dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; margin-top: 16px; }
+.dash-card {
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.dash-heading { margin: 0 0 12px; font-size: 1.15rem; }
+.dash-note { margin: 10px 0 0; color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+.status-bar { display: flex; gap: 2px; height: 22px; border: 2.5px solid var(--ink); border-radius: 8px; overflow: hidden; background: var(--ink); }
+.status-seg { min-width: 6px; }
+.status-watching { background: var(--status-watching); }
+.status-plan_to_watch { background: var(--status-plan); }
+.status-completed { background: var(--status-completed); }
+.status-dropped { background: var(--status-dropped); }
+.status-legend { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-weight: 700; font-size: 0.9rem; }
+.status-legend li { display: flex; align-items: center; gap: 6px; }
+.status-legend strong { margin-left: auto; }
+.status-swatch { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--ink); flex-shrink: 0; }
+.genre-bars { display: flex; flex-direction: column; gap: 7px; }
+.genre-bar { display: grid; grid-template-columns: 110px 1fr 28px; gap: 10px; align-items: center; font-weight: 700; font-size: 0.88rem; }
+.genre-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.genre-bar-track { height: 12px; }
+.genre-bar-fill { display: block; height: 100%; background: var(--purple); border-radius: 0 4px 4px 0; animation: taste-grow 0.7s ease both; transform-origin: left; }
+.genre-bar-value { text-align: right; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .genre-bar-fill { animation: none; } }
