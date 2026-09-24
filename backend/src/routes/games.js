@@ -4,7 +4,9 @@ import { db } from '../lib/db.js';
 import { requireAuth } from '../middleware/session.js';
 import { getDailyChallenge } from '../lib/dailyChallenge.js';
 import crypto from 'node:crypto';
-import { GAMES } from '../lib/games.js';
+import { GAMES, GAME_RULES } from '../lib/games.js';
+import { dailyStats } from '../lib/gameStats.js';
+import { getMangaDailyChallenge } from '../lib/mangaDaily.js';
 
 export const gamesRouter = Router();
 
@@ -48,16 +50,30 @@ gamesRouter.post('/daily/result', requireAuth, asyncRoute(async (req, res) => {
   res.json({ recorded: Number(result.rowsAffected) > 0 });
 }));
 
+// The manga daily: same rules as the anime one above, its own tables.
+gamesRouter.get('/manga-daily', asyncRoute(async (req, res) => {
+  res.json(await getMangaDailyChallenge());
+}));
+
+gamesRouter.post('/manga-daily/result', requireAuth, asyncRoute(async (req, res) => {
+  const parsed = dailyResultSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
+  const { date, won, rounds } = parsed.data;
+  if (date !== isoDay(0) && date !== isoDay(-1)) return res.status(400).json({ error: 'That daily challenge is no longer open.' });
+
+  const result = await db.execute({
+    sql: 'INSERT INTO manga_daily_results (user_id, date, won, rounds) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, date) DO NOTHING',
+    args: [req.user.id, date, won ? 1 : 0, rounds],
+  });
+  res.json({ recorded: Number(result.rowsAffected) > 0 });
+}));
+
 // A hard ceiling on any streak, well beyond real play (deck sizes and human
 // endurance) - a sanity bound on top of the time check below.
 const MAX_STREAK = 300;
 
-// The least time one correct round can honestly take. Each client already
-// forces a fixed reveal delay per round (1.1s Higher/Lower, 1.6s Guess the
-// Anime) BEFORE a streak point counts, plus real decision time - so these
-// are set above that floor for a fast human but far above "instant".
-const MIN_MS_PER_ROUND = { 'higher-lower': 1500, 'guess-the-anime': 2500 };
-
+// The least time one correct round can honestly take lives with each game's
+// entry in lib/games.js (GAME_RULES[game].minMsPerRound).
 const MAX_RUNS_PER_HOUR = 200;
 const RUN_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 
@@ -110,9 +126,15 @@ gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
 
   const run = await db.execute({ sql: 'SELECT started_at FROM game_runs WHERE id = ?', args: [runId] });
   const elapsedMs = Date.now() - Number(run.rows[0].started_at);
-  if (streak * MIN_MS_PER_ROUND[game] > elapsedMs) {
+  const rules = GAME_RULES[game];
+  if (streak * rules.minMsPerRound > elapsedMs || (rules.maxScore && streak > rules.maxScore)) {
     return res.status(400).json({ error: "That score doesn't add up for the time played." });
   }
+
+  await db.execute({
+    sql: 'INSERT INTO game_score_log (user_id, game, score, created_at) VALUES (?, ?, ?, ?)',
+    args: [req.user.id, game, streak, Date.now()],
+  });
 
   await db.execute({
     sql: `
@@ -130,14 +152,55 @@ gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
 }));
 
 const LEADERBOARD_LIMIT = 20;
+const WEEK_MS = 7 * 86_400_000;
 
 // Public - no account needed to see who's on top, same spirit as public
 // profiles. If the caller is signed in and has a score, also reports their
 // own rank (even when it's outside the top 20) so "you're #47" is possible
 // without fetching the whole table.
+//
+// ?period=week ranks each player's best score from the last 7 days (from
+// game_score_log) instead of their all-time best; the row shape is the same.
 gamesRouter.get('/:game/leaderboard', asyncRoute(async (req, res) => {
   const { game } = req.params;
   if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
+  const weekly = req.query.period === 'week';
+
+  if (weekly) {
+    const since = Date.now() - WEEK_MS;
+    const top = await db.execute({
+      sql: `
+        SELECT u.username, MAX(l.score) AS best_streak, MIN(l.created_at) AS first_at
+        FROM game_score_log l JOIN users u ON u.id = l.user_id
+        WHERE l.game = ? AND l.created_at > ?
+        GROUP BY l.user_id
+        ORDER BY best_streak DESC, first_at ASC
+        LIMIT ${LEADERBOARD_LIMIT}
+      `,
+      args: [game, since],
+    });
+    let myRank = null;
+    let myBest = null;
+    if (req.user) {
+      const mine = await db.execute({
+        sql: 'SELECT MAX(score) AS best FROM game_score_log WHERE user_id = ? AND game = ? AND created_at > ?',
+        args: [req.user.id, game, since],
+      });
+      if (mine.rows[0].best != null) {
+        myBest = Number(mine.rows[0].best);
+        const ahead = await db.execute({
+          sql: `SELECT COUNT(*) AS ahead FROM (
+                  SELECT user_id, MAX(score) AS best FROM game_score_log
+                  WHERE game = ? AND created_at > ? GROUP BY user_id
+                ) WHERE best > ?`,
+          args: [game, since, myBest],
+        });
+        myRank = Number(ahead.rows[0].ahead) + 1;
+      }
+    }
+    const leaderboard = top.rows.map((r) => ({ username: r.username, best_streak: Number(r.best_streak) }));
+    return res.json({ leaderboard, myRank, myBest, period: 'week' });
+  }
 
   const top = await db.execute({
     sql: `
@@ -164,5 +227,40 @@ gamesRouter.get('/:game/leaderboard', asyncRoute(async (req, res) => {
     }
   }
 
-  res.json({ leaderboard: top.rows, myRank, myBest });
+  res.json({ leaderboard: top.rows, myRank, myBest, period: 'all' });
+}));
+
+// The signed-in player's own numbers across every game: best (all-time and
+// this week), plays and leaderboard rank per game, plus both dailies' win
+// streaks and guess distributions. Powers the "My Game Stats" page.
+gamesRouter.get('/me/stats', requireAuth, asyncRoute(async (req, res) => {
+  const uid = req.user.id;
+  const since = Date.now() - WEEK_MS;
+  const [bests, plays, weekly, daily, mangaDaily] = await Promise.all([
+    db.execute({ sql: 'SELECT game, best_streak FROM game_scores WHERE user_id = ?', args: [uid] }),
+    db.execute({ sql: 'SELECT game, COUNT(*) AS n, SUM(score) AS total FROM game_score_log WHERE user_id = ? GROUP BY game', args: [uid] }),
+    db.execute({ sql: 'SELECT game, MAX(score) AS best FROM game_score_log WHERE user_id = ? AND created_at > ? GROUP BY game', args: [uid, since] }),
+    db.execute({ sql: 'SELECT date, won, rounds FROM daily_results WHERE user_id = ? ORDER BY date', args: [uid] }),
+    db.execute({ sql: 'SELECT date, won, rounds FROM manga_daily_results WHERE user_id = ? ORDER BY date', args: [uid] }),
+  ]);
+
+  const games = {};
+  const ensure = (g) => { games[g] ||= { best: 0, plays: 0, total: 0, weekBest: 0, rank: null }; return games[g]; };
+  for (const r of bests.rows) ensure(r.game).best = Number(r.best_streak);
+  for (const r of plays.rows) { const g = ensure(r.game); g.plays = Number(r.n); g.total = Number(r.total) || 0; }
+  for (const r of weekly.rows) ensure(r.game).weekBest = Number(r.best) || 0;
+
+  await Promise.all(Object.entries(games).filter(([, g]) => g.best > 0).map(async ([game, g]) => {
+    const ahead = await db.execute({
+      sql: 'SELECT COUNT(*) AS ahead FROM game_scores WHERE game = ? AND best_streak > ?',
+      args: [game, g.best],
+    });
+    g.rank = Number(ahead.rows[0].ahead) + 1;
+  }));
+
+  res.json({
+    games,
+    daily: dailyStats(daily.rows),
+    mangaDaily: dailyStats(mangaDaily.rows),
+  });
 }));

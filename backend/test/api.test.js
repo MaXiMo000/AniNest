@@ -156,7 +156,7 @@ async function makeAdminAgent() {
 async function playScore(agent, game, streak) {
   const start = await agent.post(`/api/games/${game}/start`, { csrf: true, body: {} });
   assert.equal(start.status, 201, 'starting a run should work for a signed-in player');
-  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - (streak * 3000 + 5000), start.json.runId] });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - (streak * 5000 + 5000), start.json.runId] });
   return agent.post(`/api/games/${game}/score`, { csrf: true, body: { streak, run_id: start.json.runId } });
 }
 
@@ -1764,4 +1764,181 @@ test('badge tiers only show the highest one reached per category', async () => {
   const favoriteBadges = res.json.badges.filter((b) => b.id.startsWith('favorites-'));
   assert.equal(favoriteBadges.length, 1, 'only the highest favorites tier should appear, not bronze+silver stacked');
   assert.equal(favoriteBadges[0].id, 'favorites-silver');
+});
+
+// ---------------------------------------------------------------- Game Zone expansion
+
+const { dailyStats } = await import('../src/lib/gameStats.js');
+const { GAMES: ALL_GAMES, GAME_RULES } = await import('../src/lib/games.js');
+const { pickDistractors } = await import('../src/lib/mangaDaily.js');
+const { computeBadges } = await import('../src/lib/badges.js');
+
+test('every ranked game has a positive per-round time floor and accepts a score', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  for (const game of ALL_GAMES) {
+    assert.ok(GAME_RULES[game].minMsPerRound > 0, `${game} needs a time floor`);
+    // eslint-disable-next-line no-await-in-loop
+    const res = await playScore(agent, game, 3);
+    assert.equal(res.status, 200, `${game} should accept a plausible score`);
+    assert.equal(res.json.best, 3);
+  }
+});
+
+test('a game with a hard score ceiling rejects anything above it', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const max = GAME_RULES['gta-blitz'].maxScore;
+  const res = await playScore(agent, 'gta-blitz', max + 1);
+  assert.equal(res.status, 400);
+});
+
+test('a score that arrives faster than the game allows is rejected, per game', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const start = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
+  // 10 timeline rounds need 40s; claim them after ~10s.
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 10_000, start.json.runId] });
+  const res = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 10, run_id: start.json.runId } });
+  assert.equal(res.status, 400);
+});
+
+test('weekly leaderboard ranks scores from the last 7 days only', async () => {
+  const a = makeAgent();
+  await a.get('/api/health');
+  const userA = uniqueUser();
+  const regA = await a.post('/api/auth/register', { csrf: true, body: userA });
+  await playScore(a, 'studio-match', 30);
+  // Pretend that 30 was set two weeks ago; this week A only managed 4.
+  await db.execute({ sql: 'UPDATE game_score_log SET created_at = ? WHERE user_id = ?', args: [Date.now() - 14 * 86_400_000, regA.json.user.id] });
+  await playScore(a, 'studio-match', 4);
+
+  const b = makeAgent();
+  await b.get('/api/health');
+  const userB = uniqueUser();
+  await b.post('/api/auth/register', { csrf: true, body: userB });
+  await playScore(b, 'studio-match', 9);
+
+  const week = await a.get('/api/games/studio-match/leaderboard?period=week');
+  assert.equal(week.status, 200);
+  assert.equal(week.json.period, 'week');
+  const rowA = week.json.leaderboard.find((r) => r.username === userA.username);
+  const rowB = week.json.leaderboard.find((r) => r.username === userB.username);
+  assert.equal(rowA.best_streak, 4, 'the old 30 must not count this week');
+  assert.equal(rowB.best_streak, 9);
+  assert.ok(week.json.leaderboard.indexOf(rowB) < week.json.leaderboard.indexOf(rowA));
+  assert.equal(week.json.myBest, 4);
+
+  const all = await a.get('/api/games/studio-match/leaderboard');
+  assert.equal(all.json.myBest, 30, 'all-time still keeps the 30');
+});
+
+test('my game stats require auth and report bests, plays and daily streaks', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await anon.get('/api/games/me/stats')).status, 401);
+
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  await playScore(agent, 'emoji-plot', 6);
+  await playScore(agent, 'emoji-plot', 2);
+  const today = new Date().toISOString().slice(0, 10);
+  await agent.post('/api/games/daily/result', { csrf: true, body: { date: today, won: true, rounds: 2 } });
+
+  const res = await agent.get('/api/games/me/stats');
+  assert.equal(res.status, 200);
+  assert.equal(res.json.games['emoji-plot'].best, 6);
+  assert.equal(res.json.games['emoji-plot'].plays, 2);
+  assert.equal(res.json.games['emoji-plot'].total, 8);
+  assert.ok(res.json.games['emoji-plot'].rank >= 1);
+  assert.equal(res.json.daily.won, 1);
+  assert.equal(res.json.daily.currentStreak, 1);
+  assert.equal(res.json.daily.distribution[2], 1);
+  assert.equal(res.json.mangaDaily.played, 0);
+});
+
+test('dailyStats counts consecutive winning days and keeps a streak alive until a day is missed', () => {
+  const rows = [
+    { date: '2026-01-01', won: 1, rounds: 1 },
+    { date: '2026-01-02', won: 1, rounds: 3 },
+    { date: '2026-01-03', won: 0, rounds: 4 },
+    { date: '2026-01-04', won: 1, rounds: 2 },
+    { date: '2026-01-05', won: 1, rounds: 2 },
+    { date: '2026-01-06', won: 1, rounds: 4 },
+  ];
+  const s = dailyStats(rows, '2026-01-07');
+  assert.equal(s.played, 6);
+  assert.equal(s.won, 5);
+  assert.equal(s.longestStreak, 3);
+  assert.equal(s.currentStreak, 3, 'yesterday\'s win keeps the streak alive');
+  assert.deepEqual(s.distribution, { 1: 1, 2: 2, 3: 1, 4: 1 });
+  assert.equal(dailyStats(rows, '2026-01-09').currentStreak, 0, 'a missed day ends it');
+  assert.equal(s.calendar.length, 35);
+  assert.equal(s.calendar.at(-1).date, '2026-01-07');
+  assert.equal(s.calendar.at(-2).result, 'won');
+  assert.equal(s.calendar.find((d) => d.date === '2026-01-03').result, 'lost');
+});
+
+test('manga daily results: auth required, once per date, separate from the anime daily', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal((await anon.post('/api/games/manga-daily/result', { csrf: true, body: { date: today, won: true, rounds: 1 } })).status, 401);
+
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const anime = await agent.post('/api/games/daily/result', { csrf: true, body: { date: today, won: true, rounds: 1 } });
+  assert.equal(anime.json.recorded, true);
+  const manga = await agent.post('/api/games/manga-daily/result', { csrf: true, body: { date: today, won: false, rounds: 4 } });
+  assert.equal(manga.json.recorded, true, 'playing the anime daily must not block the manga daily');
+  const again = await agent.post('/api/games/manga-daily/result', { csrf: true, body: { date: today, won: true, rounds: 1 } });
+  assert.equal(again.json.recorded, false);
+  const old = await agent.post('/api/games/manga-daily/result', { csrf: true, body: { date: '2020-01-01', won: true, rounds: 1 } });
+  assert.equal(old.status, 400);
+});
+
+test('manga daily distractors are distinct, exclude the answer and are deterministic', () => {
+  const pool = Array.from({ length: 40 }, (_, i) => ({ id: `id-${i}`, title: `Manga ${i % 30}` }));
+  const a = pickDistractors(pool, 5, 12345);
+  const b = pickDistractors(pool, 5, 12345);
+  assert.deepEqual(a, b);
+  assert.equal(a.length, 12);
+  const titles = a.map((d) => d.title.toLowerCase());
+  assert.equal(new Set(titles).size, 12);
+  assert.ok(!titles.includes('manga 5'));
+});
+
+test('game badges: daily wins, variety and per-game mastery', () => {
+  const base = { favoritesCount: 0, reviewsCount: 0, completedCount: 0, bestStreak: 0, createdAt: null };
+  const ids = (over) => computeBadges({ ...base, ...over }).map((b) => b.id);
+  assert.deepEqual(ids({}), []);
+  assert.ok(ids({ dailyWon: 1 }).includes('daily-bronze'));
+  assert.ok(ids({ dailyWon: 12 }).includes('daily-silver'));
+  const variety = ids({ streaksByGame: { a: 1, b: 2, c: 3 } });
+  assert.ok(variety.includes('variety-bronze'));
+  const mastery = ids({ bestStreak: 25, streaksByGame: { timeline: 25, 'higher-lower': 3 } });
+  assert.ok(mastery.includes('mastery-timeline'));
+  assert.ok(!mastery.includes('mastery-higher-lower'));
+});
+
+test('a profile shows game badges from real scores', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  await agent.post('/api/auth/register', { csrf: true, body: user });
+  for (const game of ['timeline', 'studio-match', 'emoji-plot']) {
+    // eslint-disable-next-line no-await-in-loop
+    await playScore(agent, game, game === 'timeline' ? 20 : 1);
+  }
+  const res = await agent.get(`/api/users/${user.username}`);
+  const badgeIds = res.json.badges.map((b) => b.id);
+  assert.ok(badgeIds.includes('variety-bronze'));
+  assert.ok(badgeIds.includes('mastery-timeline'));
+  assert.ok(badgeIds.includes('streak-silver'));
+  assert.ok(!('badges' in res.json.xp), 'badges are returned once, not duplicated inside xp');
 });

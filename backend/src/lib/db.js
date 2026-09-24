@@ -218,6 +218,44 @@ await db.executeMultiple(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_game_runs_user ON game_runs(user_id, started_at);
+  -- One row per ACCEPTED score (game_scores keeps only each player's best).
+  -- Drives the weekly leaderboards and the per-player stats page (plays per
+  -- game). created_at is epoch ms.
+  CREATE TABLE IF NOT EXISTS game_score_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game TEXT NOT NULL,
+    score INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_game_score_log_game ON game_score_log(game, created_at);
+  CREATE INDEX IF NOT EXISTS idx_game_score_log_user ON game_score_log(user_id, game);
+
+  -- The manga equivalent of daily_challenges / daily_results: one shared
+  -- mystery manga per UTC date, and one result per player per date. Separate
+  -- tables (not a kind column) because daily_results' UNIQUE(user_id, date)
+  -- would otherwise allow only one of the two dailies per day.
+  CREATE TABLE IF NOT EXISTS manga_daily_challenges (
+    date TEXT PRIMARY KEY,
+    manga_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    image TEXT,
+    synopsis TEXT,
+    year INTEGER,
+    tags TEXT,
+    distractors TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS manga_daily_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    won INTEGER NOT NULL,
+    rounds INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, date)
+  );
   -- In-app notifications (see lib/notifications.js). One UNREAD row per user
   -- per title is kept and its count grows ("12 new free episodes") instead of
   -- one row per episode, so a bulk import can't bury someone in alerts.
