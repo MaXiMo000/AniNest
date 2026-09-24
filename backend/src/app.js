@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 
 import { logger } from './lib/logger.js';
+import { tidewatchMetrics } from './lib/tidewatch-metrics.js';
 import { attachUser } from './middleware/session.js';
 import { ensureCsrfCookie, verifyCsrf } from './middleware/csrf.js';
 import { generalLimiter, authLimiter } from './middleware/rateLimits.js';
@@ -46,6 +47,11 @@ export function createApp() {
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
+
+  // Tidewatch dashboard: request timing + GET /tidewatch/metrics (aggregates only, Bearer
+  // token). Only mounted when TIDEWATCH_METRICS_TOKEN is set; placed before CORS, cookies,
+  // request logging and the rate limiter so the poll is never logged, limited or sessioned.
+  tidewatchMetrics(app);
 
   app.use(cors({
     origin: FRONTEND_ORIGINS,

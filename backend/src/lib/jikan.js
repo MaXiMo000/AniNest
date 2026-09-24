@@ -3,6 +3,8 @@
 // ~3 req/s pacer against Jikan's public rate limit — one busy afternoon of
 // traffic no longer multiplies into one Jikan request-budget per tab.
 
+import { track } from './tidewatch-metrics.js';
+
 const BASE = 'https://api.jikan.moe/v4';
 const MIN_GAP_MS = 500;
 
@@ -30,7 +32,7 @@ export async function jikanGet(path, params = {}) {
   return scheduled(async () => {
     let attempt = 0;
     for (;;) {
-      const res = await fetch(url.toString());
+      const res = await track('anime-api', 'service', () => fetch(url.toString()));
       if ((res.status === 429 || res.status >= 500) && attempt < 2) {
         attempt += 1;
         await new Promise((r) => setTimeout(r, 700 * attempt));

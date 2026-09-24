@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client';
+import { track } from './tidewatch-metrics.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -21,6 +22,12 @@ export const db = createClient(
     ? { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN }
     : { url: localFileUrl },
 );
+
+// Tidewatch: time every query for the dashboard's "db" island (durations only, never SQL).
+for (const method of ['execute', 'batch', 'executeMultiple']) {
+  const original = db[method].bind(db);
+  db[method] = (...args) => track('db', 'database', () => original(...args));
+}
 
 await db.execute('PRAGMA foreign_keys = ON');
 

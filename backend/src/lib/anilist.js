@@ -4,6 +4,8 @@
 // own cache+queue can't keep up, we transparently fall back to AniList and
 // reshape its response to look like the Jikan payloads the frontend expects.
 
+import { track } from './tidewatch-metrics.js';
+
 const ANILIST_URL = 'https://graphql.anilist.co';
 
 const GENRE_NAME_TO_MAL_ID = {
@@ -122,11 +124,11 @@ export function normalizeAniListMedia(m) {
 }
 
 async function gql(query, variables) {
-  const res = await fetch(ANILIST_URL, {
+  const res = await track('anime-api', 'service', () => fetch(ANILIST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ query, variables }),
-  });
+  }));
   if (!res.ok) {
     const err = new Error(`AniList error ${res.status}`);
     err.status = res.status;
