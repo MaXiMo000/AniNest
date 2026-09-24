@@ -16,8 +16,11 @@ import { renderGamesHub } from './pages/games/hub.js';
 import { renderHigherLower } from './pages/games/higherLower.js';
 import { renderGuessTheAnime } from './pages/games/guessTheAnime.js';
 import { renderQuiz } from './pages/games/quiz.js';
-import { renderDailyChallenge } from './pages/games/dailyChallenge.js';
+import { renderDailyChallenge, renderMangaDailyChallenge } from './pages/games/dailyChallenge.js';
 import { renderLeaderboard } from './pages/games/leaderboard.js';
+import { renderChoiceGame } from './pages/games/choiceGames.js';
+import { renderTimeline } from './pages/games/timeline.js';
+import { renderGameStats } from './pages/games/stats.js';
 import { renderCompare } from './pages/compare.js';
 import { renderXpLeaderboard } from './pages/xpLeaderboard.js';
 import { renderNotifications } from './pages/notifications.js';
@@ -33,8 +36,10 @@ import { Auth } from './lib/authStore.js';
 import { Notifications } from './lib/notificationsApi.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
 import { wirePowSelects } from './lib/powSelect.js';
+import { wireThemeToggle } from './lib/theme.js';
 
 installGlobalErrorReporting();
+wireThemeToggle(document.getElementById('theme-toggle'));
 
 const app = document.getElementById('app');
 const authArea = document.getElementById('auth-area');
@@ -93,10 +98,16 @@ route('/screenshot-search', () => renderScreenshotSearch(app));
 route('/tier-list', () => renderTierList(app));
 route('/games', () => renderGamesHub(app));
 route('/games/daily', () => renderDailyChallenge(app));
-route('/games/higher-lower', () => renderHigherLower(app));
-route('/games/guess-the-anime', () => renderGuessTheAnime(app));
+route('/games/manga-daily', () => renderMangaDailyChallenge(app));
+route('/games/higher-lower', ({ params }) => renderHigherLower(app, params));
+route('/games/guess-the-anime', ({ params }) => renderGuessTheAnime(app, params));
 route('/games/quiz', () => renderQuiz(app));
-route('/games/leaderboard/:game', ({ path }) => renderLeaderboard(app, path.game));
+route('/games/timeline', ({ params }) => renderTimeline(app, params));
+for (const slug of ['studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']) {
+  route(`/games/${slug}`, ({ params }) => renderChoiceGame(app, slug, params));
+}
+route('/games/leaderboard/:game', ({ path, params }) => renderLeaderboard(app, path.game, params));
+route('/games/stats', () => renderGameStats(app));
 route('/compare', () => renderCompare(app));
 route('/leaderboard/xp', () => renderXpLeaderboard(app));
 route('/notifications', () => renderNotifications(app));

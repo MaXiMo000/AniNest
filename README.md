@@ -27,11 +27,23 @@ Full stack with no framework on either side: a Vite + vanilla JS single-page app
   AniNest never hosts or embeds chapters.
 
 **Community and gamification**
-- Accounts, public profiles (`#/u/<username>`) and achievement badges.
+- Accounts, public profiles (`#/u/<username>`) and achievement badges (including daily-win, game-variety and per-game
+  mastery badges).
 - **XP and levels** earned from your activity (favorites, reviews, completions, game streaks, daily challenges, approved
   links), with a global **XP leaderboard**.
-- **Game Zone**: a shared Daily Challenge (Wordle-style, with a shareable result), Higher or Lower, Guess the Anime (with global
-  streak leaderboards) and a Taste Quiz.
+- **Game Zone**: 11 games with 13 leaderboards (all-time and weekly), sound effects, comic animations and "challenge a friend"
+  links that replay the same deck:
+  - **Daily Challenge** and **Manga Daily**: one shared mystery per day, Wordle-style, with win streaks, a guess distribution
+    and a 5-week calendar.
+  - **Guess the Anime**: Easy / Normal / Hard, three lives, clues you buy (synopsis, genres, year and studio, a clearer cover),
+    multiple choice or typed answers, and a 60-second **Blitz**.
+  - **Higher or Lower** by score, popularity, episode count or release year, with a combo multiplier.
+  - **Name That Opening** (12-second clips from AnimeThemes), **Timeline** (sort by release year), **Emoji Plot**,
+    **Cast Call** (main cast and voice actors), **Studio Match** and **Source Material**.
+  - **Taste Quiz**: 8 questions drawn from 33, a taste persona and three picks with reasons.
+  - **My Game Stats** (`#/games/stats`): plays, bests, averages, weekly bests, ranks and recent-run sparklines.
+- **Profile taste dashboard**: completion rate, estimated time watched, watch status and top genres.
+- **Light and dark themes** (toggle in the header).
 - **Notifications**: a header bell for new free episodes of anime you follow and new chapters of manga you're reading.
 
 **Admin**: a curation page that bulk-imports a channel's episodes through the YouTube Data API, matches them to the right
@@ -88,11 +100,16 @@ username to `ADMIN_USERNAMES` after registering and restart the backend. Set `YO
 ## Testing
 
 ```bash
-cd backend
-npm test
+cd backend && npm test          # API integration tests
+cd frontend && npm test         # frontend unit tests (Vitest)
+cd frontend && npm run test:e2e # browser smoke tests (Playwright)
 ```
 
-77 integration tests run against a real, temporary database, using only Node's built-in `node:test` and `fetch`. They cover the
+The frontend unit tests cover the games' pure logic (answer matching, seeded decks, quiz scoring, streak and stats maths).
+The browser tests play every game in Chromium against a mocked API (`frontend/e2e/mockApi.js`), so they need no backend. Run
+`npx playwright install chromium` once first.
+
+94 backend integration tests run against a real, temporary database, using only Node's built-in `node:test` and `fetch`. They cover the
 auth lifecycle, CSRF, validation, SQL-injection and XSS attempts, rate limits, per-account isolation, favorites, reviews, manga,
 free-episode submission and review, the import title parser and matcher, admin gating, XP, game-run checks, notifications and the
 persistent cache. Live third-party APIs are deliberately not called, so the suite stays deterministic and doesn't use up shared quotas.

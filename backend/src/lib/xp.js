@@ -63,8 +63,9 @@ const n = (v) => Math.max(0, Number(v) || 0);
 const capped = (v, cap) => Math.min(n(v), cap);
 
 // `i`: { favoritesCount, completedCount, mangaFavoritesCount, mangaCompletedCount,
-//        reviewsCount, streaks: number[] (best streak per game), dailyPlayed,
-//        dailyWon, approvedLinks, createdAt }
+//        reviewsCount, streaks: number[] (best streak per game),
+//        streaksByGame: { slug: best }, dailyPlayed, dailyWon (anime + manga
+//        dailies combined), approvedLinks, createdAt }
 export function computeXp(i) {
   const streaks = (i.streaks || []).map(n);
   const bestStreak = streaks.length ? Math.max(...streaks) : 0;
@@ -76,6 +77,8 @@ export function computeXp(i) {
     completedCount: n(i.completedCount),
     bestStreak,
     createdAt: i.createdAt,
+    streaksByGame: i.streaksByGame || {},
+    dailyWon: n(i.dailyWon),
   });
 
   const rows = [
@@ -100,5 +103,5 @@ export function computeXp(i) {
   ];
 
   const total = rows.reduce((sum, r) => sum + r.xp, 0);
-  return { total, ...levelFor(total), breakdown: rows.filter((r) => r.xp > 0) };
+  return { total, ...levelFor(total), breakdown: rows.filter((r) => r.xp > 0), badges };
 }

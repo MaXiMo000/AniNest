@@ -29,9 +29,12 @@ export async function loadXpInputs(userId = null) {
     }),
     // Anime and manga reviews both count as "reviews written".
     db.execute({ sql: `SELECT user_id, COUNT(*) AS n FROM (SELECT user_id FROM reviews UNION ALL SELECT user_id FROM manga_reviews)${only} GROUP BY user_id`, args }),
-    db.execute({ sql: `SELECT user_id, best_streak FROM game_scores${only}`, args }),
+    db.execute({ sql: `SELECT user_id, game, best_streak FROM game_scores${only}`, args }),
+    // The anime and manga dailies both count as "daily challenges".
     db.execute({
-      sql: `SELECT user_id, COUNT(*) AS played, SUM(won) AS won FROM daily_results${only} GROUP BY user_id`,
+      sql: `SELECT user_id, COUNT(*) AS played, SUM(won) AS won
+            FROM (SELECT user_id, won FROM daily_results UNION ALL SELECT user_id, won FROM manga_daily_results)${only}
+            GROUP BY user_id`,
       args,
     }),
     db.execute({
@@ -48,7 +51,7 @@ export async function loadXpInputs(userId = null) {
     byUser.set(Number(u.id), {
       username: u.username, createdAt: u.created_at,
       favoritesCount: 0, completedCount: 0, mangaFavoritesCount: 0, mangaCompletedCount: 0,
-      reviewsCount: 0, streaks: [], dailyPlayed: 0, dailyWon: 0, approvedLinks: 0,
+      reviewsCount: 0, streaks: [], streaksByGame: {}, dailyPlayed: 0, dailyWon: 0, approvedLinks: 0,
     });
   }
   const get = (row) => byUser.get(Number(row.user_id));
@@ -56,7 +59,7 @@ export async function loadXpInputs(userId = null) {
   for (const r of favorites.rows) { const u = get(r); if (u) { u.favoritesCount = Number(r.n); u.completedCount = Number(r.done) || 0; } }
   for (const r of manga.rows) { const u = get(r); if (u) { u.mangaFavoritesCount = Number(r.n); u.mangaCompletedCount = Number(r.done) || 0; } }
   for (const r of reviews.rows) { const u = get(r); if (u) u.reviewsCount = Number(r.n); }
-  for (const r of scores.rows) { const u = get(r); if (u) u.streaks.push(Number(r.best_streak)); }
+  for (const r of scores.rows) { const u = get(r); if (u) { u.streaks.push(Number(r.best_streak)); u.streaksByGame[r.game] = Number(r.best_streak); } }
   for (const r of daily.rows) { const u = get(r); if (u) { u.dailyPlayed = Number(r.played); u.dailyWon = Number(r.won) || 0; } }
   for (const r of links.rows) { const u = get(r); if (u) u.approvedLinks = Number(r.n); }
   return byUser;

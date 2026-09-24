@@ -46,6 +46,8 @@ const addSchema = z.object({
   // Distinct from a plain favorite/heart - a lightweight "mini tracker"
   // status. Nullable so a client can explicitly clear it back to "no status".
   status: z.enum(STATUS_VALUES).nullable().optional(),
+  genres: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
+  episodes: z.number().int().min(0).max(5000).nullable().optional(),
 });
 
 const MAX_FAVORITES_PER_USER = 500;
@@ -53,7 +55,7 @@ const MAX_FAVORITES_PER_USER = 500;
 favoritesRouter.post('/', asyncRoute(async (req, res) => {
   const parsed = addSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
-  const { mal_id: malId, title, image, score, type, status } = parsed.data;
+  const { mal_id: malId, title, image, score, type, status, genres, episodes } = parsed.data;
 
   // Only enforce the cap on a genuinely new entry - changing the status (or
   // refreshing title/image/score) on an existing favorite isn't "adding"
@@ -73,16 +75,21 @@ favoritesRouter.post('/', asyncRoute(async (req, res) => {
 
   await db.execute({
     sql: `
-      INSERT INTO favorites (user_id, mal_id, title, image, score, type, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO favorites (user_id, mal_id, title, image, score, type, status, genres, episodes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(user_id, mal_id) DO UPDATE SET
         title = excluded.title,
         image = excluded.image,
         score = excluded.score,
         type = excluded.type,
-        status = ${hasStatusField ? 'excluded.status' : 'favorites.status'}
+        status = ${hasStatusField ? 'excluded.status' : 'favorites.status'},
+        genres = COALESCE(excluded.genres, favorites.genres),
+        episodes = COALESCE(excluded.episodes, favorites.episodes)
     `,
-    args: [req.user.id, malId, title, image || null, score ?? null, type || null, status ?? null],
+    args: [
+      req.user.id, malId, title, image || null, score ?? null, type || null, status ?? null,
+      genres?.length ? JSON.stringify(genres) : null, episodes ?? null,
+    ],
   });
 
   res.status(201).json({ ok: true });
