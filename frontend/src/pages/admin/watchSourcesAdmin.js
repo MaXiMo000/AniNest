@@ -30,7 +30,7 @@ function bulkImportSectionHTML(channelsList) {
         by series, so you can assign a whole show in one click. Big channels take several passes — it keeps going by itself.
       </p>
       <form id="bulk-import-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <select id="bulk-import-channel">
+        <select id="bulk-import-channel" aria-label="Channel to import">
           ${channelsList.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
         </select>
         <button type="submit" class="btn-pow btn-pow--sm">📥 Import</button>
@@ -144,7 +144,7 @@ function searchFormHTML(channelsList) {
     <div class="watch-box">
       <h3>Search official channels</h3>
       <form id="yt-search-form" style="display:flex;gap:8px;flex-wrap:wrap">
-        <select id="yt-channel" style="flex:0 0 auto">
+        <select id="yt-channel" style="flex:0 0 auto" aria-label="Channel to search">
           ${channelsList.map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join('')}
         </select>
         <input type="text" id="yt-query" placeholder="Search terms (e.g. anime title)" autocomplete="off" style="flex:1;min-width:180px" />

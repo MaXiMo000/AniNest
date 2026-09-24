@@ -51,22 +51,22 @@ function toolbarHTML(state, genresList) {
 
   return `
     <div class="toolbar">
-      <span class="toolbar-label">Sort</span>
+      <label class="toolbar-label" for="f-sort">Sort</label>
       <select id="f-sort">
         ${sortOptions.map(([v, l]) => `<option value="${v}" ${state.sort === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
 
-      <span class="toolbar-label">Type</span>
+      <label class="toolbar-label" for="f-type">Type</label>
       <select id="f-type">
         ${typeOptions.map((v) => `<option value="${v}" ${state.type === v ? 'selected' : ''}>${v ? v.toUpperCase() : 'Any Type'}</option>`).join('')}
       </select>
 
-      <span class="toolbar-label">Status</span>
+      <label class="toolbar-label" for="f-status">Status</label>
       <select id="f-status">
         ${statusOptions.map(([v, l]) => `<option value="${v}" ${state.status === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
 
-      <span class="toolbar-label">Min Score</span>
+      <label class="toolbar-label" for="f-minscore">Min Score</label>
       <div class="minscore-slider">
         <input type="range" id="f-minscore" min="0" max="9" step="0.5" value="${state.minScore || 0}" />
         <span id="minscore-value">${state.minScore ? `★ ${state.minScore.toFixed(1)}+` : 'Any'}</span>

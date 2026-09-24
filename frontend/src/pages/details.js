@@ -187,7 +187,7 @@ export async function renderDetails(root, id) {
 
     root.innerHTML = `
       <div class="detail-hero" style="background:linear-gradient(160deg, rgba(123,47,247,0.25), rgba(18,12,34,0.9)), var(--panel)">
-        <img class="detail-poster" src="${img}" alt="${escapeHtml(a.title)}" />
+        <img class="detail-poster" src="${img}" alt="${escapeHtml(a.title)}" fetchpriority="high" />
         <div class="detail-main">
           <h1 class="detail-title">${escapeHtml(a.title)}</h1>
           ${a.title_english && a.title_english !== a.title ? `<p class="detail-title-en">${escapeHtml(a.title_english)}</p>` : ''}

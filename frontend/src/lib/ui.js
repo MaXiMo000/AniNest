@@ -119,6 +119,9 @@ export function genreGradient(id) {
   return GENRE_GRADIENTS[id % GENRE_GRADIENTS.length];
 }
 
+// Cards are role="link" divs (an <article> may not take that role). No
+// aria-label: the accessible name comes from the visible title and details,
+// so what a screen reader announces matches what is on screen.
 export function animeCard(anime) {
   const img = imageOf(anime);
   const isFav = Favorites.has(anime.mal_id);
@@ -127,7 +130,7 @@ export function animeCard(anime) {
     .filter(Boolean).join(' · ');
   const id = Number(anime.mal_id) || 0;
   return `
-    <article class="anime-card" data-id="${id}" tabindex="0" role="link" aria-label="${escapeHtml(anime.title)}">
+    <div class="anime-card" data-id="${id}" tabindex="0" role="link">
       <div class="poster-wrap">
         ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(anime.title)}" loading="lazy" />` : ''}
         <span class="card-type">${escapeHtml(anime.type || '?')}</span>
@@ -138,7 +141,7 @@ export function animeCard(anime) {
         <div class="card-title">${escapeHtml(anime.title)}</div>
         <div class="card-meta">${escapeHtml(meta || '')}</div>
       </div>
-    </article>`;
+    </div>`;
 }
 
 // `renderer` defaults to animeCard so every existing call site is
@@ -162,7 +165,7 @@ export function mangaCard(manga) {
   const meta = [manga.format, manga.status, manga.year].filter(Boolean).join(' · ');
   const id = manga.id || '';
   return `
-    <article class="manga-card" data-manga-id="${escapeHtml(id)}" tabindex="0" role="link" aria-label="${escapeHtml(manga.title)}">
+    <div class="manga-card" data-manga-id="${escapeHtml(id)}" tabindex="0" role="link">
       <div class="poster-wrap">
         ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(manga.title)}" loading="lazy" />` : ''}
         <span class="card-type">${escapeHtml(manga.demographic || 'Manga')}</span>
@@ -172,7 +175,7 @@ export function mangaCard(manga) {
         <div class="card-title">${escapeHtml(manga.title)}</div>
         <div class="card-meta">${escapeHtml(meta || '')}</div>
       </div>
-    </article>`;
+    </div>`;
 }
 
 // Event delegation: click a card -> navigate; click fav button -> toggle (and stop propagation).

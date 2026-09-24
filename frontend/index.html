@@ -3,8 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AniNest — Your Anime Home Base</title>
-  <meta name="description" content="Discover trending, top-rated, and seasonal anime. A comic-book styled anime explorer." />
+  <title>AniNest — Your Anime &amp; Manga Home Base</title>
+  <meta name="description" content="Discover, track and review anime and manga, watch official free episodes, play anime games and level up. A comic-book styled anime &amp; manga hub." />
+  <link rel="canonical" href="https://aninest-frontend.onrender.com/" />
+  <!-- Link previews (WhatsApp, Discord, LinkedIn, X...). Crawlers need absolute URLs. -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AniNest" />
+  <meta property="og:title" content="AniNest — Your Anime &amp; Manga Home Base" />
+  <meta property="og:description" content="Discover, track and review anime and manga, watch official free episodes, play anime games and level up." />
+  <meta property="og:url" content="https://aninest-frontend.onrender.com/" />
+  <meta property="og:image" content="https://aninest-frontend.onrender.com/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="AniNest: your anime and manga home base, with screenshots of the home page and manga browser" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AniNest — Your Anime &amp; Manga Home Base" />
+  <meta name="twitter:description" content="Discover, track and review anime and manga, watch official free episodes, play anime games and level up." />
+  <meta name="twitter:image" content="https://aninest-frontend.onrender.com/og-image.png" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪺</text></svg>" />
   <link rel="apple-touch-icon" href="/icon.svg" />
   <meta name="theme-color" content="#120c22" />
@@ -13,7 +28,9 @@
        connect-src includes localhost (dev) and a *.onrender.com wildcard so this
        keeps working after a Render deploy without editing this file per-deploy —
        tighten it to the exact backend origin if you move off Render. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co http://localhost:8787 https://aninest-backend.onrender.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787 https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com http://localhost:8787 https://aninest-backend.onrender.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787 https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'" />
+  <link rel="preconnect" href="https://aninest-backend.onrender.com" crossorigin="use-credentials">
+  <link rel="preconnect" href="https://s4.anilist.co">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Baloo+2:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -29,7 +46,7 @@
       </a>
 
       <form id="search-form" class="search-form" role="search">
-        <input id="search-input" type="text" placeholder="Search anime... (e.g. Naruto, Frieren)" autocomplete="off" />
+        <input id="search-input" type="text" aria-label="Search anime" placeholder="Search anime... (e.g. Naruto, Frieren)" autocomplete="off" />
         <button type="submit" class="btn-pow btn-pow--sm">GO!</button>
       </form>
 

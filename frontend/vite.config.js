@@ -22,9 +22,9 @@ export default defineConfig({
       // `vite build && vite preview` instead, which also matches what
       // actually ships to production far more closely than dev mode would.
       manifest: {
-        name: 'AniNest — Your Anime Home Base',
+        name: 'AniNest — Your Anime & Manga Home Base',
         short_name: 'AniNest',
-        description: 'Discover trending, top-rated, and seasonal anime. A comic-book styled anime explorer.',
+        description: 'Discover, track and review anime and manga, watch official free episodes, play anime games and level up.',
         theme_color: '#120c22',
         background_color: '#120c22',
         display: 'standalone',

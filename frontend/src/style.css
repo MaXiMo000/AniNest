@@ -7,6 +7,8 @@
   --panel: #241a3d;
   --pink: #ff2d78;
   --pink2: #ff6ec7;
+  /* Behind white text: --pink is only 3.6:1 against white, this is 4.8:1 (WCAG AA). */
+  --pink-deep: #e0115f;
   --blue: #00d9ff;
   --yellow: #ffd23f;
   --purple: #7b2ff7;
@@ -89,6 +91,9 @@ button { font-family: var(--font-body); cursor: pointer; }
   -webkit-text-stroke: 1.5px var(--ink);
 }
 .brand-accent { color: var(--pink); -webkit-text-stroke: 1.5px var(--ink); }
+/* Fixed line heights keep the header the same height before and after the
+   comic web font arrives (with `normal` it grew a few px and shoved the page down). */
+.brand, .site-header .btn-pow { line-height: 1.2; }
 
 .search-form {
   flex: 1;
@@ -128,6 +133,8 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .main-nav a:hover { color: var(--yellow); }
 .main-nav a.active { color: var(--pink2); }
+/* The Sign Up button keeps its dark ink text; plain nav links are light and turn yellow on hover. */
+.main-nav a.btn-pow, .main-nav a.btn-pow:hover { color: var(--ink); }
 .main-nav a.active::after {
   content: '';
   position: absolute;
@@ -138,7 +145,7 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 .nav-fav { display: flex; align-items: center; gap: 6px; }
 .fav-count {
-  background: var(--pink);
+  background: var(--pink-deep);
   border: 2px solid var(--ink);
   border-radius: 999px;
   padding: 0 7px;
@@ -231,7 +238,7 @@ body.is-admin [data-admin-only] { display: flex; }
 .btn-pow:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
 .btn-pow--sm { padding: 8px 14px; font-size: 0.95rem; border-radius: 8px; box-shadow: 4px 4px 0 var(--ink); }
 .btn-pow--sm:hover { box-shadow: 6px 6px 0 var(--ink); }
-.btn-pow--pink { background: var(--pink); color: #fff; }
+.btn-pow--pink { background: var(--pink-deep); color: #fff; }
 .btn-pow--blue { background: var(--blue); color: var(--ink); }
 .btn-pow--outline { background: transparent; color: var(--text); }
 
@@ -250,10 +257,10 @@ body.is-admin [data-admin-only] { display: flex; }
   transition: transform 0.12s, background 0.12s;
 }
 .chip:hover { transform: translate(-1px,-1px); background: var(--purple); }
-.chip.active { background: var(--pink); border-color: var(--ink); color: #fff; }
+.chip.active { background: var(--pink-deep); border-color: var(--ink); color: #fff; }
 
 /* ===================== Layout ===================== */
-#app { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 24px 20px 60px; min-height: 60vh; }
+#app { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 24px 20px 60px; min-height: 100vh; /* keeps the footer below the fold while a page loads */ }
 
 .section { margin: 48px 0; }
 .section-head {
@@ -314,6 +321,8 @@ body.is-admin [data-admin-only] { display: flex; }
 }
 .hero-poster {
   width: 150px;
+  aspect-ratio: 2 / 3; /* reserve the space before the image loads */
+  object-fit: cover;
   border: var(--border-w) solid var(--ink);
   border-radius: 10px;
   box-shadow: 6px 6px 0 var(--ink);
@@ -323,7 +332,7 @@ body.is-admin [data-admin-only] { display: flex; }
 .hero-info { flex: 1; min-width: 260px; }
 .hero-tag {
   display: inline-block;
-  background: var(--pink);
+  background: var(--pink-deep);
   color: #fff;
   font-family: var(--font-display);
   padding: 3px 14px;
@@ -510,7 +519,7 @@ body.is-admin [data-admin-only] { display: flex; }
   transition: transform 0.15s;
 }
 .fav-btn:hover { transform: scale(1.15); }
-.fav-btn.is-fav { background: var(--pink); color: #fff; }
+.fav-btn.is-fav { background: var(--pink-deep); color: #fff; }
 
 .card-body { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .card-title {
@@ -549,7 +558,7 @@ body.is-admin [data-admin-only] { display: flex; }
   transition: transform 0.12s ease, background 0.15s ease;
 }
 .library-tab:hover { transform: translate(-1px, -1px); }
-.library-tab.is-active { background: var(--pink); color: #fff; }
+.library-tab.is-active { background: var(--pink-deep); color: #fff; }
 
 /* ===================== Genre chips grid ===================== */
 .genre-grid {
@@ -625,6 +634,8 @@ body.is-admin [data-admin-only] { display: flex; }
 }
 .detail-poster {
   width: 220px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
   border: var(--border-w) solid var(--ink);
   border-radius: 12px;
   box-shadow: 6px 6px 0 var(--ink);
@@ -867,7 +878,7 @@ body.is-admin [data-admin-only] { display: flex; }
 }
 .empty-state .big-emoji { font-size: 3.5rem; display: block; margin-bottom: 10px; }
 .error-box {
-  background: var(--pink);
+  background: var(--pink-deep);
   border: var(--border-w) solid var(--ink);
   color: #fff;
   padding: 20px;
@@ -978,6 +989,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   white-space: nowrap;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
+/* Long usernames are cut off with an ellipsis so they can't widen the header. */
+.user-chip .user-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-chip:hover {
   background: rgba(123, 47, 247, 0.18);
   border-color: var(--pink2);
@@ -1067,14 +1080,14 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   cursor: pointer;
 }
 .pow-select-options li:hover { background: var(--purple); color: #fff; }
-.pow-select-options li.is-selected { background: var(--pink); color: #fff; }
+.pow-select-options li.is-selected { background: var(--pink-deep); color: #fff; }
 .turnstile-wrap {
   display: flex;
   justify-content: center;
   margin: 4px 0 20px;
 }
 .form-error {
-  background: var(--pink);
+  background: var(--pink-deep);
   border: 2.5px solid var(--ink);
   color: #fff;
   padding: 10px 14px;
@@ -1283,7 +1296,7 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 .vs-card.vs-correct { border-color: var(--green); box-shadow: 8px 8px 0 var(--green); }
 .vs-card.vs-correct .vs-score { background: var(--green); color: var(--ink); transform: scale(1.15) rotate(-6deg); }
 .vs-card.vs-wrong { border-color: var(--pink); box-shadow: 8px 8px 0 var(--pink); }
-.vs-card.vs-wrong .vs-score { background: var(--pink); color: #fff; transform: scale(1.15) rotate(6deg); }
+.vs-card.vs-wrong .vs-score { background: var(--pink-deep); color: #fff; transform: scale(1.15) rotate(6deg); }
 
 .hl-actions { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
 .hl-actions .btn-pow { min-width: 160px; font-size: 1.2rem; }
@@ -1373,7 +1386,7 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 .guess-choice:not(:disabled):hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
 .guess-choice:disabled { cursor: default; }
 .guess-choice.is-correct { background: var(--green); color: var(--ink); box-shadow: 4px 4px 0 var(--green); }
-.guess-choice.is-wrong { background: var(--pink); color: #fff; box-shadow: 4px 4px 0 var(--pink); }
+.guess-choice.is-wrong { background: var(--pink-deep); color: #fff; box-shadow: 4px 4px 0 var(--pink); }
 .guess-choice.is-muted { opacity: 0.45; }
 
 @media (max-width: 560px) {
@@ -1631,24 +1644,33 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 }
 
 /* ===================== Responsive ===================== */
-@media (max-width: 860px) {
+/* Between the hamburger menu and a wide desktop the full nav only fits with
+   a narrower search box and tighter gaps - without this the header was wider
+   than a 1024px screen and the whole page scrolled sideways. */
+@media (max-width: 1240px) {
+  .header-inner { gap: 12px; }
+  .search-form { max-width: 240px; }
+  .main-nav { gap: 12px; }
+}
+@media (max-width: 1100px) {
   .main-nav { display: none; }
-  .nav-toggle { display: inline-flex; }
+  .nav-toggle { display: inline-flex; margin-left: auto; }
   .header-inner { flex-wrap: wrap; }
   .search-form { order: 3; max-width: 100%; flex-basis: 100%; }
   .tier-label { flex-basis: 60px; font-size: 1.4rem; }
   .tier-card { width: 52px; height: 74px; }
   body.nav-open .main-nav {
     display: flex;
-    position: fixed;
-    top: 64px; left: 0; right: 0;
+    /* Anchored to the sticky header, so it opens right under it (search row included). */
+    position: absolute;
+    top: 100%; left: 0; right: 0;
     background: var(--bg2);
     border-bottom: var(--border-w) solid var(--ink);
     flex-direction: column;
     padding: 16px;
     gap: 14px;
     z-index: 60;
-    max-height: calc(100vh - 64px);
+    max-height: calc(100vh - 140px);
     overflow-y: auto;
   }
   /* Inside the full-width mobile menu there's no room for a floating
@@ -1706,6 +1728,15 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 
 /* Free-watch episode ranges */
 .free-group { margin-bottom: 10px; }
+.free-note { color: var(--muted); font-size: 0.85rem; font-weight: 600; margin: -6px 0 10px; }
+.free-poster { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer; background: #000; }
+.free-poster img { width: 100%; height: 100%; object-fit: cover; opacity: 0.55; transition: opacity 0.2s; }
+.free-poster:hover img, .free-poster:focus-visible img { opacity: 0.75; }
+.free-poster-play {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: var(--pink-deep); color: #fff; font-family: var(--font-display); font-size: 1.4rem; letter-spacing: 1px;
+  padding: 12px 26px; border: var(--border-w) solid var(--ink); border-radius: 12px; box-shadow: 4px 4px 0 var(--ink); white-space: nowrap;
+}
 .free-group summary { cursor: pointer; font-weight: 800; padding: 6px 2px; color: var(--yellow); }
 .free-group[open] summary { margin-bottom: 6px; }
 

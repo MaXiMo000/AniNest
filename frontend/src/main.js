@@ -42,7 +42,7 @@ const authArea = document.getElementById('auth-area');
 function renderAuthArea() {
   const { user } = Auth.get();
   authArea.innerHTML = user
-    ? `<a href="#/notifications" class="nav-bell" aria-label="Notifications" title="Notifications">🔔<span id="notif-count" class="fav-count" hidden>0</span></a><a href="#/account" class="user-chip"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span>${escapeHtml(user.username)}</a>`
+    ? `<a href="#/notifications" class="nav-bell" aria-label="Notifications" title="Notifications">🔔<span id="notif-count" class="fav-count" hidden>0</span></a><a href="#/account" class="user-chip"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span><span class="user-name">${escapeHtml(user.username)}</span></a>`
     : `<span class="auth-links"><a href="#/login">Log In</a><a href="#/register" class="btn-pow btn-pow--sm">Sign Up</a></span>`;
   // Drives the [data-admin-only] nav link's visibility (see index.html /
   // style.css) - CSS-gated rather than conditionally rendered HTML, so it's

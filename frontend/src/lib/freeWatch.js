@@ -32,9 +32,10 @@ export function freeWatchSectionHTML(sources, malId) {
     <section class="section" id="free-watch">
       ${head}
       <div class="tv-frame">
-        <div class="tv-screen" id="free-player-screen" style="display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:800">▶ Pick an episode below</div>
+        <div class="tv-screen" id="free-player-screen"></div>
         <div class="tv-label" id="free-now-playing">${total} free ${total === 1 ? 'upload' : 'uploads'} available${escapeHtml(onlyLang)}</div>
       </div>
+      <p class="free-note">Official channels license each upload for certain countries. If YouTube says a video isn't available where you are, it isn't licensed there yet.</p>
       <div class="library-tabs" id="free-lang-tabs" style="margin-top:14px"></div>
       <div id="free-episode-list" style="margin-top:10px"></div>
     </section>`;
@@ -79,21 +80,42 @@ export function wireFreeWatch(root, sources) {
     activeLang = btn.dataset.lang;
     renderTabs();
     renderList();
+    if (!playingId) renderPoster();
   });
 
-  list.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-video]');
-    if (!btn) return;
+  const screen = section.querySelector('#free-player-screen');
+
+  function play(btn) {
     const videoId = btn.dataset.video;
     if (!YT_ID_RE.test(videoId)) return;
     playingId = videoId;
-    const screen = section.querySelector('#free-player-screen');
-    screen.style.display = '';
     screen.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1" title="Free episode" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
-    list.querySelectorAll('.guess-choice').forEach((b) => b.classList.toggle('is-correct', b === btn));
+    list.querySelectorAll('.guess-choice').forEach((b) => b.classList.toggle('is-correct', b.dataset.video === videoId));
     section.querySelector('#free-now-playing').textContent = `▶ ${btn.dataset.label}`;
+  }
+
+  // Until something plays, the screen shows the first episode's YouTube
+  // thumbnail as a poster (rebuilt from the validated id, like the embed);
+  // clicking it plays that episode.
+  function renderPoster() {
+    const first = list.querySelector('[data-video]');
+    if (!first || !YT_ID_RE.test(first.dataset.video)) return;
+    screen.innerHTML = `
+      <button type="button" class="free-poster" aria-label="Play ${escapeHtml(first.dataset.label)}">
+        <img src="https://i.ytimg.com/vi/${first.dataset.video}/hqdefault.jpg" alt="" loading="lazy">
+        <span class="free-poster-play">▶ ${escapeHtml(first.dataset.label.split(' — ')[0])}</span>
+      </button>`;
+    screen.querySelector('.free-poster').addEventListener('click', () => play(first));
+    // No thumbnail (e.g. a removed video) just leaves the plain dark poster.
+    screen.querySelector('.free-poster img').addEventListener('error', (e) => e.target.remove());
+  }
+
+  list.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-video]');
+    if (btn) play(btn);
   });
 
   renderTabs();
   renderList();
+  renderPoster();
 }

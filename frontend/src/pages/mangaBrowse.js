@@ -48,17 +48,17 @@ function toolbarHTML(state, tagsList) {
 
   return `
     <div class="toolbar">
-      <span class="toolbar-label">Sort</span>
+      <label class="toolbar-label" for="f-sort">Sort</label>
       <select id="f-sort">
         ${sortOptions.map(([v, l]) => `<option value="${v}" ${state.sort === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
 
-      <span class="toolbar-label">Demographic</span>
+      <label class="toolbar-label" for="f-demographic">Demographic</label>
       <select id="f-demographic">
         ${demographicOptions.map(([v, l]) => `<option value="${v}" ${state.demographic === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>
 
-      <span class="toolbar-label">Status</span>
+      <label class="toolbar-label" for="f-status">Status</label>
       <select id="f-status">
         ${statusOptions.map(([v, l]) => `<option value="${v}" ${state.status === v ? 'selected' : ''}>${l}</option>`).join('')}
       </select>

@@ -23,7 +23,7 @@ function heroHTML(anime, isAiring) {
       <div class="hero-speedlines"></div>
       <div class="hero-gradient"></div>
       <div class="hero-content">
-        <img class="hero-poster" src="${bg}" alt="" />
+        <img class="hero-poster" src="${bg}" alt="" fetchpriority="high" />
         <div class="hero-info">
           <span class="hero-tag">${isAiring ? '🔥 AIRING NOW' : '✨ SPOTLIGHT'}</span>
           <h1 class="hero-title">${escapeHtml(anime.title)}</h1>
