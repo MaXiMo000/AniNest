@@ -10,6 +10,7 @@ import {
   celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle, countUp, sfx, popText,
 } from '../../lib/gameFx.js';
 import { navigate } from '../../lib/router.js';
+import { freshFirst, markSeen } from '../../lib/recentlySeen.js';
 
 const REVEAL_DELAY_MS = 1400;
 
@@ -113,7 +114,9 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
   // Game state lives in this closure, not a module-level store - the game
   // is scoped to a single page visit and doesn't need to survive navigation.
   const rand = randomFor(seed);
-  let deck = shuffle(seed ? stableOrder(pool) : pool, rand);
+  const SEEN_KEY = 'higher-lower';
+  const deal = (list) => (seed ? shuffle(list, rand) : freshFirst(shuffle(list, rand), SEEN_KEY));
+  let deck = deal(seed ? stableOrder(pool) : pool);
   let champion = deck.pop();
   let challenger = deck.pop();
   let streak = 0;
@@ -124,12 +127,13 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
   const run = startServerRun(mode.slug);
 
   function drawChallenger() {
-    if (deck.length === 0) deck = shuffle(pool.filter((a) => a.mal_id !== champion.mal_id), rand);
+    if (deck.length === 0) deck = deal(pool.filter((a) => a.mal_id !== champion.mal_id));
     challenger = deck.pop();
   }
 
   function renderRound() {
     locked = false;
+    if (!seed) { markSeen(SEEN_KEY, champion.mal_id); markSeen(SEEN_KEY, challenger.mal_id); }
     const combo = comboFor(streak);
     root.innerHTML = `
       <div class="hl-header">

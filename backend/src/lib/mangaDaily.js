@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { mangaSearch } from './mangadex.js';
+import { pickFresh, recentAnswers, repeatWindow } from './dailyPick.js';
 
 // The manga twin of lib/dailyChallenge.js: one shared mystery manga per UTC
 // date, persisted on first pick so a restart can't hand out a second puzzle.
@@ -88,7 +89,8 @@ export async function getMangaDailyChallenge() {
   const candidates = pool.filter((m) => (m.description || '').length >= MIN_SYNOPSIS_LEN);
   if (candidates.length < 8) throw new Error("Not enough manga data available to build today's challenge.");
   const seed = hashStr(date);
-  const pick = candidates[seed % candidates.length];
+  const recent = await recentAnswers('manga_daily_challenges', 'manga_id', repeatWindow(candidates.length), date);
+  const pick = pickFresh(candidates, recent, seed, (m) => m.id);
   const distractors = pickDistractors(pool, pool.indexOf(pick), seed);
   const tags = (pick.tags || []).filter((t) => t.group === 'genre' || t.group === 'theme').slice(0, 4).map((t) => t.name);
 

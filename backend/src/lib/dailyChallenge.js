@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import * as animeSource from './animeSource.js';
+import { pickFresh, recentAnswers, repeatWindow } from './dailyPick.js';
 
 // Wider than one page (which is a narrow top-9.0-9.1 score band) so the
 // puzzle doesn't cycle through the same ~20 obvious answers - mirrors the
@@ -91,7 +92,9 @@ export async function getDailyChallenge() {
 
   const pool = await buildPool();
   if (!pool.length) throw new Error("Not enough anime data available to build today's challenge.");
-  const pick = pool[hashStr(date) % pool.length];
+  // Never repeats a recent day's answer (see lib/dailyPick.js).
+  const recent = await recentAnswers('daily_challenges', 'mal_id', repeatWindow(pool.length), date);
+  const pick = pickFresh(pool, recent, hashStr(date), (a) => a.mal_id);
   const synopsis = String(pick.synopsis || '').replace(/\(Source:.*$/is, '').trim().slice(0, 600);
 
   await db.execute({

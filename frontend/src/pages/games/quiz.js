@@ -6,6 +6,11 @@ import {
 } from '../../lib/tasteQuiz.js';
 import { recordLocalResult, shareOrCopy } from '../../lib/gameKit.js';
 import { sfx, confetti, soundToggleHTML, wireSoundToggle } from '../../lib/gameFx.js';
+import { recentlySeen, markSeen } from '../../lib/recentlySeen.js';
+
+// Questions from the last two runs are avoided on a retake where possible.
+const SEEN_KEY = 'taste-quiz';
+const SEEN_LIMIT = 16;
 
 export async function renderQuiz(root) {
   root.innerHTML = loadingHTML('WARMING UP THE QUIZ');
@@ -21,7 +26,8 @@ export async function renderQuiz(root) {
 
   document.title = 'Taste Quiz — AniNest';
 
-  const questions = drawQuiz();
+  const questions = drawQuiz(Math.random, undefined, new Set(recentlySeen(SEEN_KEY)));
+  questions.forEach((q) => markSeen(SEEN_KEY, q.q, SEEN_LIMIT));
   const answers = []; // chosen option per question, by index
   let step = 0;
 

@@ -116,6 +116,9 @@ Adding a game means one entry in each plus its page. Shared frontend pieces:
 - `lib/gameFx.js`: synthesized sounds (Web Audio, no files), haptics, POW popups, confetti, shake, count-up. One sound toggle;
   everything respects `prefers-reduced-motion`. Pure decoration: no game logic may depend on it.
 - `lib/rng.js`: seeded shuffles. A `?seed=` challenge link sorts the pool by id and deals the same deck.
+- `lib/recentlySeen.js`: per-game memory (localStorage) of recently shown answers. New runs deal unseen items first; the
+  memory covers half the pool so small pools still rotate. Challenge runs ignore it. Within a run nothing repeats until
+  the pool is used up.
 - `lib/choiceGame.js`: the engine behind Studio Match, Source Material, Emoji Plot, Cast Call and Name That Opening. A game
   only supplies `buildRound()`; returning `null` skips a round (e.g. no openings on AnimeThemes).
 
@@ -128,7 +131,7 @@ get through, because the games run in the browser. Accepted scores are also writ
 
 The two dailies record one result per player per date, for today or yesterday only (`POST /api/games/daily/result`,
 `POST /api/games/manga-daily/result`). The manga daily stores its 12 wrong answers with the puzzle so everyone sees the same
-rounds. Badges (`lib/badges.js`) now include daily wins, games variety and a mastery badge per game (20+); the profile's badges
+rounds. Both dailies skip recent answers (`lib/dailyPick.js`): no repeat within ~80% of the pool size in days, capped at a year. Badges (`lib/badges.js`) now include daily wins, games variety and a mastery badge per game (20+); the profile's badges
 come out of `computeXp()` so they can't disagree with XP.
 
 **Themes**: dark by default; `data-theme="light"` on `<html>` switches CSS tokens (`style.css` top). `public/theme-init.js`
@@ -206,7 +209,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 93 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 94 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

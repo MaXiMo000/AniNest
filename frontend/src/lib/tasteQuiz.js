@@ -222,14 +222,20 @@ export const QUIZ_LENGTH = 8;
 
 // Draws a quiz: always one length, one era/format and one mood question, the
 // rest random - so every run can shape all the dimensions, not just genre.
-export function drawQuiz(rand = Math.random, length = QUIZ_LENGTH) {
+// Questions whose text is in `avoid` (recent runs) are only used when there
+// aren't enough others, so a retake mostly asks new things.
+export function drawQuiz(rand = Math.random, length = QUIZ_LENGTH, avoid = new Set()) {
+  const freshFirst = (list) => {
+    const s = shuffle(list, rand);
+    return [...s.filter((q) => !avoid.has(q.q)), ...s.filter((q) => avoid.has(q.q))];
+  };
   const byDim = (d) => QUESTION_BANK.filter((q) => q.dim === d);
   const required = [
-    shuffle(byDim('mood'), rand)[0],
-    shuffle(byDim('length'), rand)[0],
-    shuffle([...byDim('era'), ...byDim('format')], rand)[0],
+    freshFirst(byDim('mood'))[0],
+    freshFirst(byDim('length'))[0],
+    freshFirst([...byDim('era'), ...byDim('format')])[0],
   ];
-  const rest = shuffle(QUESTION_BANK.filter((q) => !required.includes(q)), rand).slice(0, length - required.length);
+  const rest = freshFirst(QUESTION_BANK.filter((q) => !required.includes(q))).slice(0, length - required.length);
   return shuffle([...required, ...rest], rand);
 }
 

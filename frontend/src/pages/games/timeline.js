@@ -9,6 +9,7 @@ import {
   celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle, sfx,
 } from '../../lib/gameFx.js';
 import { navigate } from '../../lib/router.js';
+import { recentlySeen, markSeen } from '../../lib/recentlySeen.js';
 
 const SLUG = 'timeline';
 const LIVES = 3;
@@ -20,10 +21,13 @@ export function cardsForStreak(streak) {
 }
 
 // Draws `count` anime with DIFFERENT release years, so there is exactly one
-// right order.
-export function drawDistinctYears(pool, count, rand) {
+// right order. Anime in `avoid` (ids already played) are only used when the
+// rest can't fill the round.
+export function drawDistinctYears(pool, count, rand, avoid = new Set()) {
   const byYear = new Map();
-  for (const a of shuffleWith(pool, rand)) {
+  const shuffled = shuffleWith(pool, rand);
+  const ordered = [...shuffled.filter((a) => !avoid.has(a.mal_id)), ...shuffled.filter((a) => avoid.has(a.mal_id))];
+  for (const a of ordered) {
     if (!byYear.has(a.year)) byYear.set(a.year, a);
     if (byYear.size === count) break;
   }
@@ -66,8 +70,17 @@ export async function renderTimeline(root, params = new URLSearchParams()) {
       ${soundToggleHTML()}`;
   }
 
+  // Ids played this run, plus (outside challenge runs) ones seen in recent runs.
+  const avoid = new Set(seed ? [] : recentlySeen(SLUG).slice(-Math.floor(pool.length / 2)).map(Number));
+
   function newRound() {
-    cards = drawDistinctYears(pool, cardsForStreak(streak), rand) || drawDistinctYears(pool, 4, rand);
+    cards = drawDistinctYears(pool, cardsForStreak(streak), rand, avoid) || drawDistinctYears(pool, 4, rand, avoid);
+    cards.forEach((a) => {
+      avoid.add(a.mal_id);
+      if (!seed) markSeen(SLUG, a.mal_id);
+    });
+    // Everything played: start the rotation over.
+    if (avoid.size >= pool.length - 5) avoid.clear();
     picked = [];
     locked = false;
     render();

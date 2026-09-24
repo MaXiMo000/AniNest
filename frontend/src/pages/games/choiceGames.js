@@ -40,8 +40,8 @@ export const STUDIO_MATCH = {
   intro: 'Which studio animated this show?',
   loadingLabel: 'CALLING THE STUDIOS',
   load: () => sortedPool((a) => studioOf(a)),
-  async buildRound({ data: pool, rand, used }) {
-    const anime = drawUnused(pool, used, rand);
+  async buildRound({ data: pool, rand, used, seenGame }) {
+    const anime = drawUnused(pool, used, rand, undefined, seenGame);
     const studios = pool.map(studioOf);
     if (new Set(studios).size < 4) return null;
     return {
@@ -63,8 +63,8 @@ export const SOURCE_GUESS = {
   intro: 'Was this anime adapted from a manga, a light novel, a game… or is it an original?',
   loadingLabel: 'DIGGING THROUGH THE ARCHIVES',
   load: () => sortedPool((a) => a.source),
-  async buildRound({ data: pool, rand, used }) {
-    const anime = drawUnused(pool, used, rand);
+  async buildRound({ data: pool, rand, used, seenGame }) {
+    const anime = drawUnused(pool, used, rand, undefined, seenGame);
     const sources = [...new Set(pool.map((a) => a.source)), 'Manga', 'Light Novel', 'Original', 'Video Game', 'Visual Novel'];
     return {
       promptHTML: `${coverHTML(anime)}<h2 class="choice-title">${escapeHtml(anime.title)}</h2>`,
@@ -85,8 +85,8 @@ export const EMOJI_PLOT = {
   intro: 'Decode the emoji — which anime is it?',
   loadingLabel: 'WARMING UP THE EMOJI',
   load: async () => EMOJI_PUZZLES,
-  async buildRound({ data: puzzles, rand, used }) {
-    const puzzle = drawUnused(puzzles, used, rand, (p) => p.title);
+  async buildRound({ data: puzzles, rand, used, seenGame }) {
+    const puzzle = drawUnused(puzzles, used, rand, (p) => p.title, seenGame);
     const titles = puzzles.map((p) => p.title);
     return {
       promptHTML: `<div class="emoji-clue" aria-label="Emoji clue">${puzzle.emoji}</div>`,
@@ -116,8 +116,8 @@ export const CAST_CALL = {
   loadingLabel: 'ROLLING CALL',
   revealMs: 1800,
   load: () => sortedPool((a) => a.title).then((pool) => poolForDifficulty(pool, 'easy')),
-  async buildRound({ data: pool, rand, used }) {
-    const anime = drawUnused(pool, used, rand);
+  async buildRound({ data: pool, rand, used, seenGame }) {
+    const anime = drawUnused(pool, used, rand, undefined, seenGame);
     const res = await Api.characters(anime.mal_id);
     const cast = castLines(res.data || []);
     if (cast.length < 2) return null;
@@ -146,8 +146,8 @@ export const NAME_THAT_OPENING = {
   loadingLabel: 'TUNING THE JUKEBOX',
   revealMs: 2600,
   load: () => sortedPool((a) => a.title).then((pool) => poolForDifficulty(pool, 'easy')),
-  async buildRound({ data: pool, rand, used }) {
-    const anime = drawUnused(pool, used, rand);
+  async buildRound({ data: pool, rand, used, seenGame }) {
+    const anime = drawUnused(pool, used, rand, undefined, seenGame);
     const res = await Api.themes(anime.mal_id);
     const openings = (res.data || []).filter((t) => t.type === 'OP' && t.videoUrl);
     if (!openings.length) return null;

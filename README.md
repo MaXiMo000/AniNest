@@ -109,7 +109,7 @@ The frontend unit tests cover the games' pure logic (answer matching, seeded dec
 The browser tests play every game in Chromium against a mocked API (`frontend/e2e/mockApi.js`), so they need no backend. Run
 `npx playwright install chromium` once first.
 
-93 backend integration tests run against a real, temporary database, using only Node's built-in `node:test` and `fetch`. They cover the
+94 backend integration tests run against a real, temporary database, using only Node's built-in `node:test` and `fetch`. They cover the
 auth lifecycle, CSRF, validation, SQL-injection and XSS attempts, rate limits, per-account isolation, favorites, reviews, manga,
 free-episode submission and review, the import title parser and matcher, admin gating, XP, game-run checks, notifications and the
 persistent cache. Live third-party APIs are deliberately not called, so the suite stays deterministic and doesn't use up shared quotas.

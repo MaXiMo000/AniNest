@@ -1963,3 +1963,23 @@ test('favorites keep genres and episodes for the profile dashboard, and a save w
   const badEps = await agent.post('/api/favorites', { csrf: true, body: { mal_id: 83002, title: 'X', episodes: -3 } });
   assert.equal(badEps.status, 400);
 });
+
+test('dailies never repeat a recent answer, and still pick one when every item was used', async () => {
+  const { pickFresh, repeatWindow, recentAnswers } = await import('../src/lib/dailyPick.js');
+  const pool = Array.from({ length: 10 }, (_, i) => ({ mal_id: i + 1 }));
+  const key = (a) => a.mal_id;
+  for (let seed = 0; seed < 50; seed += 1) {
+    const pick = pickFresh(pool, [1, 2, 3, '4'], seed, key);
+    assert.ok(pick.mal_id > 4, 'recent answers (numbers or strings) are skipped');
+    assert.equal(pickFresh(pool, [1, 2, 3, 4], seed, key), pick, 'deterministic for a seed');
+  }
+  assert.ok(pickFresh(pool, pool.map(key), 7, key), 'falls back to the whole pool');
+  assert.equal(repeatWindow(250), 200);
+  assert.equal(repeatWindow(1000), 365);
+
+  // recentAnswers reads the newest days before today, newest first.
+  await db.execute("INSERT INTO daily_challenges (date, mal_id, title, image, synopsis, score) VALUES ('1990-01-01', 777001, 'A', '', '', 7), ('1990-01-02', 777002, 'B', '', '', 7), ('1990-01-03', 777003, 'C', '', '', 7)");
+  const ids = await recentAnswers('daily_challenges', 'mal_id', 2, '1990-01-03');
+  assert.deepEqual(ids.map(Number), [777002, 777001]);
+  await db.execute("DELETE FROM daily_challenges WHERE date LIKE '1990-%'");
+});

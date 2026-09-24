@@ -13,6 +13,7 @@ import {
   sfx, celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle, popText, bounce,
 } from '../../lib/gameFx.js';
 import { navigate } from '../../lib/router.js';
+import { freshFirst, markSeen } from '../../lib/recentlySeen.js';
 
 const MIN_SYNOPSIS_LEN = 60;
 const REVEAL_DELAY_MS = 1600;
@@ -138,7 +139,11 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
   const run = slug ? startServerRun(slug) : { submit() {} };
   const titleList = [...new Set(basePool.flatMap((a) => [a.title, a.title_english].filter(Boolean)))].sort();
 
-  let deck = shuffle(seed ? stableOrder(pool) : pool, rand);
+  // All modes share one "recently seen" memory; challenge runs skip it so
+  // they deal the exact same deck for everyone.
+  const SEEN_KEY = 'guess-the-anime';
+  const deal = (list) => (seed ? shuffle(list, rand) : freshFirst(shuffle(list, rand), SEEN_KEY));
+  let deck = deal(seed ? stableOrder(pool) : pool);
   let answer = deck.pop();
   let streak = 0;
   let points = 0;
@@ -152,7 +157,7 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
   const best = getLocalStats(localSlug, legacyKeyFor(difficulty)).best;
 
   function drawAnswer() {
-    if (deck.length === 0) deck = shuffle(pool.filter((a) => a.mal_id !== answer.mal_id), rand);
+    if (deck.length === 0) deck = deal(pool.filter((a) => a.mal_id !== answer.mal_id));
     answer = deck.pop();
     cluesUsed = difficulty === 'easy' && !blitz ? 1 : 0;
   }
@@ -206,6 +211,7 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
   function renderRound() {
     if (over) return;
     locked = false;
+    if (!seed) markSeen(SEEN_KEY, answer.mal_id);
     const choices = pickChoices(pool, answer, 3, rand);
     const img = imageOf(answer);
     const blur = blitz ? 14 : BLUR_BY_CLUES[cluesUsed];

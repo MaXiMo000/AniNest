@@ -8,7 +8,8 @@
 //   slug, title (HTML-safe text), emoji, intro, loadingLabel
 //   load(): Promise<any>            - data for the whole run (e.g. the pool)
 //   buildRound(ctx): Promise<Round|null>
-//        ctx = { data, rand, streak, used: Set } ; return null to skip
+//        ctx = { data, rand, streak, used: Set, seenGame } ; return null to skip
+//        (pass ctx.seenGame to drawUnused so new runs start with unseen items)
 //   Round = { promptHTML, choices: [{ id, label }], correctId,
 //             revealHTML?, recapLabel, recapHref?, onMount?(el, { skip }), onReveal?(el), cleanup?() }
 //        skip(): moves on to a new round with no penalty (e.g. a clip that won't load)
@@ -23,6 +24,7 @@ import {
   celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle,
 } from './gameFx.js';
 import { navigate } from './router.js';
+import { recentlySeen, markSeen } from './recentlySeen.js';
 
 const MAX_SKIPPED_BUILDS = 8;
 
@@ -70,7 +72,7 @@ export async function runChoiceGame(root, config, params = new URLSearchParams()
     for (let tries = 0; !round && tries < MAX_SKIPPED_BUILDS; tries += 1) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        round = await config.buildRound({ data, rand, streak, used });
+        round = await config.buildRound({ data, rand, streak, used, seenGame: seed ? null : slug });
       } catch {
         round = null;
       }
@@ -184,11 +186,19 @@ export function valueChoices(correct, candidates, rand, count = 3) {
 }
 
 // Draws the next item from `list` not yet in `used` (by key), refilling when
-// everything has been used once.
-export function drawUnused(list, used, rand, key = (a) => a.mal_id) {
+// everything has been used once. With `seenGame`, items this browser saw in
+// recent runs are only drawn once the others run out (see recentlySeen.js).
+export function drawUnused(list, used, rand, key = (a) => a.mal_id, seenGame = null) {
   let fresh = list.filter((a) => !used.has(key(a)));
   if (!fresh.length) { used.clear(); fresh = list; }
+  if (seenGame) {
+    const cap = Math.max(1, Math.floor(list.length / 2));
+    const recent = new Set(recentlySeen(seenGame).slice(-cap));
+    const unseen = fresh.filter((a) => !recent.has(String(key(a))));
+    if (unseen.length) fresh = unseen;
+  }
   const pick = fresh[Math.floor(rand() * fresh.length)];
   used.add(key(pick));
+  if (seenGame) markSeen(seenGame, key(pick));
   return pick;
 }
