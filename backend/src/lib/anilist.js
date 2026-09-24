@@ -128,6 +128,10 @@ async function gql(query, variables) {
   if (!res.ok) {
     const err = new Error(`AniList error ${res.status}`);
     err.status = res.status;
+    // Seconds AniList asks us to wait on a 429 - the watch-source importer
+    // (AniList currently allows only 30 requests/minute) uses this to pause
+    // instead of hammering on or giving up.
+    err.retryAfter = Number(res.headers.get('retry-after')) || null;
     throw err;
   }
   const json = await res.json();

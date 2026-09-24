@@ -94,9 +94,17 @@ async function runBulkImport(channel, resultEl) {
     const finished = r.remainingGroups === 0;
     resultEl.innerHTML = bulkImportReportHTML(t, { finished });
     if (finished) return t;
-    // No progress at all (e.g. AniList rate-limiting every call) - stop rather than spin.
-    if (r.addedEpisodes === 0 && r.queuedEpisodes === 0) {
-      resultEl.innerHTML = bulkImportReportHTML(t, { finished: true, error: '⏳ AniList is rate-limiting us right now — run Import again in a minute to continue.' });
+
+    if (r.rateLimited) {
+      // AniList only allows ~30 requests/minute. It told us how long to wait,
+      // so wait that long (visibly) and carry on by ourselves.
+      for (let left = Math.min(120, Math.max(5, r.retryAfter || 30)); left > 0; left -= 1) {
+        resultEl.innerHTML = bulkImportReportHTML(t, { finished: false, error: `⏳ AniList asked us to slow down — continuing automatically in ${left}s…` });
+        await new Promise((resolve) => { setTimeout(resolve, 1000); });
+      }
+    } else if (r.addedEpisodes === 0 && r.queuedEpisodes === 0) {
+      // Not rate-limited yet made no progress at all - stop rather than spin.
+      resultEl.innerHTML = bulkImportReportHTML(t, { finished: true, error: 'No progress on this pass — run Import again in a minute to continue.' });
       return t;
     }
   }
@@ -187,7 +195,10 @@ async function renderApprovedSection(root) {
     const { data } = await AdminWatchSources.approvedFor(pickedAnime.mal_id);
     el.innerHTML = `
       <div class="watch-box">
-        <h3>Live on this anime's page (${data.length})</h3>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <h3 style="margin:0;flex:1">Live on this anime's page (${data.length})</h3>
+          ${data.length > 1 ? `<button class="btn-pow btn-pow--outline btn-pow--sm" id="remove-all">🗑 Remove all ${data.length}</button>` : ''}
+        </div>
         ${data.length ? `<ul class="bulk-report-list">${data.map((s) => `
           <li style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
             <span style="flex:1;min-width:160px">${escapeHtml(s.label || 'Untitled')} <span style="color:var(--muted)">— ${escapeHtml(s.channel_name || 'Unknown channel')}</span></span>
@@ -195,6 +206,18 @@ async function renderApprovedSection(root) {
             <button class="btn-pow btn-pow--outline btn-pow--sm" data-remove="${s.id}">🗑 Remove</button>
           </li>`).join('')}</ul>` : '<div class="compare-results-empty">Nothing live yet.</div>'}
       </div>`;
+    el.querySelector('#remove-all')?.addEventListener('click', async (e) => {
+      if (!window.confirm(`Take down ALL ${data.length} links on "${pickedAnime.title}"? (Re-running Import re-checks them and can attach them to the right anime.)`)) return;
+      e.target.disabled = true;
+      try {
+        const r = await AdminWatchSources.removeAll(pickedAnime.mal_id);
+        showToast(`Removed ${r.removed} links.`);
+        renderApprovedSection(root);
+      } catch (err) {
+        showToast(err.message || 'Something went wrong.');
+        e.target.disabled = false;
+      }
+    });
     el.querySelectorAll('[data-remove]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!window.confirm('Take this link down from the site?')) return;

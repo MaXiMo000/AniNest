@@ -16,6 +16,7 @@ export const AdminWatchSources = {
   dismissCandidates: (groupKey) => apiPost('/api/admin/watch-sources/candidates/dismiss', { group_key: groupKey }),
   approvedFor: (malId) => apiGet(`/api/admin/watch-sources/approved?mal_id=${Number(malId)}`),
   remove: (id) => apiPost(`/api/admin/watch-sources/${id}/remove`),
+  removeAll: (malId) => apiPost('/api/admin/watch-sources/remove-all', { mal_id: Number(malId) }),
   approve: (id) => apiPost(`/api/admin/watch-sources/${id}/approve`),
   reject: (id) => apiPost(`/api/admin/watch-sources/${id}/reject`),
 };

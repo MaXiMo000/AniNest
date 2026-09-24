@@ -93,7 +93,10 @@ adminWatchSourcesRouter.post('/', asyncRoute(async (req, res) => {
 // candidate queue) are skipped up front, so each run only does new work.
 const VALID_YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 const IMPORT_TIME_BUDGET_MS = 40_000;
-const ANILIST_PACE_MS = 750;
+// AniList currently allows only 30 requests/minute (its x-ratelimit-limit
+// header says so) - 2.2s between calls stays safely under that. Pacing at
+// ~750ms (80/min) made every pass hit 429s and stall.
+const ANILIST_PACE_MS = 2200;
 // A link an admin previously took down keeps its row (status 'removed'), which
 // would otherwise block re-adding the same video to the same anime through
 // the UNIQUE(mal_id, youtube_video_id) constraint - so the bulk paths revive it.
@@ -144,6 +147,8 @@ adminWatchSourcesRouter.post('/bulk-import', asyncRoute(async (req, res) => {
   let queuedGroups = 0;
   let queuedEpisodes = 0;
   let remainingGroups = 0;
+  let rateLimited = false;
+  let retryAfter = 0;
 
   for (const [groupKey, g] of [...groups.entries()].sort((a, b) => b[1].videos.length - a[1].videos.length)) {
     if (Date.now() > deadline) { remainingGroups += 1; continue; }
@@ -151,10 +156,17 @@ adminWatchSourcesRouter.post('/bulk-import', asyncRoute(async (req, res) => {
     let match;
     try {
       match = await watchSourceMatcher.matchSeries(g.parsed);
-    } catch {
-      // AniList couldn't answer (rate limit/outage) - retry next run rather
-      // than queueing it as "unmatched", which it isn't.
+    } catch (err) {
+      // AniList couldn't answer - retry later rather than queueing it as
+      // "unmatched", which it isn't. A 429 means every further call this pass
+      // would fail too, so stop the pass here and tell the caller how long to
+      // wait; anything else (a blip on one query) just skips this group.
       remainingGroups += 1;
+      if (err.status === 429) {
+        rateLimited = true;
+        retryAfter = err.retryAfter || 30;
+        break;
+      }
       await sleep(ANILIST_PACE_MS);
       continue;
     }
@@ -190,7 +202,12 @@ adminWatchSourcesRouter.post('/bulk-import', asyncRoute(async (req, res) => {
     }
   }
 
+  // After a 429 break, the groups we never reached are still outstanding.
+  if (rateLimited) remainingGroups = [...groups.keys()].length - added.length - queuedGroups;
+
   res.json({
+    rateLimited,
+    retryAfter,
     totalUploadsScanned: uploads.length,
     alreadyKnown,
     skippedNotEpisode,
@@ -269,6 +286,19 @@ adminWatchSourcesRouter.get('/approved', asyncRoute(async (req, res) => {
     args: [malId],
   });
   res.json({ data: result.rows });
+}));
+
+// Clears every live link on one anime in a single action - the fix for an
+// anime an importer wrongly piled a batch onto. Same 'removed' semantics as
+// the single remove below, so those videos get re-evaluated by the next import.
+adminWatchSourcesRouter.post('/remove-all', asyncRoute(async (req, res) => {
+  const malId = Number(req.body?.mal_id);
+  if (!Number.isInteger(malId) || malId <= 0) return res.status(400).json({ error: 'mal_id is required.' });
+  const result = await db.execute({
+    sql: "UPDATE anime_watch_sources SET status = 'removed', reviewed_by = ?, reviewed_at = datetime('now') WHERE mal_id = ? AND status = 'approved'",
+    args: [req.user.id, malId],
+  });
+  res.json({ removed: Number(result.rowsAffected) });
 }));
 
 // Takes a live link down (a wrong auto-match, a video that went private...).

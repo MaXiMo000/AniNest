@@ -81,7 +81,7 @@ export function parseUploadTitle(rawTitle) {
   if (!raw || NEGATIVE.test(raw)) return null;
   const lang = languageTag(raw);
 
-  const complete = /^\s*complete\s*(series|arc)\s*[:\-–|]*\s*(.+)$/i.exec(raw);
+  const complete = /^\s*[【\[(]?\s*complete\s*(series|arc)\s*[】\])]?\s*[:\-–|]*\s*(.+)$/i.exec(raw);
   let kind;
   let seriesRaw;
   let episode = null;
@@ -132,6 +132,16 @@ export function normalize(s) {
   return String(s || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
+// The form titles are COMPARED in: normalized, with the word "the" and all
+// spacing removed. Upload titles and AniList's spellings differ in exactly
+// these trivial ways ("Ace of Diamond Act II" vs "Ace of the Diamond act
+// II"; "actII" vs "act II") and none of them changes which show it is.
+// Still strict equality - no substring/prefix matching - so a spin-off or a
+// different season can't slip through.
+export function looseKey(s) {
+  return normalize(s).replace(/\bthe\b/g, ' ').replace(/\s+/g, '');
+}
+
 const ORDINALS = { 2: '2nd', 3: '3rd' };
 const ordinal = (n) => ORDINALS[n] || `${n}th`;
 
@@ -141,12 +151,12 @@ const ordinal = (n) => ORDINALS[n] || `${n}th`;
 // silently attaching season 3's episodes to season 1's page is the failure
 // this whole strict scheme exists to prevent.
 export function acceptedTitles(series, season) {
-  const base = normalize(series);
-  if (!season || season === 1) return new Set([base]);
+  const base = series;
+  if (!season || season === 1) return new Set([looseKey(base)]);
   return new Set([
-    `${base} season ${season}`,
-    `${base} ${ordinal(season)} season`,
-    `${base} ${season}`,
+    looseKey(`${base} season ${season}`),
+    looseKey(`${base} ${ordinal(season)} season`),
+    looseKey(`${base} ${season}`),
   ]);
 }
 
@@ -158,7 +168,7 @@ const TV_FORMATS = new Set(['TV', 'TV_SHORT']);
 // exact hits prefer TV, then the most popular.
 export function pickBestCandidate(candidates, series, season) {
   const accepted = acceptedTitles(series, season);
-  const hits = candidates.filter((c) => c.titles.some((t) => accepted.has(normalize(t))));
+  const hits = candidates.filter((c) => c.titles.some((t) => accepted.has(looseKey(t))));
   if (!hits.length) return null;
   hits.sort((a, b) => (Number(TV_FORMATS.has(b.format)) - Number(TV_FORMATS.has(a.format))) || (b.popularity - a.popularity));
   return hits[0];

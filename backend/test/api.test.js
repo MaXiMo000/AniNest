@@ -979,6 +979,9 @@ test('parseUploadTitle understands the real upload title shapes, and rejects pro
     { kind: 'episode', series: 'Skeleton Knight in Another World', season: 2, episode: 12, label: 'Episode 12 · English Sub' });
   assert.deepEqual(pick('Complete SeriesMade in Abyss (S1)'),
     { kind: 'complete', series: 'Made in Abyss', season: 1, episode: null, label: 'Complete Series' });
+  // Real title that was wrongly skipped: the label itself wrapped in brackets.
+  assert.deepEqual(pick('【Complete Series】Taisho Otome Fairy tale'),
+    { kind: 'complete', series: 'Taisho Otome Fairy tale', season: null, episode: null, label: 'Complete Series' });
   assert.deepEqual(pick('Complete Series In/Spectre Season 2'),
     { kind: 'complete', series: 'In/Spectre', season: 2, episode: null, label: 'Complete Series' });
   assert.deepEqual(pick('《幼女戰記 2》#12 (繁中字幕 | 日語原聲)【Ani-One Asia】'),
@@ -1014,6 +1017,23 @@ test('pickBestCandidate requires EXACT title equality and never attaches a later
 
   const withS3 = [...wrong, { titles: ['Honzuki no Gekokujou 3rd Season', 'Ascendance of a Bookworm Season 3'], format: 'TV', popularity: 5, malId: 52347 }];
   assert.equal(pickBestCandidate(withS3, 'Ascendance of a Bookworm', 3).malId, 52347);
+
+  // Real misses: an upload spells it "Ace of Diamond Act II" / "actII" while
+  // AniList spells it "Ace of the Diamond act II" - trivial differences
+  // ("the", spacing) must not defeat an otherwise exact match, while the
+  // first season and the other seasons must still stay apart.
+  const { parseUploadTitle } = await import('../src/lib/watchSourceMatcher.js');
+  const ace = [
+    { titles: ['Diamond no Ace', 'Ace of the Diamond', 'Ace of Diamond'], format: 'TV', popularity: 9, malId: 18689 },
+    { titles: ['Ace of the Diamond Second Season'], format: 'TV', popularity: 7, malId: 30230 },
+    { titles: ['Ace of the Diamond act II'], format: 'TV', popularity: 5, malId: 38731 },
+    { titles: ['Ace of the Diamond act II -Second Season-'], format: 'TV', popularity: 1, malId: 58877 },
+  ];
+  const act2 = parseUploadTitle('Ace of Diamond Act II - Episode 01 [English Sub]');
+  assert.equal(pickBestCandidate(ace, act2.series, act2.season).malId, 38731);
+  const act2s2 = parseUploadTitle('Ace of the Diamond actⅡ -Second Season- | Episode 01 [English Sub]');
+  assert.equal(pickBestCandidate(ace, act2s2.series, act2s2.season).malId, 58877);
+  assert.equal(pickBestCandidate(ace, 'Ace of Diamond', 1).malId, 18689, 'the bare name is still season 1 only');
 
   // Several exact hits: prefer TV over a movie of the same name.
   const both = [
@@ -1082,6 +1102,26 @@ test('unmatched uploads queue for review: group, assign to an anime in one actio
   assert.equal(reassign.json.added, 1);
 });
 
+test('remove-all clears every live link on one anime, and only that anime', async () => {
+  const admin = await makeAdminAgent();
+  const wrong = 70000 + Math.floor(Math.random() * 5000);
+  const keep = wrong + 7000;
+  for (const [i, mal] of [[1, wrong], [2, wrong], [3, wrong], [4, keep]]) {
+    await db.execute({
+      sql: `INSERT INTO anime_watch_sources (mal_id, youtube_video_id, channel_name, label, status)
+            VALUES (?, ?, 'Muse Asia', ?, 'approved')`,
+      args: [mal, `rmall${wrong % 100}${i}xxxxx`.slice(0, 11), `Episode ${i}`],
+    });
+  }
+  assert.equal((await admin.post('/api/admin/watch-sources/remove-all', { csrf: true, body: {} })).status, 400);
+
+  const res = await admin.post('/api/admin/watch-sources/remove-all', { csrf: true, body: { mal_id: wrong } });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.removed, 3);
+  assert.equal((await admin.get(`/api/anime/${wrong}/watch-sources`)).json.data.length, 0);
+  assert.equal((await admin.get(`/api/anime/${keep}/watch-sources`)).json.data.length, 1, 'other anime are untouched');
+});
+
 test('review-queue and remove routes are admin-only', async () => {
   const regular = makeAgent();
   await regular.get('/api/health');
@@ -1089,6 +1129,7 @@ test('review-queue and remove routes are admin-only', async () => {
   assert.equal((await regular.get('/api/admin/watch-sources/candidates')).status, 404);
   assert.equal((await regular.post('/api/admin/watch-sources/candidates/assign', { csrf: true, body: { group_key: 'x', mal_id: 1 } })).status, 404);
   assert.equal((await regular.post('/api/admin/watch-sources/1/remove', { csrf: true })).status, 404);
+  assert.equal((await regular.post('/api/admin/watch-sources/remove-all', { csrf: true, body: { mal_id: 1 } })).status, 404);
 });
 
 test('bulk-import requires admin, validates its input, and reports "not configured" without a live call when YOUTUBE_API_KEY is unset', async () => {
