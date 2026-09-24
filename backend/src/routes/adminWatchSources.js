@@ -5,6 +5,7 @@ import { requireAdmin } from '../middleware/session.js';
 import * as youtube from '../lib/youtube.js';
 import { parseYouTubeVideoId } from '../lib/youtubeUrl.js';
 import * as watchSourceMatcher from '../lib/watchSourceMatcher.js';
+import { notifyNewEpisodes } from '../lib/notifications.js';
 
 // Admin-only curation tools for anime_watch_sources: search the YouTube API
 // (see lib/youtube.js for why this is admin-gated - shared, scarce quota),
@@ -71,6 +72,7 @@ adminWatchSourcesRouter.post('/', asyncRoute(async (req, res) => {
     throw err;
   }
 
+  await notifyNewEpisodes(malId, 1);
   res.status(201).json({ ok: true });
 }));
 
@@ -189,6 +191,7 @@ adminWatchSourcesRouter.post('/bulk-import', asyncRoute(async (req, res) => {
       }
       addedEpisodes += n;
       added.push({ malId: match.malId, animeTitle: match.title, episodes: n });
+      await notifyNewEpisodes(match.malId, n);
     } else {
       for (const v of g.videos) {
         await db.execute({
@@ -266,6 +269,7 @@ adminWatchSourcesRouter.post('/candidates/assign', asyncRoute(async (req, res) =
     }
     await db.execute({ sql: 'DELETE FROM watch_source_candidates WHERE id = ?', args: [r.id] });
   }
+  await notifyNewEpisodes(malId, added);
   res.json({ added });
 }));
 
@@ -330,10 +334,12 @@ adminWatchSourcesRouter.get('/pending', asyncRoute(async (_req, res) => {
 adminWatchSourcesRouter.post('/:id/approve', asyncRoute(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id.' });
+  const pending = await db.execute({ sql: "SELECT mal_id FROM anime_watch_sources WHERE id = ? AND status = 'pending'", args: [id] });
   await db.execute({
     sql: "UPDATE anime_watch_sources SET status = 'approved', reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ? AND status = 'pending'",
     args: [req.user.id, id],
   });
+  if (pending.rows.length) await notifyNewEpisodes(Number(pending.rows[0].mal_id), 1);
   res.status(204).end();
 }));
 

@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { pruneExpiredSessions } from './lib/auth.js';
 import { db } from './lib/db.js';
 import { logger } from './lib/logger.js';
+import { startMangaUpdatePolling } from './lib/mangaUpdates.js';
 
 const PORT = process.env.PORT || 8787;
 const app = createApp();
@@ -9,6 +10,8 @@ const app = createApp();
 const runPruneExpiredSessions = () => pruneExpiredSessions().catch((err) => logger.error({ err }, 'pruneExpiredSessions failed'));
 setInterval(runPruneExpiredSessions, 60 * 60 * 1000).unref();
 runPruneExpiredSessions();
+
+startMangaUpdatePolling();
 
 const server = app.listen(PORT, () => {
   logger.info(`AniNest backend listening on http://localhost:${PORT}`);

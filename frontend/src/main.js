@@ -20,6 +20,7 @@ import { renderDailyChallenge } from './pages/games/dailyChallenge.js';
 import { renderLeaderboard } from './pages/games/leaderboard.js';
 import { renderCompare } from './pages/compare.js';
 import { renderXpLeaderboard } from './pages/xpLeaderboard.js';
+import { renderNotifications } from './pages/notifications.js';
 import { renderMangaBrowse } from './pages/mangaBrowse.js';
 import { renderMangaDetail } from './pages/mangaDetail.js';
 import { renderMangaFavorites } from './pages/mangaFavorites.js';
@@ -29,6 +30,7 @@ import { wireCardEvents, wireMangaCardEvents, updateFavCount, updateMangaFavCoun
 import { Favorites } from './lib/store.js';
 import { MangaFavorites } from './lib/mangaStore.js';
 import { Auth } from './lib/authStore.js';
+import { Notifications } from './lib/notificationsApi.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
 import { wirePowSelects } from './lib/powSelect.js';
 
@@ -40,12 +42,14 @@ const authArea = document.getElementById('auth-area');
 function renderAuthArea() {
   const { user } = Auth.get();
   authArea.innerHTML = user
-    ? `<a href="#/account" class="user-chip"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span>${escapeHtml(user.username)}</a>`
+    ? `<a href="#/notifications" class="nav-bell" aria-label="Notifications" title="Notifications">🔔<span id="notif-count" class="fav-count" hidden>0</span></a><a href="#/account" class="user-chip"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span>${escapeHtml(user.username)}</a>`
     : `<span class="auth-links"><a href="#/login">Log In</a><a href="#/register" class="btn-pow btn-pow--sm">Sign Up</a></span>`;
   // Drives the [data-admin-only] nav link's visibility (see index.html /
   // style.css) - CSS-gated rather than conditionally rendered HTML, so it's
   // one class toggle here instead of duplicating the auth-render logic.
   document.body.classList.toggle('is-admin', Boolean(user?.isAdmin));
+  // The badge element was just re-created, so fill it in again.
+  Notifications.refreshBadge();
 }
 
 // Single global delegated handler for every anime-card / favorite-heart click,
@@ -95,6 +99,7 @@ route('/games/quiz', () => renderQuiz(app));
 route('/games/leaderboard/:game', ({ path }) => renderLeaderboard(app, path.game));
 route('/compare', () => renderCompare(app));
 route('/leaderboard/xp', () => renderXpLeaderboard(app));
+route('/notifications', () => renderNotifications(app));
 route('/manga', ({ params }) => renderMangaBrowse(app, params));
 route('/manga/:id', ({ path }) => renderMangaDetail(app, path.id));
 route('/manga-favorites', () => renderMangaFavorites(app));
@@ -124,6 +129,7 @@ async function boot() {
   renderAuthArea();
   updateFavCount();
   updateMangaFavCount();
+  Notifications.startPolling();
   startRouter();
 }
 boot();

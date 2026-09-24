@@ -151,6 +151,18 @@ export function mangaSearch({ q, tags, demographic, status, sort, page = 1 } = {
   });
 }
 
+// The latest-chapter id MangaDex reports for each of up to 100 manga, from the
+// MANGA endpoint's own metadata (attributes.latestUploadedChapter) - used only
+// to notice that a new chapter exists (see lib/mangaUpdates.js). Chapter
+// content and the /chapter endpoints are never touched. Uncached on purpose:
+// the whole point is to see what changed since last time.
+export async function mangaLatestChapters(ids) {
+  const params = [['limit', String(Math.min(100, ids.length))], ['contentRating[]', 'safe']];
+  for (const id of ids) params.push(['ids[]', id]);
+  const json = await mangadexGet('/manga', params);
+  return new Map((json.data || []).map((m) => [m.id, m.attributes?.latestUploadedChapter || null]));
+}
+
 export function mangaById(id) {
   // Also kept in our own database and served from there if MangaDex is down
   // (lib/persistentCache.js) - but never past a definitive 404, which is how

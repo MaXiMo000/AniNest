@@ -1537,6 +1537,168 @@ test('game runs: a score needs a real run, is single-use, belongs to its player 
   assert.equal((await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 301, run_id: cap.json.runId } })).status, 400);
 });
 
+async function registeredAgent() {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const user = uniqueUser();
+  const reg = await agent.post('/api/auth/register', { csrf: true, body: user });
+  return { agent, user, id: reg.json.user.id };
+}
+
+test('new free episodes notify followers only, and aggregate into one unread notification', async () => {
+  const admin = await makeAdminAgent();
+  const malId = 90000 + Math.floor(Math.random() * 900);
+  const fav = (a, status) => a.post('/api/favorites', { csrf: true, body: { mal_id: malId, title: 'Notify Me', ...(status ? { status } : {}) } });
+
+  const plain = await registeredAgent();      // favorited, no status  -> follower
+  const watching = await registeredAgent();   // watching              -> follower
+  const planned = await registeredAgent();    // plan to watch         -> follower
+  const done = await registeredAgent();       // completed             -> quiet
+  const dropped = await registeredAgent();    // dropped               -> quiet
+  const stranger = await registeredAgent();   // never favorited       -> quiet
+  await fav(plain.agent);
+  await fav(watching.agent, 'watching');
+  await fav(planned.agent, 'plan_to_watch');
+  await fav(done.agent, 'completed');
+  await fav(dropped.agent, 'dropped');
+
+  const add = (n) => admin.post('/api/admin/watch-sources', { csrf: true, body: { mal_id: malId, youtube_url: `https://youtu.be/notif${String(malId % 1000).padStart(3, '0')}${n}xx` } });
+  assert.equal((await add(1)).status, 201);
+
+  for (const who of [plain, watching, planned]) {
+    // eslint-disable-next-line no-await-in-loop
+    const list = await who.agent.get('/api/notifications');
+    assert.equal(list.json.unread, 1);
+    assert.equal(list.json.notifications[0].message, '1 new free episode available');
+    assert.equal(list.json.notifications[0].link, `#/anime/${malId}`);
+    assert.equal(list.json.notifications[0].title, 'Notify Me');
+  }
+  for (const who of [done, dropped, stranger]) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal((await who.agent.get('/api/notifications')).json.unread, 0, 'finished/dropped/uninterested users are not bothered');
+  }
+
+  // A second and third episode fold into the SAME unread notification.
+  await add(2);
+  await add(3);
+  const grown = await plain.agent.get('/api/notifications');
+  assert.equal(grown.json.notifications.length, 1, 'one notification, not one per episode');
+  assert.equal(grown.json.notifications[0].message, '3 new free episodes available');
+  assert.equal(grown.json.unread, 1);
+
+  // Once read, the next episode starts a fresh notification.
+  assert.equal((await plain.agent.post('/api/notifications/read', { csrf: true, body: { id: grown.json.notifications[0].id } })).status, 204);
+  assert.equal((await plain.agent.get('/api/notifications/unread-count')).json.unread, 0);
+  await add(4);
+  const fresh = await plain.agent.get('/api/notifications');
+  assert.equal(fresh.json.notifications.length, 2);
+  assert.equal(fresh.json.notifications[0].message, '1 new free episode available');
+  assert.equal(fresh.json.notifications[0].unread, true);
+  assert.equal(fresh.json.notifications[1].unread, false);
+});
+
+test('assigning a review-queue group and approving a user link both notify followers', async () => {
+  const admin = await makeAdminAgent();
+  const follower = await registeredAgent();
+  const malId = 91000 + Math.floor(Math.random() * 900);
+  await follower.agent.post('/api/favorites', { csrf: true, body: { mal_id: malId, title: 'Queue Show' } });
+
+  const group = `notify queue ${malId}|1|ep`;
+  for (let i = 1; i <= 3; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await db.execute({
+      sql: `INSERT INTO watch_source_candidates (youtube_video_id, title, channel_name, group_key, series_guess, label)
+            VALUES (?, ?, 'Muse Asia', ?, 'Queue Show', ?)`,
+      args: [`nq${malId}${i}xxxxxx`.slice(0, 11), `Queue Show ${i}`, group, `Episode ${i}`],
+    });
+  }
+  await admin.post('/api/admin/watch-sources/candidates/assign', { csrf: true, body: { group_key: group, mal_id: malId } });
+  const afterAssign = await follower.agent.get('/api/notifications');
+  assert.equal(afterAssign.json.notifications[0].message, '3 new free episodes available');
+
+  // A regular user's submitted link, approved by the admin, is one more episode.
+  const submitter = await registeredAgent();
+  await submitter.agent.post('/api/anime-watch-sources', { csrf: true, body: { mal_id: malId, youtube_url: 'https://youtu.be/subm1tted01' } });
+  const pending = (await admin.get('/api/admin/watch-sources/pending')).json.data.find((r) => r.mal_id === malId);
+  await admin.post(`/api/admin/watch-sources/${pending.id}/approve`, { csrf: true });
+  const afterApprove = await follower.agent.get('/api/notifications');
+  assert.equal(afterApprove.json.notifications.length, 1);
+  assert.equal(afterApprove.json.notifications[0].message, '4 new free episodes available');
+});
+
+test('notifications API: auth required, own rows only, mark one or all read, validation', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await anon.get('/api/notifications')).status, 401);
+  assert.equal((await anon.get('/api/notifications/unread-count')).status, 401);
+  assert.equal((await anon.post('/api/notifications/read', { csrf: true, body: { all: true } })).status, 401);
+
+  const a = await registeredAgent();
+  const b = await registeredAgent();
+  for (const [who, ref] of [[a, 'a1'], [a, 'a2'], [b, 'b1']]) {
+    // eslint-disable-next-line no-await-in-loop
+    await db.execute({ sql: "INSERT INTO notifications (user_id, kind, ref, title, count) VALUES (?, 'manga-chapter', ?, 'Some Manga', 1)", args: [who.id, `00000000-0000-4000-8000-0000000000${ref}`.slice(0, 36)] });
+  }
+  const mine = await a.agent.get('/api/notifications');
+  assert.equal(mine.json.unread, 2);
+  assert.equal(mine.json.notifications[0].message, 'New chapter available');
+  assert.ok(mine.json.notifications[0].link.startsWith('#/manga/'));
+
+  // b cannot mark a's notification read.
+  await b.agent.post('/api/notifications/read', { csrf: true, body: { id: mine.json.notifications[0].id } });
+  assert.equal((await a.agent.get('/api/notifications/unread-count')).json.unread, 2, 'someone else\'s request must not touch my rows');
+
+  assert.equal((await a.agent.post('/api/notifications/read', { csrf: true, body: { all: true } })).status, 204);
+  assert.equal((await a.agent.get('/api/notifications/unread-count')).json.unread, 0);
+  assert.equal((await b.agent.get('/api/notifications/unread-count')).json.unread, 1, 'marking mine read leaves everyone else\'s alone');
+
+  for (const body of [{}, { id: 'x' }, { id: -1 }, { all: false }]) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal((await a.agent.post('/api/notifications/read', { csrf: true, body })).status, 400);
+  }
+});
+
+test('manga update poll: baseline first, notify on a new chapter, skip finished manga, accumulate', async () => {
+  const { pollMangaUpdates } = await import('../src/lib/mangaUpdates.js');
+  const m1 = 'aaaaaaaa-1111-4111-8111-000000000001';
+  const m2 = 'aaaaaaaa-1111-4111-8111-000000000002';
+  const m3 = 'aaaaaaaa-1111-4111-8111-000000000003';
+  const reader = await registeredAgent();
+  const finished = await registeredAgent();
+  const track = (a, id, status) => a.agent.post('/api/manga-favorites', { csrf: true, body: { manga_id: id, title: `Manga ${id.slice(-1)}`, ...(status ? { status } : {}) } });
+  await track(reader, m1);                 // no status  -> follower
+  await track(reader, m2, 'reading');      // reading    -> follower
+  await track(finished, m1, 'completed');  // completed  -> quiet
+  await track(finished, m3, 'dropped');    // dropped    -> not even polled
+
+  const seen = [];
+  let chapters = new Map([[m1, 'chap-1'], [m2, 'chap-1']]);
+  const fetchLatest = async (ids) => { seen.push(...ids); return new Map([...chapters].filter(([id]) => ids.includes(id))); };
+
+  const first = await pollMangaUpdates({ fetchLatest });
+  assert.equal(first.notified, 0, 'the first sighting is only a baseline - no "new chapter" for one that\'s been out for years');
+  assert.ok(!seen.includes(m3), 'a dropped manga is not polled at all');
+  assert.equal((await reader.agent.get('/api/notifications')).json.unread, 0);
+
+  const same = await pollMangaUpdates({ fetchLatest });
+  assert.equal(same.notified, 0, 'nothing changed');
+
+  chapters = new Map([[m1, 'chap-2'], [m2, 'chap-1']]);
+  const changed = await pollMangaUpdates({ fetchLatest });
+  assert.equal(changed.notified, 1, 'only the reader follows the manga that changed');
+  const list = await reader.agent.get('/api/notifications');
+  assert.equal(list.json.unread, 1);
+  assert.equal(list.json.notifications[0].message, 'New chapter available');
+  assert.equal(list.json.notifications[0].link, `#/manga/${m1}`);
+  assert.equal((await finished.agent.get('/api/notifications')).json.unread, 0, 'a completed manga stays quiet');
+
+  chapters = new Map([[m1, 'chap-3'], [m2, 'chap-1']]);
+  await pollMangaUpdates({ fetchLatest });
+  const grown = await reader.agent.get('/api/notifications');
+  assert.equal(grown.json.notifications.length, 1);
+  assert.equal(grown.json.notifications[0].message, '2 new chapters available');
+});
+
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');

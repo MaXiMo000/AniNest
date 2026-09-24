@@ -1708,3 +1708,22 @@ a.game-card:hover { transform: translate(-4px, -6px) rotate(-1deg); box-shadow: 
 .free-group { margin-bottom: 10px; }
 .free-group summary { cursor: pointer; font-weight: 800; padding: 6px 2px; color: var(--yellow); }
 .free-group[open] summary { margin-bottom: 6px; }
+
+/* Notifications: header bell + page */
+.main-nav .nav-bell { display: inline-flex; align-items: center; gap: 4px; font-size: 1.15rem; }
+.notif-list { display: flex; flex-direction: column; gap: 8px; }
+.notif-row {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+.notif-row:hover { background: var(--bg2); }
+.notif-row.is-unread { border-color: var(--pink); box-shadow: 3px 3px 0 var(--pink); }
+.notif-emoji { font-size: 1.5rem; }
+.notif-text { display: flex; flex-direction: column; flex: 1; min-width: 0; font-weight: 600; }
+.notif-text span { color: var(--muted); font-size: 0.9rem; }
+.notif-time { color: var(--muted); font-size: 0.8rem; font-weight: 700; white-space: nowrap; }

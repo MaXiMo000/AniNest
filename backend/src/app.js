@@ -26,6 +26,7 @@ import { animeWatchSourcesRouter } from './routes/animeWatchSources.js';
 import { adminWatchSourcesRouter } from './routes/adminWatchSources.js';
 import { leaderboardRouter } from './routes/leaderboard.js';
 import { mangaReviewsRouter } from './routes/mangaReviews.js';
+import { notificationsRouter } from './routes/notifications.js';
 
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
@@ -90,6 +91,7 @@ export function createApp() {
   app.use('/api/manga', mangaRouter);
   app.use('/api/manga-favorites', mangaFavoritesRouter);
   app.use('/api/manga-reviews', mangaReviewsRouter);
+  app.use('/api/notifications', notificationsRouter);
   app.use('/api/anime-watch-sources', animeWatchSourcesRouter);
   app.use('/api/admin/watch-sources', adminWatchSourcesRouter);
   // Not under /api/users: usersRouter's /:username would swallow /leaderboard.

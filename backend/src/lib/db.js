@@ -211,6 +211,35 @@ await db.executeMultiple(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_game_runs_user ON game_runs(user_id, started_at);
+  -- In-app notifications (see lib/notifications.js). One UNREAD row per user
+  -- per title is kept and its count grows ("12 new free episodes") instead of
+  -- one row per episode, so a bulk import can't bury someone in alerts.
+  -- kind is 'anime-episodes' (ref = MAL id) or 'manga-chapter' (ref = MangaDex
+  -- id); title is a display copy taken from the user's own favorites row.
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    title TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    read_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read_at, updated_at);
+
+  -- The latest MangaDex chapter id last seen per tracked manga, so the
+  -- background poll (lib/mangaUpdates.js) can tell when a NEW chapter has
+  -- appeared. Only ever the chapter's id from the manga endpoint's own
+  -- metadata - chapter content is never fetched.
+  CREATE TABLE IF NOT EXISTS manga_chapter_state (
+    manga_id TEXT PRIMARY KEY,
+    latest_chapter TEXT,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_candidates_group ON watch_source_candidates(status, group_key);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
