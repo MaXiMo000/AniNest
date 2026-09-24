@@ -24,10 +24,10 @@ export function synopsisSnippet(anime) {
 // distractors drawn from `pool`, de-duplicated by title (a pool can contain
 // near-duplicate entries, e.g. a TV series and its recap film, that would
 // otherwise make a round trivially solvable by elimination).
-export function pickChoices(pool, answer, count = 3) {
+export function pickChoices(pool, answer, count = 3, rand = Math.random) {
   const seenTitles = new Set([answer.title.toLowerCase()]);
   const distractors = [];
-  for (const a of shuffle(pool)) {
+  for (const a of shuffle(pool, rand)) {
     if (a.mal_id === answer.mal_id) continue;
     const key = a.title.toLowerCase();
     if (seenTitles.has(key)) continue;
@@ -35,5 +35,5 @@ export function pickChoices(pool, answer, count = 3) {
     distractors.push(a);
     if (distractors.length === count) break;
   }
-  return shuffle([answer, ...distractors]);
+  return shuffle([answer, ...distractors], rand);
 }
