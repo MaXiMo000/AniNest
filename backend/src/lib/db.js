@@ -198,6 +198,19 @@ await db.executeMultiple(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_manga_reviews_manga ON manga_reviews(manga_id);
+  -- One row per game run a signed-in player STARTS (see routes/games.js). A
+  -- score is only accepted for a run the player really started, once, and
+  -- only if the streak fits the time that actually elapsed since started_at
+  -- (epoch ms) - that is what stops instant fake scores and replays.
+  CREATE TABLE IF NOT EXISTS game_runs (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    submitted INTEGER NOT NULL DEFAULT 0
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_game_runs_user ON game_runs(user_id, started_at);
   CREATE INDEX IF NOT EXISTS idx_candidates_group ON watch_source_candidates(status, group_key);
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { requireAuth } from '../middleware/session.js';
 import { getDailyChallenge } from '../lib/dailyChallenge.js';
+import crypto from 'node:crypto';
 import { GAMES } from '../lib/games.js';
 
 export const gamesRouter = Router();
@@ -47,11 +48,46 @@ gamesRouter.post('/daily/result', requireAuth, asyncRoute(async (req, res) => {
   res.json({ recorded: Number(result.rowsAffected) > 0 });
 }));
 
-const MAX_STREAK = 100_000; // defensive sanity ceiling, not a real gameplay cap
+// A hard ceiling on any streak, well beyond real play (deck sizes and human
+// endurance) - a sanity bound on top of the time check below.
+const MAX_STREAK = 300;
+
+// The least time one correct round can honestly take. Each client already
+// forces a fixed reveal delay per round (1.1s Higher/Lower, 1.6s Guess the
+// Anime) BEFORE a streak point counts, plus real decision time - so these
+// are set above that floor for a fast human but far above "instant".
+const MIN_MS_PER_ROUND = { 'higher-lower': 1500, 'guess-the-anime': 2500 };
+
+const MAX_RUNS_PER_HOUR = 200;
+const RUN_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
 
 const scoreSchema = z.object({
   streak: z.number().int().min(0).max(MAX_STREAK),
+  run_id: z.string().regex(/^[0-9a-f]{32}$/),
 });
+
+// Called when a signed-in player starts a game. The returned run id is
+// single-use and is the only thing that lets a score be submitted.
+gamesRouter.post('/:game/start', requireAuth, asyncRoute(async (req, res) => {
+  const { game } = req.params;
+  if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
+
+  const recent = await db.execute({
+    sql: 'SELECT COUNT(*) AS n FROM game_runs WHERE user_id = ? AND started_at > ?',
+    args: [req.user.id, Date.now() - 60 * 60 * 1000],
+  });
+  if (Number(recent.rows[0].n) >= MAX_RUNS_PER_HOUR) return res.status(429).json({ error: 'Slow down a little.' });
+
+  // Housekeeping: old runs are useless (a score can't be plausible days later).
+  await db.execute({ sql: 'DELETE FROM game_runs WHERE started_at < ?', args: [Date.now() - RUN_RETENTION_MS] });
+
+  const runId = crypto.randomBytes(16).toString('hex');
+  await db.execute({
+    sql: 'INSERT INTO game_runs (id, user_id, game, started_at) VALUES (?, ?, ?, ?)',
+    args: [runId, req.user.id, game, Date.now()],
+  });
+  res.status(201).json({ runId });
+}));
 
 // Only ever raises a user's own best for a game, never lowers it - a client
 // re-posting a stale/lower streak (e.g. two tabs) can't clobber a better one
@@ -61,7 +97,22 @@ gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
   if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
   const parsed = scoreSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
-  const { streak } = parsed.data;
+  const { streak, run_id: runId } = parsed.data;
+
+  // Claim the run atomically FIRST: a run can be submitted exactly once, so a
+  // rejected attempt can't be retried with a different number to probe the
+  // threshold, and two concurrent requests can't both succeed.
+  const claim = await db.execute({
+    sql: 'UPDATE game_runs SET submitted = 1 WHERE id = ? AND user_id = ? AND game = ? AND submitted = 0',
+    args: [runId, req.user.id, game],
+  });
+  if (!Number(claim.rowsAffected)) return res.status(400).json({ error: 'Unknown or already-used game run.' });
+
+  const run = await db.execute({ sql: 'SELECT started_at FROM game_runs WHERE id = ?', args: [runId] });
+  const elapsedMs = Date.now() - Number(run.rows[0].started_at);
+  if (streak * MIN_MS_PER_ROUND[game] > elapsedMs) {
+    return res.status(400).json({ error: "That score doesn't add up for the time played." });
+  }
 
   await db.execute({
     sql: `

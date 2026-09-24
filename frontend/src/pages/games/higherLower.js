@@ -44,6 +44,12 @@ export async function renderHigherLower(root) {
   let streak = 0;
   let best = Number(localStorage.getItem(BEST_KEY)) || 0;
   let locked = false; // true during the reveal animation, blocks a double guess
+  // A signed-in player's run must be started with the server before a score
+  // can be submitted (backend/src/routes/games.js checks the streak against
+  // the time actually played). Fire-and-forget: logged out, or if this
+  // fails, the game still plays - it just can't post a score.
+  let runId = null;
+  if (Auth.get().user) Games.startRun(GAME_SLUG).then((r) => { runId = r.runId; }).catch(() => {});
 
   function drawChallenger() {
     if (deck.length === 0) deck = shuffle(pool.filter((a) => a.mal_id !== champion.mal_id));
@@ -115,12 +121,12 @@ export async function renderHigherLower(root) {
 
   function renderGameOver() {
     const isNewBest = streak > 0 && streak === best;
-    if (Auth.get().user && streak > 0) {
+    if (Auth.get().user && streak > 0 && runId) {
       // Fire-and-forget - the backend only ever raises a user's recorded
       // best (see routes/games.js), so posting a non-best streak here is
       // harmless, and a failure (offline, logged out mid-round) isn't worth
       // interrupting the game-over screen for.
-      Games.submitScore(GAME_SLUG, streak).catch(() => {});
+      Games.submitScore(GAME_SLUG, streak, runId).catch(() => {});
     }
     root.innerHTML = `
       <div class="hl-gameover">

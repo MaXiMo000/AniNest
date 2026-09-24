@@ -149,6 +149,18 @@ async function makeAdminAgent() {
   return agent;
 }
 
+
+// Posting a game score now requires a run the player started, and a streak
+// that fits the time elapsed since (routes/games.js). Tests can't wait real
+// minutes, so this starts a genuine run and backdates it by enough honest
+// rounds - going through the same start/score routes a real client uses.
+async function playScore(agent, game, streak) {
+  const start = await agent.post(`/api/games/${game}/start`, { csrf: true, body: {} });
+  assert.equal(start.status, 201, 'starting a run should work for a signed-in player');
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - (streak * 3000 + 5000), start.json.runId] });
+  return agent.post(`/api/games/${game}/score`, { csrf: true, body: { streak, run_id: start.json.runId } });
+}
+
 test('health check', async () => {
   const agent = makeAgent();
   const res = await agent.get('/api/health');
@@ -684,11 +696,12 @@ test('game scores reject invalid streak values', async () => {
   const user = uniqueUser();
   await agent.post('/api/auth/register', { csrf: true, body: user });
 
-  const negative = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: -1 } });
+  const run = (await agent.post('/api/games/higher-lower/start', { csrf: true, body: {} })).json.runId;
+  const negative = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: -1, run_id: run } });
   assert.equal(negative.status, 400);
-  const notInt = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 1.5 } });
+  const notInt = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 1.5, run_id: run } });
   assert.equal(notInt.status, 400);
-  const missing = await agent.post('/api/games/higher-lower/score', { csrf: true, body: {} });
+  const missing = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { run_id: run } });
   assert.equal(missing.status, 400);
 });
 
@@ -698,15 +711,15 @@ test('game scores only ever raise a user\'s recorded best, never lower it', asyn
   const playerUser = uniqueUser();
   await player.post('/api/auth/register', { csrf: true, body: playerUser });
 
-  const first = await player.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 5 } });
+  const first = await playScore(player, 'guess-the-anime', 5);
   assert.equal(first.status, 200);
   assert.equal(first.json.best, 5);
 
   // A worse run posted later must not overwrite the existing best.
-  const lower = await player.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 2 } });
+  const lower = await playScore(player, 'guess-the-anime', 2);
   assert.equal(lower.json.best, 5);
 
-  const higher = await player.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 9 } });
+  const higher = await playScore(player, 'guess-the-anime', 9);
   assert.equal(higher.json.best, 9);
 
   const board = await player.get('/api/games/guess-the-anime/leaderboard');
@@ -723,13 +736,13 @@ test('leaderboard ranks the higher streak first and stays sorted regardless of o
   await a.get('/api/health');
   const userA = uniqueUser();
   await a.post('/api/auth/register', { csrf: true, body: userA });
-  await a.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 3 } });
+  await playScore(a, 'higher-lower', 3);
 
   const b = makeAgent();
   await b.get('/api/health');
   const userB = uniqueUser();
   await b.post('/api/auth/register', { csrf: true, body: userB });
-  await b.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 20 } });
+  await playScore(b, 'higher-lower', 20);
 
   const board = await a.get('/api/games/higher-lower/leaderboard');
   for (let i = 1; i < board.json.leaderboard.length; i += 1) {
@@ -1192,7 +1205,7 @@ test('profile XP is derived from existing activity (retroactive), with an exact 
     await agent.post('/api/favorites', { csrf: true, body: { mal_id: 80000 + i, title: `XP fav ${i}` } });
   }
   await agent.post('/api/reviews', { csrf: true, body: { mal_id: 80000, rating: 8 } });
-  await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 10 } });
+  await playScore(agent, 'higher-lower', 10);
 
   // 6 favorites 30 + 1 review 25 + streak 10 -> 100 = 155, plus three bronze
   // badges (Collector, Critic, Warming Up) at 50 each = 150.
@@ -1301,7 +1314,7 @@ test('XP leaderboard is public, ranked by XP, and reports the caller\'s own rank
     // eslint-disable-next-line no-await-in-loop
     await big.post('/api/favorites', { csrf: true, body: { mal_id: 83000 + i, title: `Big ${i}` } });
   }
-  await big.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 40 } });
+  await playScore(big, 'guess-the-anime', 40);
 
   const { cacheSet } = await import('../src/lib/cache.js');
   cacheSet('leaderboard:xp', undefined, 0); // drop any cached table so this run sees the users above
@@ -1466,6 +1479,64 @@ test('a manga review counts as a review for badges, XP and the public profile', 
   assert.equal(profile.json.xp.total, 75);
 });
 
+test('game runs: a score needs a real run, is single-use, belongs to its player and game, and must fit the time played', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await anon.post('/api/games/higher-lower/start', { csrf: true, body: {} })).status, 401);
+
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  assert.equal((await agent.post('/api/games/not-a-game/start', { csrf: true, body: {} })).status, 400);
+
+  // No run at all - the old "just tell the server a number" path is closed.
+  assert.equal((await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 5 } })).status, 400);
+  assert.equal((await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 5, run_id: 'a'.repeat(32) } })).status, 400, 'an id that was never issued');
+
+  // A fake instant score: started just now, claims a 40 streak -> rejected.
+  const fresh = await agent.post('/api/games/higher-lower/start', { csrf: true, body: {} });
+  assert.equal(fresh.status, 201);
+  const fake = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 40, run_id: fresh.json.runId } });
+  assert.equal(fake.status, 400);
+  assert.match(fake.json.error, /add up/);
+  // ...and the run is now burned, so the threshold can't be probed by retrying lower numbers.
+  const retry = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 1, run_id: fresh.json.runId } });
+  assert.equal(retry.status, 400);
+  assert.match(retry.json.error, /already-used|Unknown/);
+
+  // An honest run (time really elapsed) is accepted exactly once.
+  const honest = await agent.post('/api/games/higher-lower/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 20 * 1500, honest.json.runId] });
+  const ok = await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.best, 15);
+  assert.equal((await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } })).status, 400, 'replaying a used run');
+
+  // The per-game floor differs: 15 rounds of Guess the Anime needs more time than 15 of Higher/Lower.
+  const gta = await agent.post('/api/games/guess-the-anime/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 20 * 1500, gta.json.runId] }); // 30s: fine for HL, too fast for 15 GTA rounds (37.5s)
+  assert.equal((await agent.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 15, run_id: gta.json.runId } })).status, 400);
+
+  // A run is tied to its game...
+  const hl = await agent.post('/api/games/higher-lower/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 60_000, hl.json.runId] });
+  assert.equal((await agent.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 2, run_id: hl.json.runId } })).status, 400, 'a Higher/Lower run cannot score Guess the Anime');
+
+  // ...and to its player.
+  const thief = makeAgent();
+  await thief.get('/api/health');
+  await thief.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const mine = await agent.post('/api/games/higher-lower/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 60_000, mine.json.runId] });
+  assert.equal((await thief.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 3, run_id: mine.json.runId } })).status, 400, 'someone else\'s run is not yours to submit');
+  assert.equal((await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 3, run_id: mine.json.runId } })).status, 200, 'the owner can still submit it');
+
+  // Absurd values are rejected outright, whatever the elapsed time.
+  const cap = await agent.post('/api/games/higher-lower/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 10_000_000, cap.json.runId] });
+  assert.equal((await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 301, run_id: cap.json.runId } })).status, 400);
+});
+
 test('screenshot search is public (no auth needed) but rejects a non-image content type', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');
@@ -1509,7 +1580,7 @@ test('public profile badges are computed from real activity, not stored', async 
   // One review -> bronze reviews badge.
   await agent.post('/api/reviews', { csrf: true, body: { mal_id: 30001, rating: 8 } });
   // A game streak of 5 -> bronze streak badge.
-  await agent.post('/api/games/higher-lower/score', { csrf: true, body: { streak: 5 } });
+  await playScore(agent, 'higher-lower', 5);
 
   const after = await agent.get(`/api/users/${user.username}`);
   assert.equal(after.status, 200);
