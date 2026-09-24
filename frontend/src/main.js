@@ -36,8 +36,10 @@ import { Auth } from './lib/authStore.js';
 import { Notifications } from './lib/notificationsApi.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
 import { wirePowSelects } from './lib/powSelect.js';
+import { wireThemeToggle } from './lib/theme.js';
 
 installGlobalErrorReporting();
+wireThemeToggle(document.getElementById('theme-toggle'));
 
 const app = document.getElementById('app');
 const authArea = document.getElementById('auth-area');
