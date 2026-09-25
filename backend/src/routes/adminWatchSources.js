@@ -120,7 +120,7 @@ adminWatchSourcesRouter.post('/bulk-import', asyncRoute(async (req, res) => {
   }
 
   const knownRows = await db.execute(`
-    SELECT youtube_video_id AS id FROM anime_watch_sources WHERE status IN ('approved','pending','rejected')
+    SELECT youtube_video_id AS id FROM anime_watch_sources WHERE status IN ('approved','pending','rejected','expired')
     UNION SELECT youtube_video_id FROM watch_source_candidates
   `);
   const known = new Set(knownRows.rows.map((r) => r.id));

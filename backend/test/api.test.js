@@ -2249,3 +2249,44 @@ test('calendar feed: link needs auth, token is the credential, rotation revokes,
     setAiringFetcher(null);
   }
 });
+
+test('free-watch region check: stores region lists, expires dead links, restores them, and ignores an all-dead glitch', async () => {
+  const { checkWatchSources, setAvailabilityChecker } = await import('../src/lib/watchSourceHealth.js');
+  const ids = { region: 'rgnLockedAA', dead: 'deadVideoAA', open: 'openVideoAA' };
+  for (const [i, vid] of Object.values(ids).entries()) {
+    await db.execute({ sql: "INSERT INTO anime_watch_sources (mal_id, youtube_video_id, channel_name, label, status) VALUES (92301, ?, 'Muse Asia', ?, 'approved')", args: [vid, `Episode ${i + 1}`] });
+  }
+  let world = {
+    [ids.region]: { playable: true, allowed: ['IN', 'ID'], blocked: null },
+    [ids.dead]: { playable: false, allowed: null, blocked: null },
+    [ids.open]: { playable: true, allowed: null, blocked: ['US'] },
+  };
+  const everywhere = { playable: true, allowed: null, blocked: null };
+  setAvailabilityChecker(async (videoIds) => new Map(videoIds.map((v) => [v, world[v] || everywhere])));
+  const agent = makeAgent();
+  try {
+    const first = await checkWatchSources();
+    assert.ok(first.expired >= 1);
+    let list = (await agent.get('/api/anime/92301/watch-sources')).json.data;
+    assert.deepEqual(list.map((s) => s.youtube_video_id).sort(), [ids.open, ids.region].sort(), 'the dead link is hidden');
+    const byId = Object.fromEntries(list.map((s) => [s.youtube_video_id, s]));
+    assert.deepEqual(byId[ids.region].allowed_regions, ['IN', 'ID']);
+    assert.equal(byId[ids.region].blocked_regions, null);
+    assert.deepEqual(byId[ids.open].blocked_regions, ['US']);
+    assert.ok(byId[ids.open].checked_at);
+
+    world = { ...world, [ids.dead]: everywhere };
+    await checkWatchSources();
+    list = (await agent.get('/api/anime/92301/watch-sources')).json.data;
+    assert.equal(list.length, 3, 'a video that plays again comes back');
+
+    for (let i = 0; i < 20; i += 1) {
+      await db.execute({ sql: "INSERT INTO anime_watch_sources (mal_id, youtube_video_id, status) VALUES (92302, ?, 'approved')", args: [`glitch${String(i).padStart(5, '0')}`] });
+    }
+    setAvailabilityChecker(async (videoIds) => new Map(videoIds.map((v) => [v, { playable: false, allowed: null, blocked: null }])));
+    await assert.rejects(checkWatchSources(), /every checked video/);
+    assert.equal((await agent.get('/api/anime/92302/watch-sources')).json.data.length, 20, 'nothing was hidden');
+  } finally {
+    setAvailabilityChecker(null);
+  }
+});

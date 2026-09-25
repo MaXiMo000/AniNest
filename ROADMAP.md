@@ -83,14 +83,17 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 
 ## Phase 3: Free and legal, by country
 
-- [ ] Columns on `anime_watch_sources`: `allowed_regions`, `blocked_regions` (JSON), `last_checked_at`, `health`
-- [ ] Import and a nightly job call `videos.list?part=contentDetails,status` (1 unit per 50 ids) to store
-      `regionRestriction` and mark deleted/private videos `expired`
-- [ ] Country picker: guess from `Intl` time zone first (`Asia/Kolkata` gives IN; browser language is often en-US),
-      then language; stored in localStorage and on the account
-- [ ] Detail page line: "Free and legal in India: Muse Asia, eps 1-24 (checked 2 days ago)"; Browse "Free in my
-      country" filter; `#/free` page grouped by channel
-- [ ] "Did this play for you?" feedback in `link_reports`; 3 downvotes from one country hides the link there and queues it for review
+- [x] Columns on `anime_watch_sources`: `allowed_regions`, `blocked_regions` (JSON), `checked_at`. No `health`
+      column: a dead link just gets status `expired`
+- [x] A daily job (not the import) calls `videos.list?part=contentDetails,status` (1 unit per 50 ids) to store
+      `regionRestriction`, expire deleted/private/non-embeddable videos, and restore ones that come back.
+      Refuses to apply a run where every video looks dead (API glitch guard)
+- [x] Country picker: guessed from the `Intl` time zone, then the language; kept in localStorage (not on the account)
+- [x] Detail page: "📍 Free in [country]" picker, only uploads that play there, "N more are licensed only outside X",
+      "checked with YouTube 2 days ago", and a clear message when nothing is licensed in your country
+- [ ] Later: Browse "Free in my country" filter and a `#/free` page (need titles/covers joined in; the table has only ids)
+- [ ] Skipped: "Did this play for you?" reports. YouTube's own region lists are authoritative and checked daily, so
+      add these only if people report links that YouTube says should play
 
 ## Phase 4: Episode guide
 

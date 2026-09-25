@@ -142,3 +142,25 @@ export async function listChannelUploads(channelId, { maxItems = 200 } = {}) {
     return videos.slice(0, maxItems);
   });
 }
+
+// Where each video can play, for the free-watch region filter and the daily
+// dead-link check (lib/watchSourceHealth.js). videos.list costs 1 unit per
+// call of up to 50 ids. A video missing from the answer was deleted; a
+// private or non-embeddable one can't play on our page either. `allowed` /
+// `blocked` are YouTube's own regionRestriction lists (ISO country codes),
+// null when the video has none.
+export async function videoAvailability(videoIds) {
+  const result = new Map();
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    const json = await youtubeGet('/videos', { part: 'contentDetails,status', id: batch.join(','), maxResults: '50' });
+    const found = new Map((json.items || []).map((v) => [v.id, v]));
+    for (const id of batch) {
+      const v = found.get(id);
+      const playable = Boolean(v) && v.status?.privacyStatus !== 'private' && v.status?.embeddable !== false;
+      const r = v?.contentDetails?.regionRestriction;
+      result.set(id, { playable, allowed: r?.allowed || null, blocked: r?.blocked || null });
+    }
+  }
+  return result;
+}

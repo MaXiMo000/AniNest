@@ -97,11 +97,13 @@ animeRouter.get('/:id/watch-sources', asyncRoute(async (req, res) => {
   const id = parseAnimeId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
   const result = await db.execute({
-    sql: `SELECT id, youtube_video_id, channel_name, label FROM anime_watch_sources
+    sql: `SELECT id, youtube_video_id, channel_name, label, allowed_regions, blocked_regions, checked_at FROM anime_watch_sources
           WHERE mal_id = ? AND status = 'approved' ORDER BY created_at ASC`,
     args: [id],
   });
-  res.json({ data: result.rows });
+  // Region lists are JSON text in the table; null means "plays everywhere" (or not checked yet).
+  const regions = (text) => (text ? JSON.parse(text) : null);
+  res.json({ data: result.rows.map((r) => ({ ...r, allowed_regions: regions(r.allowed_regions), blocked_regions: regions(r.blocked_regions) })) });
 }));
 
 // "Part of the X franchise" banner on the detail page. A first build walks

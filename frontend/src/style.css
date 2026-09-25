@@ -2455,3 +2455,10 @@ a.wo-title:hover { color: var(--pink2); }
   .wo-item { grid-template-columns: 1.4rem 44px 1fr; gap: 10px; padding: 8px 10px; }
   .wo-cover { width: 44px; height: 62px; }
 }
+
+/* Free-watch country picker */
+.free-country { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 12px; font-weight: 800; color: var(--muted); }
+.free-country select {
+  padding: 6px 10px; border: 2.5px solid var(--ink); border-radius: 10px;
+  background: var(--bg2); color: var(--text); font-weight: 700; font-family: inherit;
+}

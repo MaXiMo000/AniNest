@@ -1,5 +1,29 @@
 import { escapeHtml } from './ui.js';
 import { groupSources } from './freeWatchGroups.js';
+import { getCountry, setCountry, countryName, playableIn, COUNTRIES } from './country.js';
+
+// Uploads YouTube says play in the viewer's country (backend/src/lib/watchSourceHealth.js
+// stores each video's region lists daily; unchecked ones count as playable).
+const visibleSources = (sources) => sources.filter((s) => playableIn(s, getCountry()));
+
+function countryPickerHTML() {
+  const current = getCountry();
+  const codes = current && !COUNTRIES.includes(current) ? [current, ...COUNTRIES] : COUNTRIES;
+  return `
+    <label class="free-country">📍 Free in
+      <select id="free-country" aria-label="Your country">
+        ${current ? '' : '<option value="" selected>choose your country</option>'}
+        ${codes.map((c) => `<option value="${c}" ${c === current ? 'selected' : ''}>${escapeHtml(countryName(c))}</option>`).join('')}
+      </select>
+    </label>`;
+}
+
+function checkedAgo(sources) {
+  const latest = Math.max(...sources.map((s) => (s.checked_at ? Date.parse(`${s.checked_at.replace(' ', 'T')}Z`) : 0)));
+  if (!latest) return '';
+  const days = Math.round((Date.now() - latest) / 86400000);
+  return ` Availability checked with YouTube ${new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-days, 'day')}.`;
+}
 
 // "Watch Free (Official)" on the anime detail page: one player, language tabs
 // when there's more than one version, and long runs split into collapsible
@@ -16,26 +40,38 @@ export function freeWatchSectionHTML(sources, malId) {
         <h2 class="section-title">🆓 Watch Free (Official)</h2>
         <a href="#/anime/${malId}/submit-watch-link" class="chip">➕ Suggest a link</a>
       </div>`;
-  const { languages } = groupSources(sources);
-  const total = languages.reduce((n, l) => n + l.count, 0);
-  // With several versions the language tabs say which is which; with just one
-  // there are no tabs, so name it here (e.g. Ani-One's "Chinese subs" uploads).
-  const onlyLang = languages.length === 1 && languages[0].lang !== 'Other' ? ` · ${languages[0].lang}` : '';
-  if (!total) {
+  if (!sources.length) {
     return `
     <section class="section">
       ${head}
       <p style="color:var(--muted);font-weight:600">No free official episodes added yet — know one? Suggest a link above!</p>
     </section>`;
   }
-  return `
-    <section class="section" id="free-watch">
+  const visible = visibleSources(sources);
+  const hidden = sources.length - visible.length;
+  const where = countryName(getCountry());
+  if (!visible.length) {
+    return `
+    <section class="section" id="free-watch" data-mal="${Number(malId) || 0}">
       ${head}
+      ${countryPickerHTML()}
+      <p class="free-note">The ${sources.length} free official ${sources.length === 1 ? 'upload' : 'uploads'} for this show ${sources.length === 1 ? "isn't" : "aren't"} licensed in ${escapeHtml(where)}. Check the paid options below.${escapeHtml(checkedAgo(sources))}</p>
+    </section>`;
+  }
+  const { languages } = groupSources(visible);
+  const total = visible.length;
+  // With several versions the language tabs say which is which; with just one
+  // there are no tabs, so name it here (e.g. Ani-One's "Chinese subs" uploads).
+  const onlyLang = languages.length === 1 && languages[0].lang !== 'Other' ? ` · ${languages[0].lang}` : '';
+  return `
+    <section class="section" id="free-watch" data-mal="${Number(malId) || 0}">
+      ${head}
+      ${countryPickerHTML()}
       <div class="tv-frame">
         <div class="tv-screen" id="free-player-screen"></div>
         <div class="tv-label" id="free-now-playing">${total} free ${total === 1 ? 'upload' : 'uploads'} available${escapeHtml(onlyLang)}</div>
       </div>
-      <p class="free-note">Official channels license each upload for certain countries. If YouTube says a video isn't available where you are, it isn't licensed there yet.</p>
+      <p class="free-note">${hidden ? `${hidden} more ${hidden === 1 ? 'upload is' : 'uploads are'} licensed only outside ${escapeHtml(where)}.` : 'Official channels license each upload for certain countries.'}${escapeHtml(checkedAgo(visible))}</p>
       <div class="library-tabs" id="free-lang-tabs" style="margin-top:14px"></div>
       <div id="free-episode-list" style="margin-top:10px"></div>
     </section>`;
@@ -44,7 +80,13 @@ export function freeWatchSectionHTML(sources, malId) {
 export function wireFreeWatch(root, sources) {
   const section = root.querySelector('#free-watch');
   if (!section) return;
-  const { languages, defaultLang } = groupSources(sources);
+  section.querySelector('#free-country')?.addEventListener('change', (e) => {
+    setCountry(e.target.value);
+    section.outerHTML = freeWatchSectionHTML(sources, section.dataset.mal);
+    wireFreeWatch(root, sources);
+  });
+  if (!section.querySelector('#free-player-screen')) return; // nothing licensed here
+  const { languages, defaultLang } = groupSources(visibleSources(sources));
   const tabs = section.querySelector('#free-lang-tabs');
   const list = section.querySelector('#free-episode-list');
   let activeLang = defaultLang;

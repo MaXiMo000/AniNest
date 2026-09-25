@@ -94,6 +94,12 @@ curated official channels (Muse Asia, Ani-One Asia, Crunchyroll, with ids verifi
   "the" and spacing; later seasons accept only season-qualified titles). An earlier substring rule attached *Ascendance of a
   Bookworm* S3 to its side story, which is why matching is exact. Each group is looked up once, paced at 2.2s per call for AniList's
   limit. A 429 ends the pass, and the admin UI waits out `Retry-After` and continues. Unmatched groups go to the review queue.
+- **By country** (`lib/watchSourceHealth.js`, `frontend/src/lib/country.js`): a daily job (first run 5 minutes after boot; only
+  with `YOUTUBE_API_KEY`, never in tests) asks YouTube `videos.list` about up to 2000 approved or expired links, oldest-checked
+  first (1 quota unit per 50). It stores YouTube's `regionRestriction` lists in `allowed_regions` / `blocked_regions` and sets
+  status `expired` for deleted, private or non-embeddable videos (`approved` again if they come back). A run where every video
+  looks dead is refused as an API glitch. The detail page guesses the viewer's country from the time zone (then the language),
+  lets them change it (localStorage), and shows only uploads that play there. Unchecked links count as playable.
 - **Admin role**: `users.is_admin`, set from `ADMIN_USERNAMES` on **every boot**. The account must exist first; otherwise register
   and restart. `requireAdmin` answers non-admins with **404**, and the admin page shows the normal not-found page, so neither
   reveals that it exists.
@@ -239,7 +245,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 101 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 102 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

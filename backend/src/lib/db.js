@@ -320,6 +320,12 @@ await ensureColumn('favorites', 'episodes_watched', 'INTEGER NOT NULL DEFAULT 0'
 await ensureColumn('favorites', 'progress_at', 'TEXT');
 // Secret for the private airing-calendar feed URL (lib/calendar.js).
 await ensureColumn('users', 'calendar_token', 'TEXT');
+// YouTube's region lists for each free-watch link (JSON arrays of country
+// codes, null = no restriction) and when they were last checked; see
+// lib/watchSourceHealth.js. A link that stops playing gets status 'expired'.
+await ensureColumn('anime_watch_sources', 'allowed_regions', 'TEXT');
+await ensureColumn('anime_watch_sources', 'blocked_regions', 'TEXT');
+await ensureColumn('anime_watch_sources', 'checked_at', 'TEXT');
 await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_token ON users(calendar_token)');
 
 // One row per episode a user moved past in small steps (see favorites.js for
