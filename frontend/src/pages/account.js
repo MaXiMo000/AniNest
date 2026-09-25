@@ -4,6 +4,67 @@ import { Import } from '../lib/importApi.js';
 import { Users } from '../lib/usersApi.js';
 import { navigate } from '../lib/router.js';
 import { escapeHtml, showToast, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
+import { apiGet, apiPost } from '../lib/http.js';
+
+// Private .ics feed of airing times for everything you're Watching
+// (backend/src/lib/calendar.js). The link is only created when asked for.
+function calendarSectionHTML() {
+  return `
+    <section class="section" style="max-width:520px;margin:24px auto 0">
+      <div class="section-head">
+        <h2 class="section-title">📅 Airing Calendar</h2>
+        <span class="section-sub">New episodes of everything you're Watching, right in Google, Apple or Outlook Calendar. It updates itself.</span>
+      </div>
+      <div id="cal-box" class="hero-actions" style="justify-content:center">
+        <button id="cal-get" class="btn-pow btn-pow--blue">GET MY CALENDAR LINK</button>
+      </div>
+    </section>`;
+}
+
+function calendarLinkHTML(url) {
+  const webcal = url.replace(/^https?:/, 'webcal:');
+  return `
+    <input id="cal-url" type="text" readonly value="${escapeHtml(url)}" aria-label="Your private calendar link"
+      style="width:100%;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600" />
+    <a class="btn-pow btn-pow--blue" target="_blank" rel="noopener" href="https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}">Google Calendar</a>
+    <a class="btn-pow btn-pow--outline" href="${escapeHtml(webcal)}">Apple / Outlook</a>
+    <button id="cal-copy" class="chip">📋 Copy link</button>
+    <button id="cal-rotate" class="chip">🔄 Reset link</button>
+    <p class="section-sub" style="width:100%;text-align:center;margin:0">Keep this link private. Resetting it stops the old one working.</p>`;
+}
+
+function wireCalendar(root) {
+  const box = root.querySelector('#cal-box');
+  const show = (url) => {
+    box.innerHTML = calendarLinkHTML(url);
+    box.querySelector('#cal-copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('Calendar link copied!');
+      } catch {
+        box.querySelector('#cal-url').select();
+      }
+    });
+    box.querySelector('#cal-rotate').addEventListener('click', async () => {
+      if (!window.confirm('Make a new link? Calendars using the old one stop updating.')) return;
+      try {
+        show((await apiPost('/api/calendar/link/rotate')).url);
+        showToast('New link made. Re-subscribe with it.');
+      } catch {
+        showToast('Something went wrong — try again.');
+      }
+    });
+  };
+  box.querySelector('#cal-get').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      show((await apiGet('/api/calendar/link')).url);
+    } catch {
+      e.target.disabled = false;
+      showToast('Couldn’t get your calendar link — try again.');
+    }
+  });
+}
 
 function importSectionHTML() {
   return `
@@ -44,8 +105,11 @@ export function renderAccount(root) {
       <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
     </div>
 
+    ${calendarSectionHTML()}
     ${importSectionHTML()}
   `;
+
+  wireCalendar(root);
 
   // Badges reuse the public profile endpoint (same data, same computation
   // - see backend/src/lib/badges.js) rather than a second route just for

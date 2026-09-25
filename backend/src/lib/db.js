@@ -318,6 +318,9 @@ await ensureColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
 // and to auto-complete; null while a show is still airing with no known total.
 await ensureColumn('favorites', 'episodes_watched', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('favorites', 'progress_at', 'TEXT');
+// Secret for the private airing-calendar feed URL (lib/calendar.js).
+await ensureColumn('users', 'calendar_token', 'TEXT');
+await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_token ON users(calendar_token)');
 
 // One row per episode a user moved past in small steps (see favorites.js for
 // why big catch-up jumps are not logged). This is the time series that

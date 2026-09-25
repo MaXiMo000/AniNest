@@ -75,10 +75,11 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 
 ## Phase 2: Airing calendar
 
-- [ ] `users.calendar_token` (random, stored hashed like sessions; rotating it revokes the old link)
-- [ ] `GET /api/calendar/:token.ics`: no cookie (calendar apps don't send one). Next 14 days of `airingSchedule`
-      for your Watching list, one batched AniList query per 50 shows, cached 1h per user
-- [ ] Account page: "Subscribe in Google / Apple Calendar" + copy link + rotate link
+- [x] `users.calendar_token` (random; rotating it revokes the old link). Stored as-is, not hashed: the feed only
+      reveals a Watching list, which the public profile already shows, and this way the link can be shown again.
+- [x] `GET /api/calendar/:token.ics`: no cookie (calendar apps don't send one). Last 7 days + next 14 days of
+      `airingSchedules` for your Watching list (two AniList requests per 50 shows, max 150 shows), cached 1h per token
+- [x] Account page: Google Calendar / Apple-Outlook (webcal) buttons + copy link + reset link
 
 ## Phase 3: Free and legal, by country
 

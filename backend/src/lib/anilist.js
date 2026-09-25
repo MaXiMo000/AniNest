@@ -513,3 +513,42 @@ export async function anilistMediaWithRelations({ ids, malIds }) {
   `, variables);
   return data.Page?.media || [];
 }
+
+// Episodes airing between `from` and `to` (epoch seconds) for a list of MAL
+// ids, for the calendar feed (lib/calendar.js). Two requests per 50 shows:
+// the MAL ids resolve to AniList ids first, because airingSchedules can only
+// filter by AniList id. Only shows still airing or announced are asked about.
+export async function anilistAiringForMalIds(malIds, from, to) {
+  const out = [];
+  for (let i = 0; i < malIds.length; i += 50) {
+    const media = await gql(`
+      query($malIds: [Int]) {
+        Page(perPage: 50) {
+          media(idMal_in: $malIds, type: ANIME) { id idMal duration status title { romaji english } }
+        }
+      }
+    `, { malIds: malIds.slice(i, i + 50) });
+    const byId = new Map((media.Page?.media || [])
+      .filter((m) => m.idMal && (m.status === 'RELEASING' || m.status === 'NOT_YET_RELEASED'))
+      .map((m) => [m.id, m]));
+    if (!byId.size) continue;
+
+    for (let page = 1; page <= 3; page += 1) {
+      const data = await gql(`
+        query($ids: [Int], $from: Int, $to: Int, $page: Int) {
+          Page(page: $page, perPage: 50) {
+            pageInfo { hasNextPage }
+            airingSchedules(mediaId_in: $ids, airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) { episode airingAt mediaId }
+          }
+        }
+      `, { ids: [...byId.keys()], from, to, page });
+      for (const s of data.Page?.airingSchedules || []) {
+        const m = byId.get(s.mediaId);
+        if (!m) continue;
+        out.push({ mal_id: m.idMal, title: m.title?.english || m.title?.romaji || 'Untitled', duration: m.duration || null, episode: s.episode, airingAt: s.airingAt });
+      }
+      if (!data.Page?.pageInfo?.hasNextPage) break;
+    }
+  }
+  return out;
+}

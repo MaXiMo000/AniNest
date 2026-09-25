@@ -39,7 +39,7 @@ render.yaml         Render Blueprint for both services, including the production
 
 **API mounts** (`app.js`): `auth`, `favorites`, `anime`, `reviews`, `users`, `client-errors`, `games`, `recommendations`,
 `studios`, `people`, `import`, `screenshot-search`, `manga`, `manga-favorites`, `manga-reviews`, `notifications`,
-`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, and `GET /api/health`.
+`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, `calendar`, and `GET /api/health`.
 
 **Tables** (`lib/db.js`; `CREATE TABLE IF NOT EXISTS` at boot, new columns added with `ensureColumn`, no migration tool):
 `users`, `sessions`, `favorites`, `reviews`, `manga_favorites`, `manga_reviews`, `game_scores`, `game_runs`,
@@ -131,6 +131,13 @@ page asks again once. Stand-alone shows are remembered for 7 days (`franchise-mi
 Guides older than 7 days are served and rebuilt in the background; the franchise **id and slug stay stable** across rebuilds
 because community orders (ROADMAP Phase 7) will reference them. `GET /api/franchises/:slug` never triggers a build.
 Mega-franchises (Gundam) hit the cap, and the page says so.
+
+**Airing calendar** (`lib/calendar.js`, `lib/ics.js`; account page). `GET /api/calendar/link` (auth) returns a private
+`/api/calendar/<token>.ics` URL; `POST /api/calendar/link/rotate` replaces it. The feed needs no cookie (calendar apps send
+none), so the 32-character token in `users.calendar_token` is the credential. It is stored as-is so the link can be shown
+again; it only exposes the Watching list, which the public profile shows anyway. Episodes from 7 days back to 14 days ahead
+come from AniList `airingSchedules` (MAL ids resolve to AniList ids first; finished shows are skipped), cached 1h per token.
+Times are the Japanese broadcast, not a streaming site's release.
 
 **Games** (`pages/games/*`). Every game is listed once in `frontend/src/lib/gameCatalog.js` (hub, leaderboard picker,
 stats page) and every ranked slug once in `backend/src/lib/games.js` (`GAME_RULES`: time floor per round, optional score cap).
@@ -232,7 +239,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 99 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 101 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

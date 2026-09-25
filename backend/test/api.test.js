@@ -2182,3 +2182,70 @@ test('franchise API: built once from any member, served by slug, misses remember
     setFranchiseFetcher(null);
   }
 });
+
+test('ics writer: escaping, CRLF, UTC times, and folding at 75 bytes without splitting characters', async () => {
+  const { escapeText, foldLine, icsDate, buildCalendar } = await import('../src/lib/ics.js');
+  assert.equal(escapeText('a,b;c\\d\ne'), 'a\\,b\\;c\\\\d\\ne');
+  assert.equal(icsDate(0), '19700101T000000Z');
+
+  const long = `SUMMARY:${'進撃の巨人 '.repeat(20)}`;
+  const folded = foldLine(long);
+  const parts = folded.split('\r\n');
+  assert.ok(parts.length > 1);
+  parts.forEach((p, i) => assert.ok(Buffer.byteLength(p) <= 75, `line ${i} is ${Buffer.byteLength(p)} bytes`));
+  assert.equal(parts.map((p, i) => (i ? p.slice(1) : p)).join(''), long, 'unfolding gives the original back');
+
+  const ics = buildCalendar({ name: 'Test', now: 0, events: [{ uid: '1-2@aninest', start: 3600, minutes: 24, summary: 'Show, Part 2', url: 'https://x.test/#/anime/1' }] });
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n') && ics.endsWith('END:VCALENDAR\r\n'));
+  assert.ok(!/[^\r]\n/.test(ics), 'every line ends in CRLF');
+  assert.match(ics, /DTSTART:19700101T010000Z\r\nDTEND:19700101T012400Z/);
+  assert.match(ics, /SUMMARY:Show\\, Part 2/);
+});
+
+test('calendar feed: link needs auth, token is the credential, rotation revokes, only Watching shows appear', async () => {
+  const { setAiringFetcher } = await import('../src/lib/calendar.js');
+  const asked = [];
+  setAiringFetcher(async (malIds, from, to) => {
+    asked.push({ malIds, from, to });
+    return malIds.map((id, i) => ({ mal_id: id, title: `Show ${id}`, duration: 24, episode: i + 3, airingAt: from + 86400 * (i + 1) }));
+  });
+  try {
+    const anon = makeAgent();
+    assert.equal((await anon.get('/api/calendar/link')).status, 401);
+
+    const agent = makeAgent();
+    await agent.get('/api/health');
+    await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+    await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92201, title: 'Watching One', status: 'watching' } });
+    await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92202, title: 'Planned', status: 'plan_to_watch' } });
+
+    const link = await agent.get('/api/calendar/link');
+    assert.equal(link.status, 200);
+    const token = /\/api\/calendar\/([A-Za-z0-9_-]{32})\.ics$/.exec(link.json.url)?.[1];
+    assert.ok(token, `feed url looks right: ${link.json.url}`);
+    assert.equal((await agent.get('/api/calendar/link')).json.url, link.json.url, 'the link is stable until rotated');
+
+    const res = await fetch(`${baseUrl}/api/calendar/${token}.ics`); // no cookies, like a calendar app
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /^text\/calendar/);
+    const body = await res.text();
+    assert.match(body, /SUMMARY:Show 92201 · Episode 3/);
+    assert.match(body, /UID:92201-3@aninest/);
+    assert.match(body, /URL:http:\/\/localhost:5173\/#\/anime\/92201/);
+    assert.deepEqual(asked.at(-1).malIds, [92201], 'only the Watching list is asked about');
+    assert.equal(asked.at(-1).to - asked.at(-1).from, 21 * 86400, 'last week plus the next two weeks');
+
+    const rotated = await agent.post('/api/calendar/link/rotate', { csrf: true, body: {} });
+    assert.equal(rotated.status, 200);
+    assert.notEqual(rotated.json.url, link.json.url);
+    assert.equal((await fetch(`${baseUrl}/api/calendar/${token}.ics`)).status, 404, 'the old link is dead');
+    assert.equal((await fetch(rotated.json.url.replace(/^https?:\/\/[^/]+/, baseUrl))).status, 200);
+
+    for (const bad of ['nope.ics', `${'A'.repeat(32)}.ics`, `${token}`, '..%2F..%2Fetc.ics']) {
+      assert.equal((await fetch(`${baseUrl}/api/calendar/${bad}`)).status, 404, bad);
+    }
+    assert.equal((await anon.post('/api/calendar/link/rotate', { csrf: true, body: {} })).status, 401);
+  } finally {
+    setAiringFetcher(null);
+  }
+});
