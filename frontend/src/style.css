@@ -2387,3 +2387,71 @@ a.game-card:hover .game-card-art span { transform: scale(1.18) rotate(-8deg); }
 .genre-bar-fill { display: block; height: 100%; background: var(--purple); border-radius: 0 4px 4px 0; animation: taste-grow 0.7s ease both; transform-origin: left; }
 .genre-bar-value { text-align: right; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .genre-bar-fill { animation: none; } }
+
+/* Episode progress: detail-page counter and library-card bar */
+.progress-count { font-weight: 900; min-width: 6.5em; text-align: center; }
+.card-progress { display: flex; flex-direction: column; gap: 4px; margin-top: auto; }
+.card-progress-bar { height: 8px; background: var(--bg2); border: 2px solid var(--ink); border-radius: 999px; overflow: hidden; }
+.card-progress-bar span { display: block; height: 100%; background: var(--pink2); }
+.card-progress-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; font-weight: 800; color: var(--muted); }
+.card-progress-step {
+  background: var(--purple);
+  color: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-weight: 900;
+  font-size: 0.75rem;
+}
+.card-progress-step:disabled { opacity: 0.6; }
+
+/* OP/ED jukebox: song-list fallback and listen-elsewhere links */
+.muted-note { color: var(--muted); font-weight: 600; margin: 10px 0; }
+.song-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.song-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.song-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: var(--bg2); border: var(--border-w) solid var(--ink); border-radius: 12px; padding: 10px 14px;
+}
+.song-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.song-info span { color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+
+/* Franchise watch guide: detail-page banner and #/franchise/:slug */
+.franchise-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 18px 0; padding: 12px 16px;
+  background: var(--panel); color: var(--text); text-decoration: none;
+  border: var(--border-w) solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink);
+  font-weight: 700; transition: transform 0.12s;
+}
+.franchise-banner:hover { transform: translate(-1px, -1px); }
+.franchise-banner-icon { font-size: 1.4rem; }
+.franchise-banner-cta { margin-left: auto; color: var(--pink2); font-weight: 900; white-space: nowrap; }
+
+.wo-progress {
+  display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; padding: 12px 16px;
+  background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; font-weight: 700;
+}
+.wo-progress a { color: var(--pink2); }
+.watch-order { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wo-item {
+  display: grid; grid-template-columns: 2rem 56px 1fr; gap: 12px; align-items: center;
+  background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; padding: 10px 14px;
+}
+.wo-item--optional { background: var(--bg2); }
+.wo-item--skip { background: var(--bg2); opacity: 0.7; }
+.wo-item.is-done .wo-title::after { content: ' ✅'; }
+.wo-num { font-weight: 900; font-size: 1.1rem; color: var(--muted); text-align: center; }
+.wo-cover { width: 56px; height: 78px; object-fit: cover; border-radius: 8px; border: 2px solid var(--ink); background: var(--bg2); }
+.wo-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.wo-title { font-weight: 900; color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+a.wo-title:hover { color: var(--pink2); }
+.wo-meta { color: var(--muted); font-size: 0.8rem; font-weight: 700; }
+.wo-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.wo-tier { border: 2px solid var(--ink); border-radius: 8px; padding: 2px 8px; font-size: 0.7rem; font-weight: 800; background: var(--bg2); color: var(--text); }
+.wo-tier--essential { background: var(--purple); color: #fff; }
+.wo-tier--alt { background: var(--panel); }
+@media (max-width: 480px) {
+  .wo-item { grid-template-columns: 1.4rem 44px 1fr; gap: 10px; padding: 8px 10px; }
+  .wo-cover { width: 44px; height: 62px; }
+}

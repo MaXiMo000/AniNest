@@ -1,6 +1,7 @@
 import { jikanGet } from './jikan.js';
 import { anilistTopAnime, anilistSeasonNow, anilistSearch, anilistByMalId, anilistRandomish, anilistSchedule, anilistCharacters } from './anilist.js';
 import { animeThemesFor } from './animeThemes.js';
+import { themeSongsFromJikan } from './themeSongs.js';
 import { cached } from './cache.js';
 import { persistentCached } from './persistentCache.js';
 import { logger } from './logger.js';
@@ -17,6 +18,7 @@ const PERSIST = {
   list: 6 * 60 * 60 * 1000,        // top / season / schedule pages
   detail: 24 * 60 * 60 * 1000,     // one anime's detail, characters, recommendations
   themes: 7 * 24 * 60 * 60 * 1000, // opening/ending lists barely ever change
+  themeSongs: 30 * 24 * 60 * 60 * 1000, // MAL's song list, the fallback when AnimeThemes is down
 };
 
 const STATIC_GENRES = [
@@ -179,18 +181,33 @@ export function characters(id) {
   );
 }
 
-// No Jikan fallback - AnimeThemes.moe has no equivalent on either existing
-// source, so this is a single-source lookup like fullById's Jikan-specific
-// fields, just without a fallback at all. A show with nothing indexed
-// (brand new, or simply never added) resolves to an empty array, not an
-// error - confirmed directly against the live API.
-//
-// Persisted for a week and served stale when AnimeThemes is down (it has had
-// full outages): the opening/ending LIST for a show essentially never
-// changes. The video files themselves still come from AnimeThemes' own
-// host, so during an outage the list shows but playback may not work.
-export function themes(id) {
-  return cached(`themes:${id}`, TTL.detail, () => persistentCached(`anime:themes:${id}`, PERSIST.themes, () => animeThemesFor(Number(id))));
+// Openings/endings, in two layers:
+//  1. AnimeThemes.moe: creditless videos. The list is persisted for a week and
+//     served stale during an outage (though its video host is then down too).
+//  2. MyAnimeList's song list via Jikan (lib/themeSongs.js): titles, artists
+//     and episode ranges but no video. Used when AnimeThemes fails with no
+//     stored copy, or simply has nothing indexed for the show. The frontend
+//     then offers listen-elsewhere links instead of a player.
+// When AnimeThemes fails, it is skipped for a few minutes so every detail
+// page doesn't wait out its 8s timeout during a long outage.
+const ANIMETHEMES_COOLDOWN_MS = 5 * 60 * 1000;
+let animeThemesDownUntil = 0;
+
+export async function themes(id) {
+  if (Date.now() >= animeThemesDownUntil) {
+    try {
+      const data = await cached(`themes:${id}`, TTL.detail, () => persistentCached(`anime:themes:${id}`, PERSIST.themes, () => animeThemesFor(Number(id))));
+      if (data.length) return { data, source: 'animethemes' };
+    } catch (err) {
+      animeThemesDownUntil = Date.now() + ANIMETHEMES_COOLDOWN_MS;
+      logger.warn({ err, id }, 'AnimeThemes failed, falling back to the MyAnimeList song list');
+    }
+  }
+  const data = await cached(`theme-songs:${id}`, TTL.detail, () => persistentCached(`anime:theme-songs:${id}`, PERSIST.themeSongs, async () => {
+    const res = await jikanGet(`/anime/${id}/themes`);
+    return themeSongsFromJikan(res.data);
+  }));
+  return { data, source: 'myanimelist' };
 }
 
 export async function randomAnime() {

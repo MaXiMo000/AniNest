@@ -109,7 +109,8 @@ export const Favorites = {
     const entry = toEntry(anime, status);
     if (!entry.image && prev?.image) entry.image = prev.image;
 
-    byId.set(id, entry);
+    // Keep the progress fields the server still has; only the POST body is `entry`.
+    byId.set(id, { ...prev, ...entry });
     notify();
     try {
       await apiPost('/api/favorites', entry);
@@ -117,6 +118,33 @@ export const Favorites = {
     } catch {
       if (prev) byId.set(id, prev); else byId.delete(id);
       notify();
+      return { ok: false };
+    }
+  },
+
+  getProgress(id) {
+    const f = byId.get(Number(id));
+    return { watched: Number(f?.episodes_watched) || 0, total: f?.episodes ?? null };
+  },
+
+  // Saves "watched N episodes". An anime that isn't in the list yet is added
+  // as Watching first, since the server only tracks progress on list entries.
+  // `total` is the episode count the caller knows (null while airing). The
+  // server may change the status (reaching the total completes it), so the
+  // mirror takes status from its answer. Returns { ok, needsLogin, status }.
+  async setProgress(anime, watched, total) {
+    if (!Auth.get().user) return { ok: false, needsLogin: true };
+    const id = Number(anime.mal_id);
+    if (!byId.has(id)) {
+      const added = await this.setStatus(anime, 'watching');
+      if (!added.ok) return added;
+    }
+    try {
+      const res = await apiPost(`/api/favorites/${id}/progress`, { episodes_watched: watched, episodes: total ?? null });
+      byId.set(id, { ...byId.get(id), ...res });
+      notify();
+      return { ok: true, ...res };
+    } catch {
       return { ok: false };
     }
   },

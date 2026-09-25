@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as animeSource from '../lib/animeSource.js';
 import { db } from '../lib/db.js';
+import { franchiseForAnime } from '../lib/franchiseStore.js';
 
 export const animeRouter = Router();
 
@@ -83,7 +84,7 @@ animeRouter.get('/:id/characters', asyncRoute(async (req, res) => {
 animeRouter.get('/:id/themes', asyncRoute(async (req, res) => {
   const id = parseAnimeId(req.params.id);
   if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
-  res.json({ data: await animeSource.themes(id) });
+  res.json(await animeSource.themes(id)); // { data, source: 'animethemes' | 'myanimelist' }
 }));
 
 // Legal free-to-watch episode links (curated official YouTube uploads -
@@ -101,4 +102,18 @@ animeRouter.get('/:id/watch-sources', asyncRoute(async (req, res) => {
     args: [id],
   });
   res.json({ data: result.rows });
+}));
+
+// "Part of the X franchise" banner on the detail page. A first build walks
+// AniList and can take a while, so the frontend loads this after the page.
+// A failed build (AniList down or rate-limited) just means no banner.
+animeRouter.get('/:id/franchise', asyncRoute(async (req, res) => {
+  const id = parseAnimeId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid anime id.' });
+  try {
+    res.json(await franchiseForAnime(id));
+  } catch (err) {
+    req.log.warn({ err, id }, 'franchise lookup failed');
+    res.json({ data: null });
+  }
 }));

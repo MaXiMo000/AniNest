@@ -1,5 +1,6 @@
 // Numbers for the public profile's dashboard, from the favorites rows the
-// profile route returns (status, genres, episodes, type, score). Pure.
+// profile route returns (status, genres, episodes, episodes_watched, type,
+// score). Pure.
 
 const EPISODE_MINUTES = 24;
 
@@ -9,6 +10,14 @@ export const STATUS_ORDER = [
   { value: 'completed', emoji: '✅', label: 'Completed' },
   { value: 'dropped', emoji: '❌', label: 'Dropped' },
 ];
+
+// A completed show counts in full; anything else counts the episodes the
+// tracker says were watched (a dropped show still took the time up to the drop).
+function watchedEpisodes(f) {
+  const tracked = Number(f.episodes_watched) || 0;
+  if (f.status === 'completed') return Math.max(Number(f.episodes) || 0, tracked);
+  return tracked;
+}
 
 export function profileStats(favorites = []) {
   const byStatus = Object.fromEntries(STATUS_ORDER.map((s) => [s.value, 0]));
@@ -26,7 +35,7 @@ export function profileStats(favorites = []) {
       for (const g of f.genres) genres.set(g, (genres.get(g) || 0) + 1);
     }
     if (f.type) types.set(f.type, (types.get(f.type) || 0) + 1);
-    if (f.status === 'completed' && Number(f.episodes) > 0) episodesWatched += Number(f.episodes);
+    episodesWatched += watchedEpisodes(f);
     if (Number(f.score) > 0) { scoreSum += Number(f.score); scored += 1; }
   }
 

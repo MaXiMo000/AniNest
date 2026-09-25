@@ -313,6 +313,55 @@ await ensureColumn('favorites', 'status', 'TEXT');
 await ensureColumn('favorites', 'genres', 'TEXT');
 await ensureColumn('favorites', 'episodes', 'INTEGER');
 await ensureColumn('users', 'is_admin', 'INTEGER NOT NULL DEFAULT 0');
+// Episode progress on a tracked anime (routes/favorites.js /:malId/progress);
+// the show's length is the `episodes` column above, used to clamp
+// and to auto-complete; null while a show is still airing with no known total.
+await ensureColumn('favorites', 'episodes_watched', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('favorites', 'progress_at', 'TEXT');
+
+// One row per episode a user moved past in small steps (see favorites.js for
+// why big catch-up jumps are not logged). This is the time series that
+// "hours watched this year", drop-point stats and Wrapped are built from.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS episode_log (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    watched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, mal_id, episode)
+  );
+  CREATE INDEX IF NOT EXISTS idx_episode_log_user_time ON episode_log(user_id, watched_at);
+  CREATE INDEX IF NOT EXISTS idx_episode_log_mal ON episode_log(mal_id);
+
+  -- Franchise watch guides (lib/franchise.js builds them from AniList's typed
+  -- relations, lib/franchiseStore.js stores them). The id and slug stay stable
+  -- across rebuilds, because community watch orders (ROADMAP Phase 7) will
+  -- point at them. Entries are replaced wholesale on each rebuild. mal_id is
+  -- null for the few AniList entries MAL doesn't list.
+  CREATE TABLE IF NOT EXISTS franchises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    truncated INTEGER NOT NULL DEFAULT 0,
+    built_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS franchise_entries (
+    franchise_id INTEGER NOT NULL REFERENCES franchises(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    anilist_id INTEGER NOT NULL,
+    mal_id INTEGER,
+    title TEXT NOT NULL,
+    image TEXT,
+    format TEXT,
+    episodes INTEGER,
+    start_date TEXT,
+    tier TEXT NOT NULL,
+    alt INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (franchise_id, anilist_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_franchise_entries_mal ON franchise_entries(mal_id);
+  CREATE INDEX IF NOT EXISTS idx_franchise_entries_anilist ON franchise_entries(anilist_id);
+`);
 
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's
 // no signup flow for this, on purpose, so it's driven by an env var rather

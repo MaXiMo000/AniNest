@@ -31,7 +31,7 @@ backend/test/api.test.js   the integration suite
 render.yaml         Render Blueprint for both services, including the production CSP header
 ```
 
-**Frontend routes**: `/`, `/browse`, `/anime/:id`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
+**Frontend routes**: `/`, `/browse`, `/anime/:id`, `/franchise/:slug`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
 `/tier-list`, `/screenshot-search`, `/studio/:name`, `/person/:name`, `/u/:username`, `/account`, `/login`, `/register`,
 `/manga`, `/manga/:id`, `/manga-favorites`, `/games` (+ `/daily`, `/manga-daily`, `/higher-lower`, `/guess-the-anime`,
 `/quiz`, `/timeline`, `/name-that-opening`, `/emoji-plot`, `/cast-call`, `/studio-match`, `/source-guess`, `/stats`,
@@ -39,12 +39,12 @@ render.yaml         Render Blueprint for both services, including the production
 
 **API mounts** (`app.js`): `auth`, `favorites`, `anime`, `reviews`, `users`, `client-errors`, `games`, `recommendations`,
 `studios`, `people`, `import`, `screenshot-search`, `manga`, `manga-favorites`, `manga-reviews`, `notifications`,
-`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, and `GET /api/health`.
+`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, and `GET /api/health`.
 
 **Tables** (`lib/db.js`; `CREATE TABLE IF NOT EXISTS` at boot, new columns added with `ensureColumn`, no migration tool):
 `users`, `sessions`, `favorites`, `reviews`, `manga_favorites`, `manga_reviews`, `game_scores`, `game_runs`,
 `game_score_log`, `daily_challenges`, `daily_results`, `manga_daily_challenges`, `manga_daily_results`, `anime_watch_sources`, `watch_source_candidates`, `notifications`,
-`manga_chapter_state`, `api_cache`.
+`manga_chapter_state`, `api_cache`, `episode_log`, `franchises`, `franchise_entries`.
 
 ## Data sources and caching
 
@@ -98,16 +98,39 @@ curated official channels (Muse Asia, Ani-One Asia, Crunchyroll, with ids verifi
   and restart. `requireAdmin` answers non-admins with **404**, and the admin page shows the normal not-found page, so neither
   reveals that it exists.
 
-**OP/ED jukebox**: `GET /api/anime/:id/themes`. It loads *after* the rest of the page, so a dead host can't block the page.
-Openings sort first and OP1 is preselected. An outage shows "temporarily unavailable" with a retry button, which is worded
-differently from "this anime has none". The list is persisted, but the video files are hosted by AnimeThemes, so during an outage
-a cached list can appear while playback still fails.
+**OP/ED jukebox**: `GET /api/anime/:id/themes` returns `{ data, source }`. It loads *after* the rest of the page, so a dead host
+can't block the page. Two layers: AnimeThemes.moe (creditless videos, list persisted 7d), then MyAnimeList's song list via Jikan
+(`lib/themeSongs.js` parses strings like `1: "Again" by YUI (eps 1-14)`, persisted 30d) when AnimeThemes fails or has nothing
+for the show. After an AnimeThemes failure it is skipped for 5 minutes, so pages don't each wait out its 8s timeout. With only
+the song list, the page shows each song with YouTube Music and Spotify **search links** (no key, no embed, official releases).
+A cached video list can outlive AnimeThemes' video host, so the `<video>` error event reveals the same links. If both sources
+fail, the page says "temporarily unavailable" with a retry, which is worded differently from "this anime has none".
+There is no free replacement for the videos themselves: AnimeThemes is the only keyless source of creditless OP/ED video by MAL id.
 
 **XP and levels** (`lib/xp.js` is pure; `lib/xpStats.js` is the one DB loader, shared by the profile and the leaderboard). XP is
 derived from existing data and never stored, so it applies retroactively and can't be farmed by toggling favorites.
 `level = floor(sqrt(xp / 50)) + 1`. Sources and caps are in `XP_RULES`. Links count only when someone *else* approved them
 (`submitted_by != reviewed_by`), so admin imports earn nothing. The leaderboard is `GET /api/leaderboard/xp`, cached for 2 minutes.
-Watching an episode and reading a chapter aren't tracked because there's no reliable signal for either.
+Episode progress isn't an XP source yet (it would be trivially farmable).
+
+**Episode progress** (`POST /api/favorites/:malId/progress`). Stored on the favorites row (`episodes_watched`,
+with the length in the `episodes` column the profile dashboard also uses), so only titles already in the list have progress; the frontend adds a title as Watching first. Starting a
+show marks it Watching, reaching the total marks it Completed, stepping back off the end reopens it. Forward steps of up to 30
+episodes are also written to `episode_log`, one row per episode with a timestamp: that is the time series for Wrapped,
+drop-point stats and "hours watched". Bigger jumps are catch-ups and are not logged. See ROADMAP.md for what builds on it.
+
+**Franchise watch guides** (`lib/franchise.js` is pure; `lib/franchiseStore.js` stores and builds; `#/franchise/:slug`).
+`GET /api/anime/:id/franchise` powers a "Part of the X franchise" banner on detail pages, loaded after the page. The first
+request for any member walks AniList's typed relations breadth-first (one batched request per layer, 50 ids each, capped at 12
+requests / 80 entries, paced 2.2s, one build at a time). It follows sequel, prequel, parent, side story, spin-off, summary,
+alternative and compilation links; it ignores CHARACTER (crossover cameos), OTHER, SOURCE/ADAPTATION, adult entries, music videos
+and PV/CM specials. Default tiers: main-format entries (TV, movie, ONA) on a sequel chain are **essential**, a chain reached as a
+spin-off or side story is **optional** as a whole (all of Prisma Illya's seasons), recaps and compilation movies are **skip**, and
+alternative retellings are flagged. Ordered by release date, undated last. A build over 20s answers `{ pending: true }` and the
+page asks again once. Stand-alone shows are remembered for 7 days (`franchise-miss:` rows in `api_cache`) so they aren't re-walked.
+Guides older than 7 days are served and rebuilt in the background; the franchise **id and slug stay stable** across rebuilds
+because community orders (ROADMAP Phase 7) will reference them. `GET /api/franchises/:slug` never triggers a build.
+Mega-franchises (Gundam) hit the cap, and the page says so.
 
 **Games** (`pages/games/*`). Every game is listed once in `frontend/src/lib/gameCatalog.js` (hub, leaderboard picker,
 stats page) and every ranked slug once in `backend/src/lib/games.js` (`GAME_RULES`: time floor per round, optional score cap).
@@ -205,11 +228,11 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 - **Shell escaping**: the bash tool collapses doubled backslashes, which silently corrupted regexes written through heredocs or
   `python -c` (a `\b` became a backspace byte). Write source with the Write/Edit tools, and scan for control characters after any scripted edit.
 - `main.js` renders a loading state *before* awaiting auth, because pages read `Auth.get().user` synchronously on their first render.
-- All tests share one database, so pick an unused `mal_id` range for new tests. Taken: 20000-74999, 82000-82899, 83000-83099, 90000-90899, 91000-91899.
+- All tests share one database, so pick an unused `mal_id` range for new tests. Taken: 20000-74999, 82000-82899, 83000-83099, 90000-90899, 91000-91899, 92000-92999.
 
 ## Testing
 
-`cd backend && npm test` runs 94 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 99 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

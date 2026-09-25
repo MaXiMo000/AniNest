@@ -36,6 +36,9 @@ export const Api = {
   characters: (id) => cachedGet(`chars:${id}`, `/api/anime/${id}/characters`),
   themes: (id) => cachedGet(`themes:${id}`, `/api/anime/${id}/themes`),
   randomAnime: () => apiGet('/api/anime/random'),
+  // Not memoized: a first build can answer { pending: true }, and a retry must reach the server.
+  franchiseOf: (id) => apiGet(`/api/anime/${id}/franchise`),
+  franchise: (slug) => cachedGet(`franchise:${slug}`, `/api/franchises/${encodeURIComponent(slug)}`),
   studio: (name) => cachedGet(`studio:${name}`, `/api/studios/${encodeURIComponent(name)}`),
   person: (name) => cachedGet(`person:${name}`, `/api/people/${encodeURIComponent(name)}`),
 };

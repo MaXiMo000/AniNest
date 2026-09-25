@@ -41,7 +41,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
 
   const [favoritesResult, reviewsResult, xp] = await Promise.all([
     db.execute({
-      sql: 'SELECT mal_id, title, image, score, type, status, genres, episodes, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT 200',
+      sql: 'SELECT mal_id, title, image, score, type, status, genres, episodes, episodes_watched, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC LIMIT 200',
       args: [user.id],
     }),
     db.execute({

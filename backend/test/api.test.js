@@ -349,6 +349,64 @@ test('favorites: watch status can be set, changed, and cleared without wiping ot
   assert.equal(invalid.status, 400);
 });
 
+test('episode progress: auth, validation, and only for anime already in the list', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  const noAuth = await anon.post('/api/favorites/92001/progress', { csrf: true, body: { episodes_watched: 1 } });
+  assert.equal(noAuth.status, 401);
+
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const untracked = await agent.post('/api/favorites/92001/progress', { csrf: true, body: { episodes_watched: 1 } });
+  assert.equal(untracked.status, 404);
+
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92001, title: 'Progress Test' } });
+  for (const body of [{ episodes_watched: -1 }, { episodes_watched: 1.5 }, { episodes_watched: 5001 }, { episodes_watched: 2, episodes: 0 }, {}]) {
+    const bad = await agent.post('/api/favorites/92001/progress', { csrf: true, body });
+    assert.equal(bad.status, 400, `should reject ${JSON.stringify(body)}`);
+  }
+  const badId = await agent.post('/api/favorites/abc/progress', { csrf: true, body: { episodes_watched: 1 } });
+  assert.equal(badId.status, 400);
+});
+
+test('episode progress: clamps to the total, drives status, and logs only small steps', async () => {
+  const agent = makeAgent();
+  await agent.get('/api/health');
+  const reg = await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+  const userId = reg.json.user.id;
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92002, title: 'Twelve Episodes', status: 'plan_to_watch' } });
+  const logged = async () => (await db.execute({
+    sql: 'SELECT episode FROM episode_log WHERE user_id = ? AND mal_id = 92002 ORDER BY episode', args: [userId],
+  })).rows.map((r) => Number(r.episode));
+
+  let res = await agent.post('/api/favorites/92002/progress', { csrf: true, body: { episodes_watched: 3, episodes: 12 } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.json, { episodes_watched: 3, episodes: 12, status: 'watching' }, 'starting a planned show makes it watching');
+  assert.deepEqual(await logged(), [1, 2, 3]);
+
+  res = await agent.post('/api/favorites/92002/progress', { csrf: true, body: { episodes_watched: 40 } });
+  assert.equal(res.json.episodes_watched, 12, 'clamped to the saved total');
+  assert.equal(res.json.status, 'completed', 'reaching the last episode completes it');
+  assert.deepEqual(await logged(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+
+  res = await agent.post('/api/favorites/92002/progress', { csrf: true, body: { episodes_watched: 10 } });
+  assert.equal(res.json.status, 'watching', 'stepping back off the end reopens it');
+  assert.deepEqual(await logged(), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'stepping back trims the log');
+
+  const list = await agent.get('/api/favorites');
+  const fav = list.json.favorites.find((f) => f.mal_id === 92002);
+  assert.equal(fav.episodes_watched, 10);
+  assert.equal(fav.episodes, 12);
+
+  // Airing show with no known total, caught up in one big jump: saved, not logged.
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92003, title: 'Long Runner' } });
+  res = await agent.post('/api/favorites/92003/progress', { csrf: true, body: { episodes_watched: 900, episodes: null } });
+  assert.deepEqual(res.json, { episodes_watched: 900, episodes: null, status: 'watching' });
+  const bigJump = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM episode_log WHERE user_id = ? AND mal_id = 92003', args: [userId] });
+  assert.equal(Number(bigJump.rows[0].n), 0, 'a catch-up jump is not logged as watched today');
+});
+
 test('favorites rejects a javascript: URL for the image field', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');
@@ -1982,4 +2040,145 @@ test('dailies never repeat a recent answer, and still pick one when every item w
   const ids = await recentAnswers('daily_challenges', 'mal_id', 2, '1990-01-03');
   assert.deepEqual(ids.map(Number), [777002, 777001]);
   await db.execute("DELETE FROM daily_challenges WHERE date LIKE '1990-%'");
+});
+
+test('MAL theme songs parse into jukebox tracks (the AnimeThemes fallback)', async () => {
+  const { parseThemeSong, themeSongsFromJikan } = await import('../src/lib/themeSongs.js');
+  assert.deepEqual(parseThemeSong('1: "Again" by YUI (eps 1-14)', 'OP', 0),
+    { slug: 'OP1', type: 'OP', title: 'Again', artist: 'YUI', episodes: 'eps 1-14', videoUrl: null });
+  assert.deepEqual(parseThemeSong('2: "Guren no Yumiya (紅蓮の弓矢)" by Linked Horizon (eps 1-13, 25)', 'OP', 0),
+    { slug: 'OP2', type: 'OP', title: 'Guren no Yumiya (紅蓮の弓矢)', artist: 'Linked Horizon', episodes: 'eps 1-13, 25', videoUrl: null });
+  const unnumbered = parseThemeSong('"Kaikai Kitan" by Eve', 'OP', 0);
+  assert.equal(unnumbered.slug, 'OP1', 'no number means position order');
+  assert.equal(unnumbered.episodes, null);
+  assert.equal(parseThemeSong('"Lost in Paradise" by ALI feat. AKLO (ep 1)', 'ED', 2).artist, 'ALI feat. AKLO');
+  assert.equal(parseThemeSong('Untitled insert song', 'ED', 0).title, 'Untitled insert song', 'unquoted text is kept as the title');
+  assert.equal(parseThemeSong('', 'OP', 0), null);
+  assert.equal(parseThemeSong(null, 'OP', 0), null);
+
+  const tracks = themeSongsFromJikan({ openings: ['1: "Again" by YUI'], endings: ['1: "Uso" by SID', '2: "LET IT OUT" by Miho Fukuhara'] });
+  assert.deepEqual(tracks.map((t) => t.slug), ['OP1', 'ED1', 'ED2'], 'openings first');
+  assert.deepEqual(themeSongsFromJikan(null), []);
+});
+
+// A made-up franchise shaped like the real ones: a sequel chain, a side-story
+// OVA, a recap movie, a spin-off with its own sequel, an alternative retelling,
+// an announced sequel with no MAL id or date yet, plus things that must stay
+// out (the manga, a crossover cameo, a PV, an adult spin-off).
+function franchiseFixture(names = {}) {
+  const edge = (relationType, id, type = 'ANIME') => ({ relationType, node: { id, type } });
+  const node = (id, idMal, title, format, date, edges, extra = {}) => ({
+    id, idMal, format, episodes: format === 'TV' ? 12 : 1, isAdult: false,
+    title: { romaji: title, english: names[id] || title },
+    startDate: date ? { year: date[0], month: date[1], day: date[2] } : { year: null },
+    coverImage: { large: `https://s4.anilist.co/file/${id}.jpg` },
+    relations: { edges }, ...extra,
+  });
+  return [
+    node(1, 92101, 'Saga', 'TV', [2001, 4, 1], [edge('SEQUEL', 2), edge('SIDE_STORY', 3), edge('SUMMARY', 4), edge('SPIN_OFF', 5), edge('ALTERNATIVE', 6), edge('CHARACTER', 99), edge('ADAPTATION', 500, 'MANGA'), edge('SIDE_STORY', 9), edge('SIDE_STORY', 10)]),
+    node(2, 92102, 'Saga II', 'TV', [2003, 1, 5], [edge('PREQUEL', 1), edge('SEQUEL', 8)]),
+    node(3, 92103, 'Saga OVA', 'OVA', [2002, 1, 1], [edge('PARENT', 1)]),
+    node(4, 92104, 'Saga Recap Movie', 'MOVIE', [2002, 6, 1], [edge('PARENT', 1)]),
+    node(5, 92105, 'Saga Gaiden', 'TV', [2005, 1, 1], [edge('PARENT', 1), edge('SEQUEL', 7)]),
+    node(7, 92107, 'Saga Gaiden 2', 'TV', [2006, 1, 1], [edge('PREQUEL', 5)]),
+    node(6, 92106, 'Saga Brotherhood', 'TV', [2010, 1, 1], [edge('ALTERNATIVE', 1)]),
+    node(8, null, 'Saga III', 'TV', null, [edge('PREQUEL', 2)]),
+    node(9, 92109, 'Saga PV', 'SPECIAL', [2000, 1, 1], [edge('PARENT', 1)]),
+    node(10, 92110, 'Saga After Dark', 'OVA', [2004, 1, 1], [edge('PARENT', 1)], { isAdult: true }),
+    node(99, 92199, 'Unrelated Crossover', 'TV', [2001, 1, 1], []),
+  ];
+}
+
+function fixtureFetcher(nodes) {
+  const calls = [];
+  const fn = async ({ ids, malIds }) => {
+    calls.push(ids || malIds);
+    return nodes.filter((n) => (ids ? ids.includes(n.id) : malIds.includes(n.idMal)));
+  };
+  return { fn, calls };
+}
+
+test('franchise walk + build: release order, default tiers, and what stays out', async () => {
+  const { walkFranchise, buildFranchise, slugify } = await import('../src/lib/franchise.js');
+  const { fn, calls } = fixtureFetcher(franchiseFixture());
+  const { nodes, truncated } = await walkFranchise(fn, 92102);
+  assert.equal(truncated, false);
+  assert.equal(calls.length, 4, 'one request per layer');
+  const built = buildFranchise(nodes);
+  assert.equal(built.name, 'Saga', 'named after the earliest essential entry');
+  assert.deepEqual(
+    built.entries.map((e) => [e.title, e.tier, e.alt]),
+    [
+      ['Saga', 'essential', false],
+      ['Saga OVA', 'optional', false],
+      ['Saga Recap Movie', 'skip', false],
+      ['Saga II', 'essential', false],
+      ['Saga Gaiden', 'optional', false],
+      ['Saga Gaiden 2', 'optional', false], // follows its spin-off chain, though it's a TV sequel
+      ['Saga Brotherhood', 'essential', true],
+      ['Saga III', 'essential', false], // undated goes last
+    ],
+  );
+  assert.equal(built.entries.at(-1).mal_id, null);
+
+  const capped = await walkFranchise(fixtureFetcher(franchiseFixture()).fn, 92101, { maxRequests: 1 });
+  assert.equal(capped.truncated, true);
+  assert.equal(capped.nodes.length, 1);
+  assert.equal((await walkFranchise(fixtureFetcher(franchiseFixture()).fn, 92101, { maxNodes: 3 })).nodes.length, 3);
+
+  const lone = await walkFranchise(fixtureFetcher(franchiseFixture()).fn, 92199);
+  assert.equal(buildFranchise(lone.nodes), null, 'a stand-alone show has no franchise');
+
+  assert.equal(slugify('Fate/stay night [Heaven’s Feel]'), 'fate-stay-night-heavens-feel');
+  assert.equal(slugify('Kidō Senshi Gundam'), 'kido-senshi-gundam');
+  assert.equal(slugify('∀'), 'franchise');
+});
+
+test('franchise API: built once from any member, served by slug, misses remembered, rebuilt in place', async () => {
+  const { setFranchiseFetcher } = await import('../src/lib/franchiseStore.js');
+  const agent = makeAgent();
+  let fixture = fixtureFetcher(franchiseFixture());
+  setFranchiseFetcher((batch) => fixture.fn(batch));
+  try {
+    const first = await agent.get('/api/anime/92102/franchise');
+    assert.equal(first.status, 200);
+    assert.deepEqual(first.json, { data: { slug: 'saga', name: 'Saga', entries: 8, essential: 4 } });
+
+    const callsAfterBuild = fixture.calls.length;
+    const sibling = await agent.get('/api/anime/92107/franchise');
+    assert.equal(sibling.json.data.slug, 'saga', 'another member resolves to the same franchise');
+    assert.equal(fixture.calls.length, callsAfterBuild, 'served from the database, no new walk');
+
+    const page = await agent.get('/api/franchises/saga');
+    assert.equal(page.status, 200);
+    assert.deepEqual(page.json.data.entries.map((e) => e.mal_id), [92101, 92103, 92104, 92102, 92105, 92107, 92106, null]);
+    assert.equal(page.json.data.entries[6].alt, true);
+    assert.equal(page.json.data.truncated, false);
+
+    const lone = await agent.get('/api/anime/92199/franchise');
+    assert.deepEqual(lone.json, { data: null });
+    const callsAfterMiss = fixture.calls.length;
+    await agent.get('/api/anime/92199/franchise');
+    assert.equal(fixture.calls.length, callsAfterMiss, 'a stand-alone show is not walked again');
+
+    assert.equal((await agent.get('/api/franchises/Bad_Slug!')).status, 400);
+    assert.equal((await agent.get('/api/franchises/no-such-franchise')).status, 404);
+    assert.equal((await agent.get('/api/anime/0/franchise')).status, 400);
+
+    // A stale guide is served immediately and rebuilt in the background,
+    // keeping its slug even when the name changes.
+    await db.execute("UPDATE franchises SET built_at = datetime('now', '-8 days') WHERE slug = 'saga'");
+    fixture = fixtureFetcher(franchiseFixture({ 1: 'Saga Reborn' }));
+    const stale = await agent.get('/api/anime/92101/franchise');
+    assert.equal(stale.json.data.name, 'Saga', 'the stored copy answers right away');
+    let rebuilt;
+    for (let i = 0; i < 50 && rebuilt?.name !== 'Saga Reborn'; i += 1) {
+      await new Promise((r) => setTimeout(r, 20));
+      rebuilt = (await agent.get('/api/franchises/saga')).json.data;
+    }
+    assert.equal(rebuilt.name, 'Saga Reborn');
+    assert.equal(rebuilt.slug, 'saga');
+  } finally {
+    setFranchiseFetcher(null);
+  }
 });

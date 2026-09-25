@@ -20,7 +20,7 @@ export async function animeThemesFor(malId) {
   url.searchParams.set('filter[has]', 'resources');
   url.searchParams.set('filter[resource][site]', 'MyAnimeList');
   url.searchParams.set('filter[resource][external_id]', String(malId));
-  url.searchParams.set('include', 'animethemes.animethemeentries.videos,animethemes.song');
+  url.searchParams.set('include', 'animethemes.animethemeentries.videos,animethemes.song.artists');
 
   // AnimeThemes.moe sits behind Cloudflare, which blocks Node's fetch()
   // default User-Agent as bot traffic (confirmed directly: the exact same
@@ -52,6 +52,7 @@ export async function animeThemesFor(malId) {
         slug: theme.slug, // e.g. "OP1", "ED2"
         type: theme.type, // "OP" | "ED"
         title: theme.song?.title || null,
+        artist: (theme.song?.artists || []).map((a) => a.name).filter(Boolean).join(', ') || null,
         videoUrl: video.link,
       };
     })

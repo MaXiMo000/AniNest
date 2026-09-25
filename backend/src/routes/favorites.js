@@ -12,7 +12,7 @@ function asyncRoute(fn) {
 
 favoritesRouter.get('/', asyncRoute(async (req, res) => {
   const result = await db.execute({
-    sql: 'SELECT mal_id, title, image, score, type, status, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC',
+    sql: 'SELECT mal_id, title, image, score, type, status, episodes, episodes_watched, added_at FROM favorites WHERE user_id = ? ORDER BY added_at DESC',
     args: [req.user.id],
   });
   res.json({ favorites: result.rows });
@@ -51,6 +51,8 @@ const addSchema = z.object({
 });
 
 const MAX_FAVORITES_PER_USER = 500;
+const MAX_EPISODES = 5000;
+const MAX_LOGGED_STEP = 30;
 
 favoritesRouter.post('/', asyncRoute(async (req, res) => {
   const parsed = addSchema.safeParse(req.body);
@@ -101,3 +103,57 @@ favoritesRouter.delete('/:malId', asyncRoute(async (req, res) => {
   await db.execute({ sql: 'DELETE FROM favorites WHERE user_id = ? AND mal_id = ?', args: [req.user.id, malId] });
   res.status(204).end();
 }));
+
+// Episode progress on an anime already in the list. `episodes` is the length
+// the client knows right now; null (airing, unknown) keeps the saved one, the
+// same rule as the list POST above. Moving onto a show marks it watching; reaching the
+// last episode marks it completed, and stepping back off the end reopens it.
+const progressSchema = z.object({
+  episodes_watched: z.number().int().min(0).max(MAX_EPISODES),
+  episodes: z.number().int().positive().max(MAX_EPISODES).nullable().optional(),
+});
+
+favoritesRouter.post('/:malId/progress', asyncRoute(async (req, res) => {
+  const malId = Number(req.params.malId);
+  if (!Number.isInteger(malId) || malId <= 0) return res.status(400).json({ error: 'Invalid anime id.' });
+  const parsed = progressSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
+
+  const existing = await db.execute({
+    sql: 'SELECT status, episodes_watched, episodes FROM favorites WHERE user_id = ? AND mal_id = ?',
+    args: [req.user.id, malId],
+  });
+  const row = existing.rows[0];
+  if (!row) return res.status(404).json({ error: 'Add this anime to your list first.' });
+
+  const total = parsed.data.episodes ?? row.episodes;
+  const watched = total ? Math.min(parsed.data.episodes_watched, total) : parsed.data.episodes_watched;
+  const previous = Number(row.episodes_watched) || 0;
+  const status = nextStatus(row.status, watched, total);
+
+  const statements = [{
+    sql: `UPDATE favorites SET episodes_watched = ?, episodes = ?, status = ?, progress_at = datetime('now')
+          WHERE user_id = ? AND mal_id = ?`,
+    args: [watched, total ?? null, status, req.user.id, malId],
+  }];
+  // Only small forward steps are logged as "watched now". Jumping 0 -> 500 is
+  // someone catching the tracker up on a show they watched years ago, and
+  // logging it as today would wreck any "watched this year" number.
+  if (watched > previous && watched - previous <= MAX_LOGGED_STEP) {
+    for (let ep = previous + 1; ep <= watched; ep += 1) {
+      statements.push({ sql: 'INSERT OR IGNORE INTO episode_log (user_id, mal_id, episode) VALUES (?, ?, ?)', args: [req.user.id, malId, ep] });
+    }
+  } else if (watched < previous) {
+    statements.push({ sql: 'DELETE FROM episode_log WHERE user_id = ? AND mal_id = ? AND episode > ?', args: [req.user.id, malId, watched] });
+  }
+  await db.batch(statements, 'write');
+
+  res.json({ episodes_watched: watched, episodes: total ?? null, status });
+}));
+
+function nextStatus(current, watched, total) {
+  if (total && watched >= total) return 'completed';
+  if (current === 'completed' && total && watched < total) return 'watching';
+  if (watched > 0 && (!current || current === 'plan_to_watch')) return 'watching';
+  return current ?? null;
+}

@@ -491,3 +491,25 @@ export async function anilistUserAnimeList(username) {
   }
   return entries;
 }
+
+// One batch of anime with their typed relations, for the franchise walker
+// (lib/franchise.js). Pass `ids` (AniList ids) or `malIds`, up to 50. Only one
+// list may be set: AniList answers a null list variable with a 500, so the
+// unused one is left out of `variables` entirely.
+export async function anilistMediaWithRelations({ ids, malIds }) {
+  const variables = ids ? { ids } : { malIds };
+  const data = await gql(`
+    query($ids: [Int], $malIds: [Int]) {
+      Page(perPage: 50) {
+        media(id_in: $ids, idMal_in: $malIds, type: ANIME) {
+          id idMal isAdult format episodes
+          title { romaji english }
+          startDate { year month day }
+          coverImage { large }
+          relations { edges { relationType(version: 2) node { id type } } }
+        }
+      }
+    }
+  `, variables);
+  return data.Page?.media || [];
+}

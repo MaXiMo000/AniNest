@@ -18,6 +18,23 @@ function statusBadge(status) {
   return meta ? `<span class="card-status">${meta.emoji} ${escapeHtml(meta.label)}</span>` : '';
 }
 
+// Progress bar (when the length is known) and a +1 button on shows being
+// watched. The click is handled by wireCardEvents in lib/ui.js.
+function progressHTML(f) {
+  const watched = Number(f.episodes_watched) || 0;
+  const total = Number(f.episodes) || null;
+  if (f.status !== 'watching' && !watched) return '';
+  const pct = total ? Math.round((watched / total) * 100) : 0;
+  return `
+    <div class="card-progress">
+      ${total ? `<div class="card-progress-bar" role="progressbar" aria-label="Episodes watched" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${watched}"><span style="width:${pct}%"></span></div>` : ''}
+      <div class="card-progress-row">
+        <span>Ep ${watched}${total ? ` / ${total}` : ''}</span>
+        ${f.status === 'watching' ? `<button class="card-progress-step" data-progress-id="${Number(f.mal_id) || 0}" aria-label="Watched one more episode of ${escapeHtml(f.title)}">+1</button>` : ''}
+      </div>
+    </div>`;
+}
+
 function favCard(f) {
   const id = Number(f.mal_id) || 0;
   return `
@@ -31,6 +48,7 @@ function favCard(f) {
       <div class="card-body">
         <div class="card-title">${escapeHtml(f.title)}</div>
         ${statusBadge(f.status)}
+        ${progressHTML(f)}
       </div>
     </article>`;
 }

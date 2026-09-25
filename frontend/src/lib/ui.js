@@ -221,6 +221,20 @@ export function wireCardEvents(container, { onOpen } = {}) {
       });
       return;
     }
+    // "+1 episode" on a library card (pages/favorites.js).
+    const stepBtn = e.target.closest('[data-progress-id]');
+    if (stepBtn) {
+      e.stopPropagation();
+      const id = Number(stepBtn.dataset.progressId);
+      const { watched, total } = Favorites.getProgress(id);
+      stepBtn.disabled = true;
+      Favorites.setProgress(Favorites.all()[id] || { mal_id: id }, watched + 1, total).then((result) => {
+        stepBtn.disabled = false;
+        if (!result.ok) showToast('Something went wrong — try again.');
+        else if (result.status === 'completed') showToast('Finished! 🎉 Moved to Completed.');
+      });
+      return;
+    }
     const card = e.target.closest('.anime-card');
     if (card) {
       if (onOpen) onOpen(Number(card.dataset.id));

@@ -2,6 +2,7 @@ import { route, notFound, startRouter, navigate, currentPath } from './lib/route
 import { renderHome } from './pages/home.js';
 import { renderBrowse } from './pages/browse.js';
 import { renderDetails } from './pages/details.js';
+import { renderFranchise } from './pages/franchise.js';
 import { renderFavorites } from './pages/favorites.js';
 import { renderSchedule } from './pages/schedule.js';
 import { renderLogin } from './pages/login.js';
@@ -86,6 +87,7 @@ Auth.subscribe(() => {
 route('/', () => renderHome(app));
 route('/browse', ({ params }) => renderBrowse(app, params));
 route('/anime/:id', ({ path }) => renderDetails(app, path.id));
+route('/franchise/:slug', ({ path }) => renderFranchise(app, path.slug));
 route('/favorites', () => renderFavorites(app));
 route('/schedule', ({ params }) => renderSchedule(app, params));
 route('/login', () => renderLogin(app));
