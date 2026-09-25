@@ -552,3 +552,44 @@ export async function anilistAiringForMalIds(malIds, from, to) {
   }
   return out;
 }
+
+// Vibe search (lib/vibeSearch.js). Tags come back with their rank (how
+// strongly AniList's voters say a tag applies) so results can show why they
+// matched. Unset filters are left out of `variables` (a null list is a 500).
+const VIBE_FIELDS = `${MEDIA_FIELDS} startDate { year } tags { name rank }`;
+
+export async function anilistVibeSearch(filters) {
+  const variables = Object.fromEntries(Object.entries(filters).filter(([, v]) => v != null && !(Array.isArray(v) && !v.length)));
+  const data = await gql(`
+    query($genres: [String], $notGenres: [String], $tags: [String], $notTags: [String], $epLt: Int, $epGt: Int,
+          $formats: [MediaFormat], $from: FuzzyDateInt, $to: FuzzyDateInt, $status: MediaStatus) {
+      Page(perPage: 24) {
+        media(type: ANIME, isAdult: false, genre_in: $genres, genre_not_in: $notGenres, tag_in: $tags, tag_not_in: $notTags,
+              minimumTagRank: 55, episodes_lesser: $epLt, episodes_greater: $epGt, format_in: $formats,
+              startDate_greater: $from, startDate_lesser: $to, status: $status, popularity_greater: 3000, sort: [SCORE_DESC]) {
+          ${VIBE_FIELDS}
+        }
+      }
+    }
+  `, variables);
+  return data.Page?.media || [];
+}
+
+// "like <title>": the best title match and its community recommendations.
+// Resolves to null when nothing matches the title.
+export async function anilistLikeCandidates(title) {
+  const data = await gqlOrNull(`
+    query($q: String) {
+      Media(search: $q, type: ANIME, sort: SEARCH_MATCH) {
+        idMal title { romaji english }
+        recommendations(sort: RATING_DESC, perPage: 25) { nodes { mediaRecommendation { ${VIBE_FIELDS} } } }
+      }
+    }
+  `, { q: title });
+  if (!data?.Media) return null;
+  return {
+    title: data.Media.title?.english || data.Media.title?.romaji,
+    malId: data.Media.idMal,
+    candidates: (data.Media.recommendations?.nodes || []).map((n) => n.mediaRecommendation).filter(Boolean),
+  };
+}

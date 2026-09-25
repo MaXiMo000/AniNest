@@ -104,11 +104,17 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 
 ## Phase 5: Vibe search
 
-- [ ] v1 `lib/vibeParser.js` (pure, heavily tested): "under N episodes", "short", "movie", "90s", "finished",
-      "no X", "like <title>", plus ~60 mood words mapped to AniList tags/genres (cozy gives Iyashikei and Slice of Life,
-      and so on) in `vibe_terms`
-- [ ] Query AniList with the filters; "like X" uses X's recommendations; results show why they matched
-- [ ] v2: optional `ANTHROPIC_API_KEY`, Haiku returns the same filter JSON (validated with zod, falls back to v1)
+- [x] v1 `lib/vibeParser.js` (pure, tested): "under N episodes", "short", "movie", "90s", "from 2019", "finished",
+      "no X", "like <title>", plus 142 words mapped to ONE AniList genre or tag each, in code (no `vibe_terms` table
+      until someone needs to edit it without a deploy). One tag per word because AniList's `genre_in`/`tag_in` are AND
+      (checked live): "cozy fantasy" is Iyashikei AND Fantasy
+- [x] Query AniList with the filters (tag rank ≥ 55, popularity > 3000, best score first); "like X" filters X's
+      community recommendations locally; every result lists why it matched; unrecognised words are shown back
+- [x] Page `#/vibe?q=...` (shareable), in More and on Browse; nothing understood offers a title search instead
+- [ ] v2: optional `ANTHROPIC_API_KEY`, Haiku returns the same filter JSON (validated with zod, falls back to v1).
+      Worth it only if the "didn't understand" words pile up in real searches
+- Also fixed on the way: the router gives every page a fresh container, so a slow page can no longer overwrite the
+  page the user moved on to
 
 ## Phase 6: Taste match and Watch together
 

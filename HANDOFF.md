@@ -31,7 +31,7 @@ backend/test/api.test.js   the integration suite
 render.yaml         Render Blueprint for both services, including the production CSP header
 ```
 
-**Frontend routes**: `/`, `/browse`, `/anime/:id`, `/franchise/:slug`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
+**Frontend routes**: `/`, `/browse`, `/vibe`, `/anime/:id`, `/franchise/:slug`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
 `/tier-list`, `/screenshot-search`, `/studio/:name`, `/person/:name`, `/u/:username`, `/account`, `/login`, `/register`,
 `/manga`, `/manga/:id`, `/manga-favorites`, `/games` (+ `/daily`, `/manga-daily`, `/higher-lower`, `/guess-the-anime`,
 `/quiz`, `/timeline`, `/name-that-opening`, `/emoji-plot`, `/cast-call`, `/studio-match`, `/source-guess`, `/stats`,
@@ -138,6 +138,14 @@ Guides older than 7 days are served and rebuilt in the background; the franchise
 because community orders (ROADMAP Phase 7) will reference them. `GET /api/franchises/:slug` never triggers a build.
 Mega-franchises (Gundam) hit the cap, and the page says so.
 
+**Vibe search** (`lib/vibeParser.js` is pure; `lib/vibeSearch.js`; `#/vibe?q=`). `GET /api/anime/vibe?q=` understands
+moods, genres, "no X", episode counts, "short", formats, decades and years, finished/airing, and "like <title>". Each
+vocabulary word maps to exactly one AniList genre or tag, because AniList's `genre_in` and `tag_in` are AND filters: several
+tags per word would demand all of them. Without "like", it is one AniList query (tag rank ≥ 55, popularity > 3000, best score
+first); with it, the liked show's community recommendations are filtered locally by `matchVibe`, which also produces each
+result's "why it matched" list. Results are cached 10 minutes per query. Nothing understood returns `understood: false`
+without calling AniList, and the page offers a title search. No AI is involved (a Haiku parser is ROADMAP Phase 5 v2).
+
 **Airing calendar** (`lib/calendar.js`, `lib/ics.js`; account page). `GET /api/calendar/link` (auth) returns a private
 `/api/calendar/<token>.ics` URL; `POST /api/calendar/link/rotate` replaces it. The feed needs no cookie (calendar apps send
 none), so the 32-character token in `users.calendar_token` is the credential. It is stored as-is so the link can be shown
@@ -225,6 +233,9 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 - A new third-party integration gets a small `lib/` client and a route, runs only on the backend, and is cached (`persistentCached`
   for bounded keys).
 - Pages set `document.title` while rendering; the router resets it to the default first.
+- Every route handler gets `{ params, path, root }`, where `root` is a fresh element the router just put in `#app`. Render
+  into `root`, never `#app`: a page still loading when the user navigates away then finishes into a detached element
+  instead of overwriting the new page. `params` is a `URLSearchParams` (use `params.get('q')`).
 - The frontend `ApiError` carries extra JSON fields from error responses (`err.quotaExceeded`, `err.notConfigured`, ...).
 
 ## Gotchas that cost real time
@@ -245,7 +256,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 102 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 105 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

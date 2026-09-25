@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as animeSource from '../lib/animeSource.js';
 import { db } from '../lib/db.js';
 import { franchiseForAnime } from '../lib/franchiseStore.js';
+import { vibeSearch } from '../lib/vibeSearch.js';
 
 export const animeRouter = Router();
 
@@ -57,6 +58,15 @@ animeRouter.get('/schedule', asyncRoute(async (req, res) => {
 
 animeRouter.get('/genres', asyncRoute(async (_req, res) => {
   res.json(await animeSource.genres());
+}));
+
+// Plain-English search ("cozy fantasy, under 13 episodes, no romance"). See
+// lib/vibeParser.js for what's understood; `understood: false` means nothing
+// was, and the frontend falls back to a title search.
+animeRouter.get('/vibe', asyncRoute(async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!q || q.length > 200) return res.status(400).json({ error: 'Describe what you want to watch in up to 200 characters.' });
+  res.json(await vibeSearch(q));
 }));
 
 animeRouter.get('/random', asyncRoute(async (_req, res) => {

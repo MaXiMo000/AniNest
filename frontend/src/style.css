@@ -2462,3 +2462,18 @@ a.wo-title:hover { color: var(--pink2); }
   padding: 6px 10px; border: 2.5px solid var(--ink); border-radius: 10px;
   background: var(--bg2); color: var(--text); font-weight: 700; font-family: inherit;
 }
+
+/* Vibe search */
+.vibe-form { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.vibe-form input {
+  flex: 1; min-width: 0; padding: 14px 16px; font-size: 1.05rem; font-weight: 700; font-family: inherit;
+  border: var(--border-w) solid var(--ink); border-radius: 12px; background: var(--bg2); color: var(--text);
+}
+.vibe-examples { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+.vibe-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.vibe-chip { border: 2px solid var(--ink); border-radius: 999px; padding: 4px 12px; font-weight: 800; font-size: 0.85rem; background: var(--panel); color: var(--text); }
+.vibe-chip--include { background: var(--purple); color: #fff; }
+.vibe-chip--exclude { background: var(--pink-deep); color: #fff; }
+.vibe-result { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vibe-reasons { display: flex; gap: 4px; flex-wrap: wrap; font-size: 0.72rem; font-weight: 800; color: var(--muted); }
+.vibe-reasons span { background: var(--bg2); border: 2px solid var(--ink); border-radius: 8px; padding: 1px 6px; }

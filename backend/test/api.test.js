@@ -2290,3 +2290,103 @@ test('free-watch region check: stores region lists, expires dead links, restores
     setAvailabilityChecker(null);
   }
 });
+
+test('vibe parser: moods, genres, negation, episodes, formats, years, status and "like"', async () => {
+  const { parseVibe, isEmptyVibe } = await import('../src/lib/vibeParser.js');
+  const now = new Date('2026-09-26');
+  const p = (q) => parseVibe(q, { now });
+
+  let v = p('Cozy fantasy, under 13 episodes, no romance, like Frieren');
+  assert.deepEqual([v.genres, v.tags, v.excludeGenres, v.maxEpisodes, v.like], [['Fantasy'], ['Iyashikei'], ['Romance'], 13, 'Frieren']);
+  assert.deepEqual(v.unknown, []);
+
+  v = p('dark sci-fi movie from the 90s');
+  assert.deepEqual([v.genres, v.tags, v.formats, v.yearFrom, v.yearTo], [['Sci-Fi'], ['Tragedy'], ['MOVIE'], 1990, 1999]);
+  assert.equal(p('something from the 2010s').yearFrom, 2010);
+  assert.deepEqual([p('mecha from 2019').yearFrom, p('mecha from 2019').yearTo], [2019, 2019], '"from YEAR" is that year');
+  assert.deepEqual([p('mecha after 2015').yearFrom, p('mecha after 2015').yearTo], [2015, null]);
+  assert.equal(p('mecha before 2000').yearTo, 1999);
+  assert.equal(p('recent isekai').yearFrom, 2022);
+  assert.equal(p('classic horror').yearTo, 2005);
+
+  v = p('short sports anime');
+  assert.deepEqual([v.maxEpisodes, v.minEpisodes], [13, 2], '"short" means a short series, not a one-episode movie');
+  assert.deepEqual([p('short movie').minEpisodes, p('short movie').formats], [null, ['MOVIE']]);
+  assert.equal(p('at least 50 episodes of action').minEpisodes, 50);
+  assert.equal(p('24 episodes or less').maxEpisodes, 24);
+
+  v = p('mind-bending thriller without too much gore, finished');
+  assert.deepEqual([v.genres, v.excludeTags, v.status], [['Psychological', 'Thriller'], ['Gore'], 'FINISHED']);
+  assert.deepEqual(p('non-isekai fantasy').excludeTags, ['Isekai']);
+  assert.deepEqual(p('slice of life').genres, ['Slice of Life'], 'multi-word terms win over their parts');
+  assert.deepEqual(p('ecchi harem').genres, [], 'fanservice is only ever excluded');
+  assert.deepEqual(p('no fanservice').excludeGenres, ['Ecchi']);
+
+  assert.equal(p('I would like a romantic comedy').like, null, '"I would like" is not a title');
+  assert.equal(p('similar to Mushishi but darker').like, 'Mushishi');
+  assert.deepEqual(p('similar to Mushishi but darker').tags, ['Tragedy']);
+
+  assert.ok(isEmptyVibe(p('blorp zzz')));
+  assert.deepEqual(p('blorp zzz').unknown, ['blorp', 'zzz']);
+});
+
+test('vibe match: filters are hard, reasons say why', async () => {
+  const { matchVibe } = await import('../src/lib/vibeSearch.js');
+  const { parseVibe } = await import('../src/lib/vibeParser.js');
+  const show = {
+    genres: ['Fantasy', 'Adventure'], tags: [{ name: 'Iyashikei', rank: 80 }, { name: 'Romance', rank: 20 }],
+    episodes: 12, format: 'TV', status: 'FINISHED', startDate: { year: 2019 },
+  };
+  assert.deepEqual(matchVibe(show, parseVibe('cozy fantasy under 13 episodes, finished, from 2019')), ['Fantasy', 'Iyashikei', '12 eps', '2019', 'Finished']);
+  assert.equal(matchVibe(show, parseVibe('cozy fantasy under 10 episodes')), null);
+  assert.equal(matchVibe(show, parseVibe('romance')), null);
+  assert.equal(matchVibe({ ...show, tags: [{ name: 'Iyashikei', rank: 30 }] }, parseVibe('cozy')), null, 'a weak tag does not count');
+  assert.equal(matchVibe(show, parseVibe('no adventure')), null);
+  assert.equal(matchVibe({ ...show, episodes: null }, parseVibe('short fantasy')), null, 'unknown length fails a length filter');
+});
+
+test('vibe search API: validation, the not-understood path, filters and "like"', async () => {
+  const { setVibeSources } = await import('../src/lib/vibeSearch.js');
+  const media = (idMal, extra = {}) => ({
+    id: idMal, idMal, title: { english: `Show ${idMal}` }, genres: ['Fantasy'], tags: [{ name: 'Iyashikei', rank: 90 }],
+    episodes: 12, format: 'TV', status: 'FINISHED', startDate: { year: 2020 }, coverImage: {}, ...extra,
+  });
+  const calls = [];
+  setVibeSources({
+    vibe: async (filters) => { calls.push(['vibe', filters]); return [media(92401), media(92402)]; },
+    like: async (title) => {
+      calls.push(['like', title]);
+      return title === 'Nothing Real' ? null : { title: 'Frieren', malId: 52991, candidates: [media(92403), media(92404, { status: 'RELEASING' })] };
+    },
+  });
+  const agent = makeAgent();
+  try {
+    assert.equal((await agent.get('/api/anime/vibe')).status, 400);
+    assert.equal((await agent.get(`/api/anime/vibe?q=${'a'.repeat(201)}`)).status, 400);
+
+    const nothing = await agent.get('/api/anime/vibe?q=blorp%20zzz');
+    assert.equal(nothing.json.understood, false);
+    assert.equal(calls.length, 0, 'nothing understood, nothing asked of AniList');
+
+    const cozy = await agent.get(`/api/anime/vibe?q=${encodeURIComponent('cozy fantasy under 13 episodes, no romance')}`);
+    assert.equal(cozy.status, 200);
+    assert.deepEqual(calls.at(-1), ['vibe', {
+      genres: ['Fantasy'], notGenres: ['Romance'], tags: ['Iyashikei'], notTags: [], epLt: 14, epGt: null, formats: [],
+      from: null, to: null, status: null,
+    }]);
+    assert.deepEqual(cozy.json.data.map((a) => a.mal_id), [92401, 92402]);
+    assert.deepEqual(cozy.json.data[0].vibe_reasons, ['Fantasy', 'Iyashikei', 'no Romance', '12 eps']);
+    assert.ok(cozy.json.parsed.chips.some((c) => c.label === 'no romance' && c.type === 'exclude'));
+
+    const like = await agent.get(`/api/anime/vibe?q=${encodeURIComponent('like Frieren but finished')}`);
+    assert.deepEqual(like.json.like, { title: 'Frieren', malId: 52991 });
+    assert.deepEqual(like.json.data.map((a) => a.mal_id), [92403], 'the airing recommendation is filtered out');
+    assert.deepEqual(like.json.data[0].vibe_reasons, ['like Frieren', 'Finished']);
+
+    const missing = await agent.get(`/api/anime/vibe?q=${encodeURIComponent('like Nothing Real, cozy')}`);
+    assert.deepEqual(missing.json.like, { notFound: 'Nothing Real' });
+    assert.equal(calls.at(-1)[0], 'vibe', 'an unknown title falls back to the other filters');
+  } finally {
+    setVibeSources(null);
+  }
+});

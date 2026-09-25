@@ -139,6 +139,7 @@ export async function renderBrowse(root, params) {
       <div class="section-head">
         <h2 class="section-title">🧭 ${escapeHtml(titleLabel)}</h2>
         <span class="section-sub">${list.length ? `Showing ${list.length} results` : ''}</span>
+        <a href="#/vibe" class="chip">✨ Search by vibe</a>
         <a href="#/screenshot-search" class="chip">📸 Search by screenshot</a>
       </div>
       ${toolbarHTML(state, genresList)}

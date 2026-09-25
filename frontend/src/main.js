@@ -3,6 +3,7 @@ import { renderHome } from './pages/home.js';
 import { renderBrowse } from './pages/browse.js';
 import { renderDetails } from './pages/details.js';
 import { renderFranchise } from './pages/franchise.js';
+import { renderVibe } from './pages/vibe.js';
 import { renderFavorites } from './pages/favorites.js';
 import { renderSchedule } from './pages/schedule.js';
 import { renderLogin } from './pages/login.js';
@@ -84,40 +85,41 @@ Auth.subscribe(() => {
   if (currentPath() === '/account') renderAccount(app);
 });
 
-route('/', () => renderHome(app));
-route('/browse', ({ params }) => renderBrowse(app, params));
-route('/anime/:id', ({ path }) => renderDetails(app, path.id));
-route('/franchise/:slug', ({ path }) => renderFranchise(app, path.slug));
-route('/favorites', () => renderFavorites(app));
-route('/schedule', ({ params }) => renderSchedule(app, params));
-route('/login', () => renderLogin(app));
-route('/register', () => renderRegister(app));
-route('/account', () => renderAccount(app));
-route('/u/:username', ({ path }) => renderProfile(app, path.username));
-route('/studio/:name', ({ path }) => renderStudio(app, path.name));
-route('/person/:name', ({ path }) => renderPerson(app, path.name));
-route('/screenshot-search', () => renderScreenshotSearch(app));
-route('/tier-list', () => renderTierList(app));
-route('/games', () => renderGamesHub(app));
-route('/games/daily', () => renderDailyChallenge(app));
-route('/games/manga-daily', () => renderMangaDailyChallenge(app));
-route('/games/higher-lower', ({ params }) => renderHigherLower(app, params));
-route('/games/guess-the-anime', ({ params }) => renderGuessTheAnime(app, params));
-route('/games/quiz', () => renderQuiz(app));
-route('/games/timeline', ({ params }) => renderTimeline(app, params));
+route('/', ({ root }) => renderHome(root));
+route('/browse', ({ params, root }) => renderBrowse(root, params));
+route('/vibe', ({ params, root }) => renderVibe(root, params));
+route('/anime/:id', ({ path, root }) => renderDetails(root, path.id));
+route('/franchise/:slug', ({ path, root }) => renderFranchise(root, path.slug));
+route('/favorites', ({ root }) => renderFavorites(root));
+route('/schedule', ({ params, root }) => renderSchedule(root, params));
+route('/login', ({ root }) => renderLogin(root));
+route('/register', ({ root }) => renderRegister(root));
+route('/account', ({ root }) => renderAccount(root));
+route('/u/:username', ({ path, root }) => renderProfile(root, path.username));
+route('/studio/:name', ({ path, root }) => renderStudio(root, path.name));
+route('/person/:name', ({ path, root }) => renderPerson(root, path.name));
+route('/screenshot-search', ({ root }) => renderScreenshotSearch(root));
+route('/tier-list', ({ root }) => renderTierList(root));
+route('/games', ({ root }) => renderGamesHub(root));
+route('/games/daily', ({ root }) => renderDailyChallenge(root));
+route('/games/manga-daily', ({ root }) => renderMangaDailyChallenge(root));
+route('/games/higher-lower', ({ params, root }) => renderHigherLower(root, params));
+route('/games/guess-the-anime', ({ params, root }) => renderGuessTheAnime(root, params));
+route('/games/quiz', ({ root }) => renderQuiz(root));
+route('/games/timeline', ({ params, root }) => renderTimeline(root, params));
 for (const slug of ['studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']) {
   route(`/games/${slug}`, ({ params }) => renderChoiceGame(app, slug, params));
 }
-route('/games/leaderboard/:game', ({ path, params }) => renderLeaderboard(app, path.game, params));
-route('/games/stats', () => renderGameStats(app));
-route('/compare', () => renderCompare(app));
-route('/leaderboard/xp', () => renderXpLeaderboard(app));
-route('/notifications', () => renderNotifications(app));
-route('/manga', ({ params }) => renderMangaBrowse(app, params));
-route('/manga/:id', ({ path }) => renderMangaDetail(app, path.id));
-route('/manga-favorites', () => renderMangaFavorites(app));
-route('/anime/:id/submit-watch-link', ({ path }) => renderWatchSourceSubmit(app, path.id));
-route('/admin/watch-sources', () => renderWatchSourcesAdmin(app));
+route('/games/leaderboard/:game', ({ path, params, root }) => renderLeaderboard(root, path.game, params));
+route('/games/stats', ({ root }) => renderGameStats(root));
+route('/compare', ({ root }) => renderCompare(root));
+route('/leaderboard/xp', ({ root }) => renderXpLeaderboard(root));
+route('/notifications', ({ root }) => renderNotifications(root));
+route('/manga', ({ params, root }) => renderMangaBrowse(root, params));
+route('/manga/:id', ({ path, root }) => renderMangaDetail(root, path.id));
+route('/manga-favorites', ({ root }) => renderMangaFavorites(root));
+route('/anime/:id/submit-watch-link', ({ path, root }) => renderWatchSourceSubmit(root, path.id));
+route('/admin/watch-sources', ({ root }) => renderWatchSourcesAdmin(root));
 
 notFound(() => {
   app.innerHTML = emptyHTML('This page wandered off into the filler dimension.', '🌀');
@@ -143,7 +145,7 @@ async function boot() {
   updateFavCount();
   updateMangaFavCount();
   Notifications.startPolling();
-  startRouter();
+  startRouter(app);
 }
 boot();
 

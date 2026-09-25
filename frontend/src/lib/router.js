@@ -44,6 +44,11 @@ function saveScrollForOldHash(e) {
   } catch { /* malformed oldURL - nothing worth restoring for */ }
 }
 
+// Each navigation renders into a fresh container inside the outlet. A page
+// still loading when the user moves on then finishes into a detached
+// element instead of overwriting the page they moved to.
+let outlet = null;
+
 async function dispatch() {
   const { path, params } = parseHash();
   const fullHash = window.location.hash.slice(1) || '/';
@@ -65,7 +70,9 @@ async function dispatch() {
     if (match) {
       const namedParams = {};
       r.paramNames.forEach((name, i) => { namedParams[name] = decodeURIComponent(match[i + 1]); });
-      await r.handler({ params, path: namedParams });
+      const root = document.createElement('div');
+      outlet.replaceChildren(root);
+      await r.handler({ params, path: namedParams, root });
       if (isRestoring) {
         const savedY = scrollPositions.get(fullHash);
         // Wait a frame so the just-rendered page has its real layout height
@@ -88,7 +95,8 @@ function highlightNav(path, params) {
   });
 }
 
-export function startRouter() {
+export function startRouter(el) {
+  outlet = el;
   window.addEventListener('hashchange', saveScrollForOldHash);
   window.addEventListener('popstate', () => {
     restoreHash = window.location.hash.slice(1) || '/';
