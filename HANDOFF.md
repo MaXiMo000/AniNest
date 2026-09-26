@@ -138,6 +138,13 @@ Guides older than 7 days are served and rebuilt in the background; the franchise
 because community orders (ROADMAP Phase 7) will reference them. `GET /api/franchises/:slug` never triggers a build.
 Mega-franchises (Gundam) hit the cap, and the page says so.
 
+**Taste match** (`lib/taste.js` is pure; `lib/favoriteGenres.js`). `GET /api/users/:username/taste-match` (signed in, not
+yourself) compares the viewer with that user: cosine similarity of genre profiles (each favorite's genres weighted by its
+review score, or its status when unreviewed; dropped counts against) blended with agreement on shows both have listed, which
+reaches full weight at 10 shared shows. Both lists need 5+ favorites, otherwise `match` is null. Favorites saved before
+genres were stored are filled from AniList on first use (up to 100 per user per call) and saved, `[]` when AniList has none.
+Shown as a banner on other people's profiles.
+
 **Vibe search** (`lib/vibeParser.js` is pure; `lib/vibeSearch.js`; `#/vibe?q=`). `GET /api/anime/vibe?q=` understands
 moods, genres, "no X", episode counts, "short", formats, decades and years, finished/airing, and "like <title>". Each
 vocabulary word maps to exactly one AniList genre or tag, because AniList's `genre_in` and `tag_in` are AND filters: several
@@ -256,7 +263,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 105 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 107 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

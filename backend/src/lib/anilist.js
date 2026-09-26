@@ -593,3 +593,15 @@ export async function anilistLikeCandidates(title) {
     candidates: (data.Media.recommendations?.nodes || []).map((n) => n.mediaRecommendation).filter(Boolean),
   };
 }
+
+// Genre names for up to 50 MAL ids per request, as Map(malId -> [names]).
+export async function anilistGenresForMalIds(malIds) {
+  const out = new Map();
+  for (let i = 0; i < malIds.length; i += 50) {
+    const data = await gql(`
+      query($malIds: [Int]) { Page(perPage: 50) { media(idMal_in: $malIds, type: ANIME) { idMal genres } } }
+    `, { malIds: malIds.slice(i, i + 50) });
+    for (const m of data.Page?.media || []) out.set(m.idMal, m.genres || []);
+  }
+  return out;
+}

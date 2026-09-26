@@ -4,6 +4,37 @@ import { MangaApi } from '../lib/mangaApi.js';
 import { mangaImg } from '../lib/mangaImage.js';
 import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
 import { profileStats, STATUS_ORDER } from '../lib/profileStats.js';
+import { Auth } from '../lib/authStore.js';
+
+// "You and alex: 82% taste match" for a signed-in visitor on someone else's
+// profile (backend/src/lib/taste.js). Loaded after the page; any failure just
+// leaves the slot empty.
+async function loadTasteMatch(root, username) {
+  const slot = root.querySelector('#taste-match');
+  const me = Auth.get().user;
+  if (!slot || !me || me.username.toLowerCase() === username.toLowerCase()) return;
+  let res;
+  try {
+    res = await Users.tasteMatch(username);
+  } catch {
+    return;
+  }
+  if (!slot.isConnected) return;
+  const m = res.match;
+  const name = escapeHtml(username);
+  if (!m) {
+    slot.innerHTML = `<div class="taste-match"><p class="muted-note">Add at least ${Number(res.minList)} anime to both your lists to see how your tastes compare.</p></div>`;
+    return;
+  }
+  const titles = (list) => list.map((a) => `<a href="#/anime/${Number(a.mal_id)}">${escapeHtml(a.title)}</a>`).join(', ');
+  slot.innerHTML = `
+    <div class="taste-match">
+      <div class="taste-match-score"><strong>${Number(m.percent)}%</strong> taste match 🎯</div>
+      <p>You and ${name}${m.sharedGenres.length ? ` both lean ${m.sharedGenres.map(escapeHtml).join(', ')}` : ''}${m.shared ? ` · ${Number(m.shared)} shared ${m.shared === 1 ? 'show' : 'shows'}` : ''}.</p>
+      ${m.bothLove.length ? `<p>💞 You both love: ${titles(m.bothLove)}</p>` : ''}
+      ${m.disagree.length ? `<p>⚔️ You disagree on: ${titles(m.disagree)}</p>` : ''}
+    </div>`;
+}
 
 // Public profiles show up to this many reviews, each enriched with the
 // anime's title/poster via our own cached anime proxy (fine at this size —
@@ -157,6 +188,8 @@ export async function renderProfile(root, username) {
       <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
     </div>
 
+    <div id="taste-match"></div>
+
     ${dashboardHTML(favorites)}
 
     <section class="section">
@@ -177,4 +210,5 @@ export async function renderProfile(root, username) {
       ${shownMangaReviews.map((r) => mangaReviewRowHTML(r, mangaById.get(r.manga_id))).join('')}
     </section>` : ''}
   `;
+  loadTasteMatch(root, user.username);
 }

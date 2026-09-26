@@ -118,9 +118,12 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 
 ## Phase 6: Taste match and Watch together
 
-- [ ] Taste vector: genres/tags of favorites (weighted by status and review score) batch-loaded from AniList and cached
-- [ ] Match % = cosine of vectors blended with rating agreement on shared shows (full weight at 10 shared)
-- [ ] Profile banner: "You and alex: 82% match. You both love... You disagree on..."
+- [x] Taste vector: genres of favorites weighted by review score, else status (dropped counts against). Favorites saved
+      before genres were stored get them from AniList once (`lib/favoriteGenres.js`) and keep them. Taste Quiz results
+      live only in the browser, so they aren't used
+- [x] Match % = cosine of vectors blended with rating agreement on shared shows (full weight at 10 shared); needs 5+
+      favorites on both sides
+- [x] Profile banner: "82% taste match · you both lean Fantasy · You both love... · You disagree on..."
 - [ ] Rooms: `rooms`, `room_members` (guest allowed), `room_votes`; 24h expiry; 10-card swipe; score = min member
       prediction blended with the mean; exclude anything anyone has seen or vetoed
 

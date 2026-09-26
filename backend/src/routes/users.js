@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { xpForUser } from '../lib/xpStats.js';
+import { requireAuth } from '../middleware/session.js';
+import { tasteMatch, MIN_LIST } from '../lib/taste.js';
+import { fillMissingGenres } from '../lib/favoriteGenres.js';
 
 export const usersRouter = Router();
 
@@ -64,4 +67,32 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
     badges,
     xp: xp ? xpSummary : null,
   });
+}));
+
+async function tasteInput(userId) {
+  const [favs, reviews] = await Promise.all([
+    db.execute({ sql: 'SELECT mal_id, title, image, status, genres FROM favorites WHERE user_id = ?', args: [userId] }),
+    db.execute({ sql: 'SELECT mal_id, rating FROM reviews WHERE user_id = ?', args: [userId] }),
+  ]);
+  return {
+    favorites: favs.rows.map((f) => ({ ...f, mal_id: Number(f.mal_id), genres: parseGenres(f.genres) })),
+    ratings: new Map(reviews.rows.map((r) => [Number(r.mal_id), Number(r.rating)])),
+  };
+}
+
+// "You and alex: 82% taste match" on a profile, for the signed-in viewer.
+// `match` is null when either list is shorter than `minList`.
+usersRouter.get('/:username/taste-match', requireAuth, asyncRoute(async (req, res) => {
+  const { username } = req.params;
+  if (!USERNAME_RE.test(username)) return res.status(404).json({ error: 'User not found.' });
+  const found = await db.execute({ sql: 'SELECT id FROM users WHERE username = ?', args: [username] });
+  const other = found.rows[0];
+  if (!other) return res.status(404).json({ error: 'User not found.' });
+  if (Number(other.id) === req.user.id) return res.status(400).json({ error: 'That’s you!' });
+
+  // Older favorites have no genres yet; without them the match is rougher, not wrong.
+  await Promise.all([fillMissingGenres(req.user.id), fillMissingGenres(Number(other.id))])
+    .catch((err) => req.log.warn({ err }, 'genre backfill failed - matching with what we have'));
+  const [mine, theirs] = await Promise.all([tasteInput(req.user.id), tasteInput(Number(other.id))]);
+  res.json({ match: tasteMatch(mine, theirs), minList: MIN_LIST });
 }));

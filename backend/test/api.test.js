@@ -2390,3 +2390,71 @@ test('vibe search API: validation, the not-understood path, filters and "like"',
     setVibeSources(null);
   }
 });
+
+test('taste match: genre profile, agreement on shared shows, weighting by overlap', async () => {
+  const { tasteMatch } = await import('../src/lib/taste.js');
+  const fav = (mal_id, status, genres) => ({ mal_id, title: `Show ${mal_id}`, status, genres });
+  const user = (favorites, ratings = {}) => ({ favorites, ratings: new Map(Object.entries(ratings).map(([k, v]) => [Number(k), v])) });
+
+  const fantasyFan = user([1, 2, 3, 4, 5].map((i) => fav(i, 'completed', ['Fantasy', 'Adventure'])));
+  const alsoFantasy = user([6, 7, 8, 9, 10].map((i) => fav(i, 'completed', ['Fantasy'])));
+  const sportsFan = user([11, 12, 13, 14, 15].map((i) => fav(i, 'completed', ['Sports'])));
+  assert.ok(tasteMatch(fantasyFan, alsoFantasy).percent >= 70, 'same genres, no shared shows: a high genre match');
+  assert.equal(tasteMatch(fantasyFan, sportsFan).percent, 0);
+  assert.equal(tasteMatch(fantasyFan, user([fav(1, 'completed', ['Fantasy'])])), null, 'too short a list says nothing');
+
+  // Ten shared shows rated the same: agreement carries full weight.
+  const twins = (r) => user([...Array(10)].map((_, i) => fav(100 + i, 'completed', ['Drama'])), Object.fromEntries([...Array(10)].map((_, i) => [100 + i, r])));
+  const same = tasteMatch(twins(9), twins(9));
+  assert.equal(same.percent, 100);
+  assert.equal(same.shared, 10);
+  assert.equal(same.bothLove.length, 5);
+  const opposite = tasteMatch(twins(10), twins(1));
+  assert.ok(opposite.percent < 20, `opposite ratings on everything they share: ${opposite.percent}%`);
+  assert.equal(opposite.disagree.length, 3);
+  assert.equal(opposite.disagree[0].youLiked, true);
+
+  // Two shared shows don't make a "100% match": the genre profile still carries most of the weight.
+  const a = user([fav(1, 'completed', ['Horror']), fav(2, 'completed', ['Horror']), ...[3, 4, 5].map((i) => fav(i, 'completed', ['Horror']))], { 1: 10, 2: 10 });
+  const b = user([fav(1, 'completed', ['Romance']), fav(2, 'completed', ['Romance']), ...[6, 7, 8].map((i) => fav(i, 'completed', ['Romance']))], { 1: 10, 2: 10 });
+  const few = tasteMatch(a, b);
+  assert.equal(few.shared, 2);
+  assert.ok(few.percent <= 25, `two agreeing shows, different genres: ${few.percent}%`);
+  assert.deepEqual(tasteMatch(fantasyFan, alsoFantasy).sharedGenres, ['Fantasy']);
+});
+
+test('taste match API: auth, not yourself, genres filled in once, null for short lists', async () => {
+  const { setGenreLookup } = await import('../src/lib/favoriteGenres.js');
+  const asked = [];
+  setGenreLookup(async (ids) => { asked.push(...ids); return new Map(ids.map((id) => [id, ['Fantasy']])); });
+  try {
+    const mkUser = async (malIds) => {
+      const agent = makeAgent();
+      await agent.get('/api/health');
+      const user = uniqueUser();
+      await agent.post('/api/auth/register', { csrf: true, body: user });
+      for (const id of malIds) await agent.post('/api/favorites', { csrf: true, body: { mal_id: id, title: `Show ${id}`, status: 'completed' } });
+      return { agent, username: user.username };
+    };
+    const me = await mkUser([92501, 92502, 92503, 92504, 92505]);
+    const them = await mkUser([92501, 92502, 92503, 92506, 92507]);
+    const short = await mkUser([92501]);
+
+    assert.equal((await makeAgent().get(`/api/users/${them.username}/taste-match`)).status, 401);
+    assert.equal((await me.agent.get(`/api/users/${me.username}/taste-match`)).status, 400);
+    assert.equal((await me.agent.get('/api/users/nobody_here_x/taste-match')).status, 404);
+
+    const res = await me.agent.get(`/api/users/${them.username}/taste-match`);
+    assert.equal(res.status, 200);
+    assert.equal(res.json.match.shared, 3);
+    assert.ok(res.json.match.percent > 50);
+    assert.deepEqual(res.json.match.sharedGenres, ['Fantasy'], 'genres were filled in from the lookup');
+    const askedOnce = asked.length;
+    await me.agent.get(`/api/users/${them.username}/taste-match`);
+    assert.equal(asked.length, askedOnce, 'filled genres are saved, not fetched again');
+
+    assert.deepEqual((await me.agent.get(`/api/users/${short.username}/taste-match`)).json, { match: null, minList: 5 });
+  } finally {
+    setGenreLookup(null);
+  }
+});

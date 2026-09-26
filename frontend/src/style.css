@@ -2477,3 +2477,13 @@ a.wo-title:hover { color: var(--pink2); }
 .vibe-result { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .vibe-reasons { display: flex; gap: 4px; flex-wrap: wrap; font-size: 0.72rem; font-weight: 800; color: var(--muted); }
 .vibe-reasons span { background: var(--bg2); border: 2px solid var(--ink); border-radius: 8px; padding: 1px 6px; }
+
+/* Taste match banner on profiles */
+.taste-match {
+  max-width: 640px; margin: 20px auto 0; padding: 14px 18px; text-align: center; font-weight: 700;
+  background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink);
+}
+.taste-match p { margin: 6px 0 0; }
+.taste-match a { color: var(--pink2); }
+.taste-match-score { font-size: 1.2rem; }
+.taste-match-score strong { font-size: 2rem; color: var(--pink2); }
