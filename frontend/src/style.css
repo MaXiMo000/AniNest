@@ -2487,3 +2487,23 @@ a.wo-title:hover { color: var(--pink2); }
 .taste-match a { color: var(--pink2); }
 .taste-match-score { font-size: 1.2rem; }
 .taste-match-score strong { font-size: 2rem; color: var(--pink2); }
+
+/* Watch Together */
+.together-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; margin-top: 16px; }
+.together-box { background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; padding: 16px; min-width: 0; }
+.together-box h2 { margin: 0 0 10px; font-size: 1.2rem; }
+.together-input {
+  width: 100%; padding: 10px 12px; margin-bottom: 10px; font-weight: 700; font-family: inherit;
+  border: 2.5px solid var(--ink); border-radius: 10px; background: var(--bg2); color: var(--text);
+}
+.together-share { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.together-share .together-input { margin: 0; }
+.swipe-card { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: start; }
+.swipe-card img { width: 120px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; border: 2px solid var(--ink); }
+.swipe-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.swipe-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.together-picks { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+@media (max-width: 480px) {
+  .swipe-card { grid-template-columns: 90px 1fr; }
+  .swipe-card img { width: 90px; }
+}

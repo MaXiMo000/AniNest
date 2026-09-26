@@ -124,8 +124,11 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Match % = cosine of vectors blended with rating agreement on shared shows (full weight at 10 shared); needs 5+
       favorites on both sides
 - [x] Profile banner: "82% taste match · you both lean Fantasy · You both love... · You disagree on..."
-- [ ] Rooms: `rooms`, `room_members` (guest allowed), `room_votes`; 24h expiry; 10-card swipe; score = min member
-      prediction blended with the mean; exclude anything anyone has seen or vetoed
+- [x] Rooms: `watch_rooms`, `watch_room_members` (guests pick 1-5 genres instead of the quiz), `watch_room_votes`;
+      24h expiry, 8 people (enforced inside the INSERT, so a rush can't overfill a room); opening one needs an account,
+      joining doesn't. Score = 60% least-happy member + 40% mean, 👍 nudges, one 👎 vetoes; anything a member completed,
+      is watching or dropped is excluded. Candidate pool: AniList top-rated overall + the group's top 4 genres, cached 6h
+- [x] Pages `#/together` and `#/together/:code` (share link, members, swipe card, top 3 picks, 8s polling)
 
 ## Phase 7 onward
 

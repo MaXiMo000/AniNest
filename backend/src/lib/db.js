@@ -370,6 +370,34 @@ await db.executeMultiple(`
   );
   CREATE INDEX IF NOT EXISTS idx_franchise_entries_mal ON franchise_entries(mal_id);
   CREATE INDEX IF NOT EXISTS idx_franchise_entries_anilist ON franchise_entries(anilist_id);
+
+  -- Watch Together rooms (routes/rooms.js): a group picks something to watch.
+  -- Rooms expire after 24h and are deleted lazily. A member is a signed-in user
+  -- (taste from their list) or a guest (taste from the genres they picked);
+  -- token is the member's secret for voting, kept in their browser.
+  CREATE TABLE IF NOT EXISTS watch_rooms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL UNIQUE,
+    created_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS watch_room_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER NOT NULL REFERENCES watch_rooms(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    genres TEXT,
+    token TEXT NOT NULL UNIQUE,
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(room_id, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS watch_room_votes (
+    member_id INTEGER NOT NULL REFERENCES watch_room_members(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    vote INTEGER NOT NULL,
+    PRIMARY KEY (member_id, mal_id)
+  );
 `);
 
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's

@@ -605,3 +605,21 @@ export async function anilistGenresForMalIds(malIds) {
   }
   return out;
 }
+
+// Well-rated, well-known anime, optionally for one genre: the candidate pool
+// for Watch Together rooms (routes/rooms.js). `genres` stays as plain names.
+export async function anilistTopForGroup(genre) {
+  const data = await gql(`
+    query($genre: String) {
+      Page(perPage: 30) {
+        media(type: ANIME, isAdult: false, genre: $genre, popularity_greater: 15000, format_in: [TV, MOVIE, ONA], sort: [SCORE_DESC]) {
+          ${MEDIA_FIELDS}
+        }
+      }
+    }
+  `, genre ? { genre } : {});
+  return (data.Page?.media || []).map((m) => {
+    const anime = normalizeAniListMedia(m);
+    return anime && { ...anime, genres: m.genres || [] };
+  }).filter(Boolean);
+}

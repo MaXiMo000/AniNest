@@ -2458,3 +2458,92 @@ test('taste match API: auth, not yourself, genres filled in once, null for short
     setGenreLookup(null);
   }
 });
+
+test('watch together ranking: least-happy member matters, seen and vetoed shows drop out, likes nudge', async () => {
+  const { rankForGroup, affinityFromGenres, affinityFromList, seenBy } = await import('../src/lib/watchRooms.js');
+  const show = (mal_id, genres, score = 8) => ({ mal_id, title: `S${mal_id}`, genres, score });
+  const pool = [show(1, ['Horror']), show(2, ['Fantasy', 'Comedy']), show(3, ['Fantasy']), show(4, ['Comedy'])];
+  const fantasyComedy = { id: 1, affinity: affinityFromGenres(['Fantasy', 'Comedy']), seen: [] };
+  const horrorFan = { id: 2, affinity: affinityFromGenres(['Horror', 'Comedy']), seen: [] };
+
+  // Horror delights one member and leaves the other cold, so a show both like wins.
+  let ranked = rankForGroup([fantasyComedy, horrorFan], pool);
+  assert.equal(ranked[0].mal_id, 4, 'Comedy suits both');
+  assert.deepEqual(ranked[0].everyoneLikes, ['Comedy']);
+  assert.ok(ranked.findIndex((s) => s.mal_id === 1) > 0);
+
+  ranked = rankForGroup([fantasyComedy, horrorFan], pool, [{ member_id: 2, mal_id: 4, vote: -1 }]);
+  assert.ok(!ranked.some((s) => s.mal_id === 4), 'one 👎 vetoes it');
+  ranked = rankForGroup([fantasyComedy, horrorFan], pool, [{ member_id: 1, mal_id: 3, vote: 1 }, { member_id: 2, mal_id: 3, vote: 1 }]);
+  assert.equal(ranked.find((s) => s.mal_id === 3).likes, 2);
+
+  const fromList = affinityFromList([
+    { mal_id: 9, status: 'completed', genres: ['Fantasy'] },
+    { mal_id: 10, status: 'dropped', genres: ['Horror'] },
+    { mal_id: 11, status: 'plan_to_watch', genres: ['Sports'] },
+  ]);
+  assert.equal(fromList.get('Fantasy'), 1);
+  assert.equal(fromList.get('Horror'), 0, 'dropped genres count as no interest, never negative');
+  assert.deepEqual(seenBy([{ mal_id: 9, status: 'completed' }, { mal_id: 11, status: 'plan_to_watch' }]), [9], 'planned is not seen');
+  assert.ok(!rankForGroup([{ ...fantasyComedy, seen: [3] }], pool).some((s) => s.mal_id === 3), 'already seen by a member');
+});
+
+test('watch together API: create, join as user and guest, vote, picks, limits', async () => {
+  const { setRoomPoolFetcher } = await import('../src/routes/rooms.js');
+  const media = (mal_id, genres) => ({ mal_id, title: `Pick ${mal_id}`, images: {}, type: 'TV', episodes: 12, year: 2020, score: 8.5, genres });
+  setRoomPoolFetcher(async () => [media(92601, ['Fantasy']), media(92602, ['Comedy']), media(92603, ['Horror']), media(92604, ['Fantasy', 'Comedy'])]);
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    assert.equal((await anon.post('/api/rooms', { csrf: true, body: {} })).status, 401, 'opening a room needs an account');
+
+    const host = makeAgent();
+    await host.get('/api/health');
+    await host.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+    await host.post('/api/favorites', { csrf: true, body: { mal_id: 92601, title: 'Seen it', status: 'completed', genres: ['Fantasy'] } });
+    const created = await host.post('/api/rooms', { csrf: true, body: {} });
+    assert.equal(created.status, 201);
+    const { code, memberToken: hostToken } = created.json;
+    assert.match(code, /^[A-Z2-9]{6}$/);
+    const again = await host.post(`/api/rooms/${code}/join`, { csrf: true, body: {} });
+    assert.equal(again.json.memberToken, hostToken, 'joining your own room again keeps your seat');
+
+    let room = await anon.get(`/api/rooms/${code}`);
+    assert.equal(room.status, 200);
+    assert.equal(room.json.members.length, 1);
+    assert.deepEqual(room.json.picks, [], 'no picks for a party of one');
+    assert.ok(!room.json.candidates.some((c) => c.mal_id === 92601), "the host's completed show is not suggested");
+
+    assert.equal((await anon.post(`/api/rooms/${code}/join`, { csrf: true, body: { name: 'Guest', genres: ['Nope'] } })).status, 400);
+    assert.equal((await anon.post(`/api/rooms/${code}/join`, { csrf: true, body: { name: '', genres: ['Comedy'] } })).status, 400);
+    const guest = await anon.post(`/api/rooms/${code}/join`, { csrf: true, body: { name: 'Guest', genres: ['Comedy'] } });
+    assert.equal(guest.status, 201);
+
+    room = await anon.get(`/api/rooms/${code}`);
+    assert.equal(room.json.members.length, 2);
+    assert.equal(room.json.members[1].guest, true);
+    assert.equal(room.json.picks[0].mal_id, 92604, 'fantasy + comedy suits the fantasy host and the comedy guest');
+
+    assert.equal((await anon.post(`/api/rooms/${code}/vote`, { csrf: true, body: { memberToken: 'x'.repeat(32), mal_id: 92604, vote: -1 } })).status, 403);
+    assert.equal((await anon.post(`/api/rooms/${code}/vote`, { csrf: true, body: { memberToken: guest.json.memberToken, mal_id: 92604, vote: 2 } })).status, 400);
+    assert.equal((await anon.post(`/api/rooms/${code}/vote`, { csrf: true, body: { memberToken: guest.json.memberToken, mal_id: 92604, vote: -1 } })).status, 200);
+    room = await anon.get(`/api/rooms/${code}`);
+    assert.ok(!room.json.picks.some((p) => p.mal_id === 92604), 'vetoed');
+    assert.equal(room.json.members[1].votes, 1);
+
+    // Seven people join at the same moment with six seats left: exactly six get in.
+    const joiners = await Promise.all([...Array(7)].map(async (_, i) => {
+      const a = makeAgent();
+      await a.get('/api/health');
+      return a.post(`/api/rooms/${code}/join`, { csrf: true, body: { name: `F${i}`, genres: ['Comedy'] } });
+    }));
+    assert.deepEqual(joiners.map((j) => j.status).sort(), [201, 201, 201, 201, 201, 201, 409], 'rooms cap at 8 people, even under a rush');
+    assert.equal((await anon.get(`/api/rooms/${code}`)).json.members.length, 8);
+
+    await db.execute({ sql: "UPDATE watch_rooms SET expires_at = datetime('now', '-1 minute') WHERE code = ?", args: [code] });
+    assert.equal((await anon.get(`/api/rooms/${code}`)).status, 404, 'expired rooms are gone');
+    assert.equal((await anon.get('/api/rooms/bad!')).status, 404);
+  } finally {
+    setRoomPoolFetcher(null);
+  }
+});

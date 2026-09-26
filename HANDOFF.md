@@ -31,7 +31,7 @@ backend/test/api.test.js   the integration suite
 render.yaml         Render Blueprint for both services, including the production CSP header
 ```
 
-**Frontend routes**: `/`, `/browse`, `/vibe`, `/anime/:id`, `/franchise/:slug`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
+**Frontend routes**: `/`, `/browse`, `/vibe`, `/together`, `/together/:code`, `/anime/:id`, `/franchise/:slug`, `/anime/:id/submit-watch-link`, `/favorites`, `/schedule`, `/compare`,
 `/tier-list`, `/screenshot-search`, `/studio/:name`, `/person/:name`, `/u/:username`, `/account`, `/login`, `/register`,
 `/manga`, `/manga/:id`, `/manga-favorites`, `/games` (+ `/daily`, `/manga-daily`, `/higher-lower`, `/guess-the-anime`,
 `/quiz`, `/timeline`, `/name-that-opening`, `/emoji-plot`, `/cast-call`, `/studio-match`, `/source-guess`, `/stats`,
@@ -39,12 +39,12 @@ render.yaml         Render Blueprint for both services, including the production
 
 **API mounts** (`app.js`): `auth`, `favorites`, `anime`, `reviews`, `users`, `client-errors`, `games`, `recommendations`,
 `studios`, `people`, `import`, `screenshot-search`, `manga`, `manga-favorites`, `manga-reviews`, `notifications`,
-`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, `calendar`, and `GET /api/health`.
+`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, `calendar`, `rooms`, and `GET /api/health`.
 
 **Tables** (`lib/db.js`; `CREATE TABLE IF NOT EXISTS` at boot, new columns added with `ensureColumn`, no migration tool):
 `users`, `sessions`, `favorites`, `reviews`, `manga_favorites`, `manga_reviews`, `game_scores`, `game_runs`,
 `game_score_log`, `daily_challenges`, `daily_results`, `manga_daily_challenges`, `manga_daily_results`, `anime_watch_sources`, `watch_source_candidates`, `notifications`,
-`manga_chapter_state`, `api_cache`, `episode_log`, `franchises`, `franchise_entries`.
+`manga_chapter_state`, `api_cache`, `episode_log`, `franchises`, `franchise_entries`, `watch_rooms`, `watch_room_members`, `watch_room_votes`.
 
 ## Data sources and caching
 
@@ -144,6 +144,16 @@ review score, or its status when unreviewed; dropped counts against) blended wit
 reaches full weight at 10 shared shows. Both lists need 5+ favorites, otherwise `match` is null. Favorites saved before
 genres were stored are filled from AniList on first use (up to 100 per user per call) and saved, `[]` when AniList has none.
 Shown as a banner on other people's profiles.
+
+**Watch Together** (`routes/rooms.js`; `lib/watchRooms.js` is pure; `#/together`, `#/together/:code`). A signed-in user
+opens a room (`POST /api/rooms`) and shares its 6-character code; anyone with the code can read it (`GET /api/rooms/:code`)
+and join (`POST /:code/join`: signed in as yourself, idempotent, or as a guest with a name and 1-5 genres). Joining returns
+a member token, kept in the browser, that `POST /:code/vote` requires (👍 = 1, 👎 = -1). Rooms last 24h (expired ones are
+deleted when a new room opens) and hold 8 people; the cap is a condition inside the INSERT so simultaneous joins can't
+overfill. Ranking: a member's genre affinity (from their list, or their picked genres) predicts enjoyment of each candidate;
+group score = 60% least-happy member + 40% mean + 0.1 per 👍; one 👎 vetoes; anything a signed-in member completed, is
+watching or dropped is excluded. Candidates are AniList's top-rated shows overall plus the group's top 4 genres (cached 6h).
+The room page polls every 8s.
 
 **Vibe search** (`lib/vibeParser.js` is pure; `lib/vibeSearch.js`; `#/vibe?q=`). `GET /api/anime/vibe?q=` understands
 moods, genres, "no X", episode counts, "short", formats, decades and years, finished/airing, and "like <title>". Each
@@ -263,7 +273,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 107 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 109 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

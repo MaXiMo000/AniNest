@@ -4,6 +4,7 @@ import { renderBrowse } from './pages/browse.js';
 import { renderDetails } from './pages/details.js';
 import { renderFranchise } from './pages/franchise.js';
 import { renderVibe } from './pages/vibe.js';
+import { renderTogether, renderRoom } from './pages/together.js';
 import { renderFavorites } from './pages/favorites.js';
 import { renderSchedule } from './pages/schedule.js';
 import { renderLogin } from './pages/login.js';
@@ -88,6 +89,8 @@ Auth.subscribe(() => {
 route('/', ({ root }) => renderHome(root));
 route('/browse', ({ params, root }) => renderBrowse(root, params));
 route('/vibe', ({ params, root }) => renderVibe(root, params));
+route('/together', ({ root }) => renderTogether(root));
+route('/together/:code', ({ path, root }) => renderRoom(root, path.code));
 route('/anime/:id', ({ path, root }) => renderDetails(root, path.id));
 route('/franchise/:slug', ({ path, root }) => renderFranchise(root, path.slug));
 route('/favorites', ({ root }) => renderFavorites(root));

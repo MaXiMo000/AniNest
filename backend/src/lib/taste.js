@@ -19,7 +19,7 @@ export function sentiment(fav, rating) {
   return STATUS_SENTIMENT[fav?.status] ?? 0.4;
 }
 
-function genreVector(favs, ratings) {
+export function genreVector(favs, ratings) {
   const v = new Map();
   for (const f of favs) {
     const s = sentiment(f, ratings.get(f.mal_id));
