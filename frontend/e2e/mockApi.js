@@ -104,14 +104,16 @@ export async function mockApi(page, { user = null } = {}) {
       const body = JSON.parse(req.postData() || '{}');
       const a = (k) => POOL[k % POOL.length];
       const titleChoices = (k) => [0, 1, 2, 3].map((d) => ({ id: String(a(k + d).mal_id), label: a(k + d).title }));
+      // The right one is the second choice, so tests that always click the first one lose lives.
+      const titleAnswer = (k) => String(a(k + 1).mal_id);
       const build = (k) => {
         const s = a(k);
         switch (rounds.game) {
           case 'studio-match': return { view: { anime: { title: s.title, image: s.images.jpg.image_url }, choices: STUDIOS.slice(0, 4).map((x) => ({ id: x, label: x })) }, answer: STUDIOS[(k + 1) % 4] };
           case 'source-guess': return { view: { anime: { title: s.title, image: s.images.jpg.image_url }, choices: SOURCES.slice(0, 4).map((x) => ({ id: x, label: x })) }, answer: SOURCES[(k + 1) % 4] };
-          case 'emoji-plot': return { view: { emoji: '🍥🦊', choices: titleChoices(k) }, answer: String(s.mal_id) };
-          case 'cast-call': return { view: { cast: [{ name: 'Character 1', va: 'VA 1' }, { name: 'Character 2', va: null }], choices: titleChoices(k) }, answer: String(s.mal_id) };
-          case 'name-that-opening': return { view: { videoUrl: 'https://v.animethemes.moe/test.webm', choices: titleChoices(k) }, answer: String(s.mal_id) };
+          case 'emoji-plot': return { view: { emoji: '🍥🦊', choices: titleChoices(k) }, answer: titleAnswer(k) };
+          case 'cast-call': return { view: { cast: [{ name: 'Character 1', va: 'VA 1' }, { name: 'Character 2', va: null }], choices: titleChoices(k) }, answer: titleAnswer(k) };
+          case 'name-that-opening': return { view: { videoUrl: 'https://v.animethemes.moe/test.webm', choices: titleChoices(k) }, answer: titleAnswer(k) };
           case 'timeline': {
             const cards = [0, 1, 2, 3].map((d) => a(k + d * 5));
             return { view: { cards: cards.map((c) => ({ id: String(c.mal_id), title: c.title, image: c.images.jpg.image_url })) }, answer: Object.fromEntries(cards.map((c) => [c.mal_id, c.year])) };
@@ -122,7 +124,7 @@ export async function mockApi(page, { user = null } = {}) {
               clues: { synopsis: s.synopsis, genres: s.genres.map((g) => g.name), type: s.type, episodes: s.episodes, year: s.year, studio: s.studios[0].name, source: s.source },
               ...(rounds.input === 'typed' ? {} : { choices: titleChoices(k) }),
             },
-            answer: String(s.mal_id),
+            answer: titleAnswer(k),
             anime: s,
           };
         }
