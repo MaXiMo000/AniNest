@@ -512,13 +512,31 @@ try {
 // an empty/unset ADMIN_USERNAMES simply means nobody is an admin yet, which
 // is fine - the YouTube-search-assist and moderation-queue routes just 404
 // behind requireAdmin until someone is.
-const adminUsernames = (process.env.ADMIN_USERNAMES || '')
-  .split(',').map((s) => s.trim()).filter(Boolean);
+//
+// ADMIN_USER_IDS is the safer form: an id can't be claimed by whoever
+// registers a name first. With ADMIN_USERNAMES, a listed name that isn't
+// registered yet would make its eventual registrant an admin on the next
+// boot, so boot logs a warning naming it.
+const splitList = (raw) => (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
+const adminUsernames = splitList(process.env.ADMIN_USERNAMES);
+const adminIds = splitList(process.env.ADMIN_USER_IDS).map(Number).filter((n) => Number.isInteger(n) && n > 0);
 if (adminUsernames.length) {
   const placeholders = adminUsernames.map(() => '?').join(',');
   await db.execute({
     sql: `UPDATE users SET is_admin = 1 WHERE username IN (${placeholders})`,
     args: adminUsernames,
+  });
+  const found = await db.execute({ sql: `SELECT username FROM users WHERE username IN (${placeholders})`, args: adminUsernames });
+  const existing = new Set(found.rows.map((r) => r.username));
+  const missing = adminUsernames.filter((u) => !existing.has(u));
+  if (missing.length) {
+    logger.warn({ missing }, 'ADMIN_USERNAMES lists names nobody has registered; whoever registers them becomes admin on the next boot. Remove them or use ADMIN_USER_IDS.');
+  }
+}
+if (adminIds.length) {
+  await db.execute({
+    sql: `UPDATE users SET is_admin = 1 WHERE id IN (${adminIds.map(() => '?').join(',')})`,
+    args: adminIds,
   });
 }
 

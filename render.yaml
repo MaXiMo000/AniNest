@@ -50,6 +50,10 @@ services:
       # Leave unset and nobody is an admin; the feature just stays hidden.
       - key: ADMIN_USERNAMES
         sync: false
+      # Same, by numeric user id, which nobody can claim by registering a
+      # name first. Preferred over ADMIN_USERNAMES.
+      - key: ADMIN_USER_IDS
+        sync: false
       # Powers the admin-only "search official YouTube channels" assist on
       # the watch-source curation page (see backend/src/lib/youtube.js).
       # Optional - free Google Cloud API key (YouTube Data API v3, no
