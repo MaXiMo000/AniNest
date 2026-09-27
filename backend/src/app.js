@@ -35,6 +35,27 @@ import { episodeGuideRouter } from './routes/episodeGuide.js';
 import { tournamentsRouter } from './routes/tournaments.js';
 import { wrappedRouter } from './routes/wrapped.js';
 
+function trustProxyHops() {
+  const n = Number(process.env.TRUST_PROXY);
+  return Number.isInteger(n) && n >= 0 ? n : 1;
+}
+
+// Logs, once per process, how many addresses the first proxied request
+// carried in X-Forwarded-For (never the addresses themselves). If it doesn't
+// match TRUST_PROXY, fix the env var: that number decides whose IP the rate
+// limits see.
+function logForwardedHopsOnce(app) {
+  let logged = false;
+  app.use((req, _res, next) => {
+    const xff = req.get('x-forwarded-for');
+    if (!logged && xff) {
+      logged = true;
+      logger.info({ forwardedHops: xff.split(',').length, trustProxy: app.get('trust proxy') }, 'proxy hop check');
+    }
+    next();
+  });
+}
+
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
 // app.listen(0) on an ephemeral port) without booting a real long-running
@@ -44,7 +65,14 @@ export function createApp() {
   const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim());
 
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // How many proxies sit between the visitor and this process. In production
+  // that is two: the frontend static site's /api/* rewrite, then Render's own
+  // load balancer in front of this service (render.yaml sets TRUST_PROXY=2).
+  // With only 1, req.ip is the rewrite proxy's address, so every visitor
+  // shared one rate-limit bucket. Too high a number lets a client spoof its
+  // IP through X-Forwarded-For, so keep it equal to the real hop count.
+  app.set('trust proxy', trustProxyHops());
+  logForwardedHopsOnce(app);
 
   app.use(helmet({
     // This process only ever serves JSON — the CSP that matters lives on the

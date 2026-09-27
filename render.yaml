@@ -16,6 +16,13 @@ services:
         value: '24'
       - key: NODE_ENV
         value: production
+      # Proxies in front of Express: the frontend's /api/* rewrite plus
+      # Render's load balancer. It sets which X-Forwarded-For entry is the
+      # visitor's IP, so rate limits are per visitor. The backend logs
+      # "proxy hop check" once after boot; if forwardedHops there differs,
+      # change this to match.
+      - key: TRUST_PROXY
+        value: '2'
       # The database lives on Turso (free, SQLite-compatible) rather than a
       # Render disk - see backend/src/lib/db.js. Get these from `turso db show`
       # / `turso db tokens create` after creating a free database at
