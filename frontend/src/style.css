@@ -2616,3 +2616,14 @@ a.wo-title:hover { color: var(--pink2); }
 .wrapped-month span { display: block; width: 100%; min-height: 2px; background: var(--pink); border-radius: 4px 4px 0 0; }
 .wrapped-month em { font-style: normal; font-size: 0.7rem; font-weight: 800; color: var(--muted); }
 .wrapped-share { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 8px; }
+
+/* Friends' activity feed */
+.feed-following { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
+.feed-row { align-items: flex-start; }
+.feed-poster { flex-shrink: 0; width: 44px; display: flex; justify-content: center; }
+.feed-poster img { width: 44px; height: 62px; object-fit: cover; border-radius: 6px; border: 2px solid var(--ink); }
+.feed-line { color: var(--text) !important; font-size: 0.95rem !important; overflow-wrap: anywhere; }
+.feed-line a { color: inherit; }
+.feed-line a:hover { color: var(--pink2); }
+.feed-quote { font-style: italic; margin-top: 4px; overflow-wrap: anywhere; }
+.follow-btn.is-following { background: var(--bg2); }

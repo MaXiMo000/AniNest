@@ -77,20 +77,21 @@ favoritesRouter.post('/', asyncRoute(async (req, res) => {
 
   await db.execute({
     sql: `
-      INSERT INTO favorites (user_id, mal_id, title, image, score, type, status, genres, episodes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO favorites (user_id, mal_id, title, image, score, type, status, genres, episodes, status_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END)
       ON CONFLICT(user_id, mal_id) DO UPDATE SET
         title = excluded.title,
         image = excluded.image,
         score = excluded.score,
         type = excluded.type,
         status = ${hasStatusField ? 'excluded.status' : 'favorites.status'},
+        status_at = ${hasStatusField ? "CASE WHEN excluded.status IS NOT favorites.status THEN datetime('now') ELSE favorites.status_at END" : 'favorites.status_at'},
         genres = COALESCE(excluded.genres, favorites.genres),
         episodes = COALESCE(excluded.episodes, favorites.episodes)
     `,
     args: [
       req.user.id, malId, title, image || null, score ?? null, type || null, status ?? null,
-      genres?.length ? JSON.stringify(genres) : null, episodes ?? null,
+      genres?.length ? JSON.stringify(genres) : null, episodes ?? null, status ?? null,
     ],
   });
 
@@ -132,9 +133,10 @@ favoritesRouter.post('/:malId/progress', asyncRoute(async (req, res) => {
   const status = nextStatus(row.status, watched, total);
 
   const statements = [{
-    sql: `UPDATE favorites SET episodes_watched = ?, episodes = ?, status = ?, progress_at = datetime('now')
+    sql: `UPDATE favorites SET episodes_watched = ?, episodes = ?, status = ?, progress_at = datetime('now'),
+            status_at = CASE WHEN status IS NOT ? THEN datetime('now') ELSE status_at END
           WHERE user_id = ? AND mal_id = ?`,
-    args: [watched, total ?? null, status, req.user.id, malId],
+    args: [watched, total ?? null, status, status, req.user.id, malId],
   }];
   // Only small forward steps are logged as "watched now". Jumping 0 -> 500 is
   // someone catching the tracker up on a show they watched years ago, and

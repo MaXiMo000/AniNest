@@ -413,3 +413,54 @@ test('episode flags: filler and recap across pages, and a quiet fallback when Ji
     setEpisodePageFetcher(null);
   }
 });
+
+test('follows and the activity feed: what followed people added, finished and rated', async () => {
+  const me = await registered();
+  const alex = await registered();
+  const hidden = await registered();
+  const alexName = alex.user.username;
+
+  assert.equal((await me.agent.post(`/api/users/${me.user.username}/follow`)).status, 400, 'no following yourself');
+  assert.equal((await (await makeAgent().ready()).post(`/api/users/${alexName}/follow`)).status, 401);
+  assert.equal((await me.agent.post('/api/users/nobody_here_x/follow')).status, 404);
+  assert.deepEqual((await me.agent.get('/api/feed')).json, { following: [], items: [] });
+
+  const followed = await me.agent.post(`/api/users/${alexName.toUpperCase()}/follow`);
+  assert.deepEqual(followed.json, { followers: 1, following: 0, isFollowing: true });
+  assert.equal((await me.agent.post(`/api/users/${alexName}/follow`)).json.followers, 1, 'following twice is a no-op');
+  await me.agent.post(`/api/users/${hidden.user.username}/follow`);
+  const profile = await me.agent.get(`/api/users/${alexName}`);
+  assert.deepEqual(profile.json.follows, { followers: 1, following: 0, isFollowing: true });
+  assert.equal((await makeAgent().get(`/api/users/${alexName}`)).json.follows.isFollowing, false);
+
+  await alex.agent.post('/api/favorites', { body: { mal_id: 52991, title: 'Frieren', status: 'plan_to_watch' } });
+  await alex.agent.post('/api/favorites', { body: { mal_id: 5114, title: 'FMA:B' } });
+  // Backdate the status so the completion below is a clear change.
+  await db.execute({ sql: "UPDATE favorites SET added_at = datetime('now', '-2 days'), status_at = datetime('now', '-2 days') WHERE mal_id = 52991" });
+  await alex.agent.post('/api/favorites/52991/progress', { body: { episodes_watched: 28, episodes: 28 } });
+  await alex.agent.post('/api/reviews', { body: { mal_id: 52991, rating: 9, body: 'Quietly perfect.' } });
+  await hidden.agent.post('/api/favorites', { body: { mal_id: 1, title: 'Cowboy Bebop' } });
+  await hidden.agent.post('/api/auth/privacy', { body: { private: true } });
+
+  const feed = (await me.agent.get('/api/feed')).json;
+  assert.deepEqual(feed.following.map((f) => f.private), feed.following.map((f) => f.username === hidden.user.username));
+  const kinds = feed.items.map((i) => `${i.kind}:${i.mal_id}`).sort();
+  assert.deepEqual(kinds, ['added:5114', 'review:52991', 'status:52991']);
+  const done = feed.items.find((i) => i.kind === 'status');
+  assert.equal(done.status, 'completed');
+  assert.equal(done.username, alexName);
+  const review = feed.items.find((i) => i.kind === 'review');
+  assert.equal(review.rating, 9);
+  assert.equal(review.title, 'Frieren');
+  assert.ok(!feed.items.some((i) => i.username === hidden.user.username), 'private accounts stay out');
+
+  const unfollowed = await me.agent.delete(`/api/users/${alexName}/follow`);
+  assert.equal(unfollowed.json.isFollowing, false);
+  assert.equal((await me.agent.get('/api/feed')).json.items.length, 0);
+
+  // Deleting an account removes its follows both ways.
+  await alex.agent.post(`/api/users/${me.user.username}/follow`);
+  assert.equal((await me.agent.post('/api/auth/delete-account', { body: { password: me.user.password } })).status, 204);
+  const left = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM follows WHERE follower_id = ? OR followee_id = ?', args: [me.id, me.id] });
+  assert.equal(Number(left.rows[0].n), 0);
+});

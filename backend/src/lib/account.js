@@ -21,6 +21,11 @@ export async function exportUserData(userId) {
     const rows = await db.execute({ sql: `SELECT * FROM ${table} WHERE user_id = ?`, args: [userId] });
     out[table] = rows.rows.map(({ user_id: _drop, id: _id, ...row }) => ({ ...row }));
   }
+  const following = await db.execute({
+    sql: 'SELECT u.username, f.created_at FROM follows f JOIN users u ON u.id = f.followee_id WHERE f.follower_id = ?',
+    args: [userId],
+  });
+  out.following = following.rows.map((r) => ({ ...r }));
   return out;
 }
 
@@ -38,6 +43,7 @@ export async function deleteUserData(userId) {
     byUser('notifications'),
     byUser('it_clicked'),
     byUser('password_resets'),
+    { sql: 'DELETE FROM follows WHERE follower_id = ? OR followee_id = ?', args: [userId, userId] },
     { sql: 'DELETE FROM review_reports WHERE reporter_id = ?', args: [userId] },
     byUser('sessions'),
     // Free-watch links they suggested or reviewed stay up; only the credit goes.

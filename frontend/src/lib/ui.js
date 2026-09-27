@@ -297,3 +297,14 @@ export function updateMangaFavCount() {
   const el = document.getElementById('manga-fav-count');
   if (el) el.textContent = MangaFavorites.count();
 }
+
+// "5m ago" for a UTC SQLite timestamp ("2026-09-27 10:00:00").
+export function timeAgo(iso) {
+  const then = new Date(`${String(iso).replace(' ', 'T')}Z`).getTime();
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}

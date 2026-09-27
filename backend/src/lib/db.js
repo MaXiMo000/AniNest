@@ -513,6 +513,21 @@ await db.execute(`
   )
 `);
 
+// Who follows whom, for the activity feed (routes/feed.js). The feed itself is
+// built on read from favorites and reviews, so there is no events table.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS follows (
+    follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (follower_id, followee_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
+`);
+// When a list entry's watch status last changed, so the feed can say
+// "alex completed Frieren" at the right time. Null on older rows.
+await ensureColumn('favorites', 'status_at', 'TEXT');
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the

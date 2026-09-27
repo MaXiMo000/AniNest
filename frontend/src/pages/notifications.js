@@ -1,21 +1,11 @@
 import { Notifications } from '../lib/notificationsApi.js';
 import { Auth } from '../lib/authStore.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML, showToast } from '../lib/ui.js';
+import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML, showToast, timeAgo } from '../lib/ui.js';
 
 const KIND_META = {
   'anime-episodes': { emoji: '🆓', label: 'Free episodes' },
   'manga-chapter': { emoji: '📖', label: 'New chapter' },
 };
-
-function timeAgo(iso) {
-  const then = new Date(`${String(iso).replace(' ', 'T')}Z`).getTime();
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 function rowHTML(n) {
   const meta = KIND_META[n.kind] || { emoji: '🔔', label: 'Update' };

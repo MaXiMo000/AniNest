@@ -38,6 +38,7 @@ import { wrappedRouter } from './routes/wrapped.js';
 import { reviewReportsRouter, adminReviewReportsRouter } from './routes/reviewReports.js';
 import { shareRouter } from './routes/share.js';
 import { freeRouter } from './routes/free.js';
+import { feedRouter } from './routes/feed.js';
 
 function trustProxyHops() {
   const n = Number(process.env.TRUST_PROXY);
@@ -167,6 +168,7 @@ export function createApp() {
   app.use('/api/review-reports', reviewReportsRouter);
   app.use('/api/share', shareRouter);
   app.use('/api/free', freeRouter);
+  app.use('/api/feed', feedRouter);
   app.use('/api/admin/review-reports', adminReviewReportsRouter);
   // Not under /api/users: usersRouter's /:username would swallow /leaderboard.
   app.use('/api/leaderboard', leaderboardRouter);

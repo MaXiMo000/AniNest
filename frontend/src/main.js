@@ -32,6 +32,8 @@ async function loadPage(load) {
 }
 const page = (load, name) => async (...args) => (await loadPage(load))[name](...args);
 const load_browse = () => import('./pages/browse.js');
+const load_feed = () => import('./pages/feed.js');
+const renderFeed = page(load_feed, 'renderFeed');
 const load_free = () => import('./pages/free.js');
 const renderFree = page(load_free, 'renderFree');
 const renderBrowse = page(load_browse, 'renderBrowse');
@@ -151,6 +153,7 @@ Auth.subscribe(() => {
 route('/', ({ root }) => renderHome(root));
 route('/browse', ({ params, root }) => renderBrowse(root, params));
 route('/free', ({ root }) => renderFree(root));
+route('/feed', ({ root }) => renderFeed(root));
 route('/vibe', ({ params, root }) => renderVibe(root, params));
 route('/together', ({ root }) => renderTogether(root));
 route('/together/:code', ({ path, root }) => renderRoom(root, path.code));
