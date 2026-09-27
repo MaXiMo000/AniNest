@@ -17,6 +17,8 @@ function parseMalId(raw) {
 // Public: anyone can read reviews for an anime, no account needed. Includes
 // the caller's own review separately (if signed in) so the frontend can show
 // an "edit" form instead of a fresh "write a review" one.
+// Reviews by private profiles are left out of the list (their rating still
+// counts toward the anonymous average and count).
 reviewsRouter.get('/:malId', asyncRoute(async (req, res) => {
   const malId = parseMalId(req.params.malId);
   if (!malId) return res.status(400).json({ error: 'Invalid anime id.' });
@@ -26,7 +28,7 @@ reviewsRouter.get('/:malId', asyncRoute(async (req, res) => {
       sql: `
         SELECT r.id, r.rating, r.body, r.created_at, r.updated_at, u.username
         FROM reviews r JOIN users u ON u.id = r.user_id
-        WHERE r.mal_id = ? AND r.hidden = 0
+        WHERE r.mal_id = ? AND r.hidden = 0 AND u.is_private = 0
         ORDER BY r.updated_at DESC
         LIMIT 100
       `,

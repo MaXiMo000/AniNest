@@ -12,11 +12,13 @@ const EXPORT_TABLES = [
   'favorites', 'manga_favorites', 'reviews', 'manga_reviews', 'game_scores',
   'daily_results', 'manga_daily_results', 'episode_log', 'episode_ratings', 'theme_tournament_votes',
 ];
+// Also exported, but deleted separately below.
+const EXPORT_ALSO = ['game_score_log', 'it_clicked'];
 
 export async function exportUserData(userId) {
-  const user = await db.execute({ sql: 'SELECT username, email, created_at FROM users WHERE id = ?', args: [userId] });
+  const user = await db.execute({ sql: 'SELECT username, email, created_at, is_private FROM users WHERE id = ?', args: [userId] });
   const out = { exportedAt: new Date().toISOString(), account: user.rows[0] || null };
-  for (const table of EXPORT_TABLES) {
+  for (const table of [...EXPORT_TABLES, ...EXPORT_ALSO]) {
     // eslint-disable-next-line no-await-in-loop
     const rows = await db.execute({ sql: `SELECT * FROM ${table} WHERE user_id = ?`, args: [userId] });
     out[table] = rows.rows.map(({ user_id: _drop, id: _id, ...row }) => ({ ...row }));

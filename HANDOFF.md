@@ -249,6 +249,12 @@ list, cached 7 days in the DB. Loaded after the guide, so while Jikan is down th
 Claude Haiku for the same filters (structured output; names limited to the vocabulary in code). Cached a day in memory, capped
 per day, and any failure falls back to the rules.
 
+**List export** (`routes/export.js`; `lib/listExport.js` is pure; account page chips). `GET /api/export/csv` is the anime list
+with the user's own rating and review; text cells starting with `= + - @` get a leading `'` so spreadsheets don't run them.
+`GET /api/export/mal` is MyAnimeList import XML (`update_on_import=1`); a favorite with no status goes in as Plan to Watch
+(Watching if it has progress). "Download my data" (everything, JSON) is `GET /api/auth/export`. Reviews by private profiles are
+also left out of the anime and manga review lists; their ratings still count in the anonymous average.
+
 **Also in the app**: a private-profile option, the "Free in My Country" page (`routes/free.js`), past tournament seasons,
 a December Wrapped nudge on Home, recommendations built from your favorites, studio and voice-actor pages, AniList list import, screenshot
 search (trace.moe), a client-side tier-list maker, compare mode, the weekly schedule, PWA install, a recently viewed rail, and an

@@ -84,11 +84,13 @@ function securitySectionHTML() {
       <div id="password-result" style="text-align:center;margin-top:8px"></div>
       <label class="hero-actions" style="justify-content:center;margin-top:14px;gap:10px;font-weight:700;cursor:pointer">
         <input id="private-toggle" type="checkbox" ${Auth.get().user?.isPrivate ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--pink)" />
-        🔒 Private profile: hide my lists and reviews from my public page
+        🔒 Private profile: hide my lists and reviews from other people
       </label>
       <div class="hero-actions" style="justify-content:center;margin-top:14px">
         <button id="logout-others" class="chip">📵 Log out other devices</button>
         <a id="export-data" class="chip" href="${API_BASE}/api/auth/export" download>💾 Download my data</a>
+        <a class="chip" href="${API_BASE}/api/export/csv" download>📄 Anime list (CSV)</a>
+        <a class="chip" href="${API_BASE}/api/export/mal" download title="Import at myanimelist.net/import.php. Titles with no status go in as Plan to Watch.">📤 MyAnimeList XML</a>
         <button id="delete-account" class="chip">🗑️ Delete my account</button>
       </div>
     </section>`;
