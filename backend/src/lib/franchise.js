@@ -66,8 +66,7 @@ function titleOf(m) {
 //   essential   main-format entries on a sequel/prequel chain that isn't a spin-off
 //   optional    side stories, spin-off chains, OVAs and specials
 //   skip        recaps and compilation movies
-// `alt` marks an alternative version (FMA 2003 vs Brotherhood). These are
-// defaults: community-voted orders (ROADMAP Phase 7) refine them.
+// `alt` marks an alternative version (FMA 2003 vs Brotherhood).
 // Returns null for a lone show, which has no franchise to guide.
 export function buildFranchise(nodes) {
   const byId = new Map(nodes.map((n) => [n.id, n]));

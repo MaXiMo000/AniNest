@@ -39,12 +39,12 @@ render.yaml         Render Blueprint for both services, including the production
 
 **API mounts** (`app.js`): `auth`, `favorites`, `anime`, `reviews`, `users`, `client-errors`, `games`, `recommendations`,
 `studios`, `people`, `import`, `screenshot-search`, `manga`, `manga-favorites`, `manga-reviews`, `notifications`,
-`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, `calendar`, `rooms`, and `GET /api/health`.
+`leaderboard`, `anime-watch-sources`, `admin/watch-sources`, `franchises`, `calendar`, `rooms`, `episode-guide`, and `GET /api/health`.
 
 **Tables** (`lib/db.js`; `CREATE TABLE IF NOT EXISTS` at boot, new columns added with `ensureColumn`, no migration tool):
 `users`, `sessions`, `favorites`, `reviews`, `manga_favorites`, `manga_reviews`, `game_scores`, `game_runs`,
 `game_score_log`, `daily_challenges`, `daily_results`, `manga_daily_challenges`, `manga_daily_results`, `anime_watch_sources`, `watch_source_candidates`, `notifications`,
-`manga_chapter_state`, `api_cache`, `episode_log`, `franchises`, `franchise_entries`, `watch_rooms`, `watch_room_members`, `watch_room_votes`.
+`manga_chapter_state`, `api_cache`, `episode_log`, `franchises`, `franchise_entries`, `watch_rooms`, `watch_room_members`, `watch_room_votes`, `episode_ratings`, `it_clicked`.
 
 ## Data sources and caching
 
@@ -134,8 +134,8 @@ and PV/CM specials. Default tiers: main-format entries (TV, movie, ONA) on a seq
 spin-off or side story is **optional** as a whole (all of Prisma Illya's seasons), recaps and compilation movies are **skip**, and
 alternative retellings are flagged. Ordered by release date, undated last. A build over 20s answers `{ pending: true }` and the
 page asks again once. Stand-alone shows are remembered for 7 days (`franchise-miss:` rows in `api_cache`) so they aren't re-walked.
-Guides older than 7 days are served and rebuilt in the background; the franchise **id and slug stay stable** across rebuilds
-because community orders (ROADMAP Phase 7) will reference them. `GET /api/franchises/:slug` never triggers a build.
+Guides older than 7 days are served and rebuilt in the background; the franchise **id and slug stay stable** across rebuilds,
+so shared links keep working. `GET /api/franchises/:slug` never triggers a build.
 Mega-franchises (Gundam) hit the cap, and the page says so.
 
 **Taste match** (`lib/taste.js` is pure; `lib/favoriteGenres.js`). `GET /api/users/:username/taste-match` (signed in, not
@@ -144,6 +144,12 @@ review score, or its status when unreviewed; dropped counts against) blended wit
 reaches full weight at 10 shared shows. Both lists need 5+ favorites, otherwise `match` is null. Favorites saved before
 genres were stored are filled from AniList on first use (up to 100 per user per call) and saved, `[]` when AniList has none.
 Shown as a banner on other people's profiles.
+
+**Episode guide** (`routes/episodeGuide.js`, `frontend/src/lib/episodeGuide.js`; under the anime page's jukebox slot).
+`GET /api/episode-guide/:id` gives each episode's average 1-5 rating (null below 5 ratings), the median "it clicked" episode
+(null below 5 votes) and, for a signed-in viewer, their own ratings and progress. `POST /:id/rate` and `POST /:id/clicked`
+only accept episodes up to the viewer's `favorites.episodes_watched` (403 otherwise); `null` takes either back. Stats are
+computed on read, no summary table. MAL filler/recap flags are not in yet: Jikan has been failing since 2026-09-24 (see ROADMAP).
 
 **Watch Together** (`routes/rooms.js`; `lib/watchRooms.js` is pure; `#/together`, `#/together/:code`). A signed-in user
 opens a room (`POST /api/rooms`) and shares its 6-character code; anyone with the code can read it (`GET /api/rooms/:code`)
@@ -273,7 +279,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Testing
 
-`cd backend && npm test` runs 109 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
+`cd backend && npm test` runs 110 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
 `ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
 

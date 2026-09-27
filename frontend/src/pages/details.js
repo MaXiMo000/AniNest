@@ -7,6 +7,7 @@ import { navigate } from '../lib/router.js';
 import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { WatchSources } from '../lib/watchSourcesApi.js';
 import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
+import { loadEpisodeGuide } from '../lib/episodeGuide.js';
 
 function fmtDate(x) {
   return x?.string || '?';
@@ -308,6 +309,8 @@ export async function renderDetails(root, id) {
 
       ${charactersSectionHTML(characters)}
 
+      <div id="episode-guide-slot"></div>
+
       <div id="themes-slot"></div>
 
       ${animeReviews.sectionHTML(reviewsData)}
@@ -361,6 +364,7 @@ export async function renderDetails(root, id) {
         }
         if (!result.ok) { showToast('Something went wrong — try again.'); return; }
         syncTracker();
+        loadEpisodeGuide(root, a); // newly watched episodes become rateable
         if (result.status === 'completed' && next > watched) showToast(`Finished "${a.title}"! 🎉`);
       });
     });
@@ -382,6 +386,7 @@ export async function renderDetails(root, id) {
         }
         if (!result.ok) { showToast('Something went wrong — try again.'); return; }
         syncTracker();
+        if (nextStatus === 'completed') loadEpisodeGuide(root, a); // completing fills progress
         const label = WATCH_STATUSES.find((s) => s.value === nextStatus)?.label;
         showToast(label ? `Marked as ${label}.` : 'Status cleared.');
       });
@@ -391,6 +396,7 @@ export async function renderDetails(root, id) {
 
     loadThemes(root, id, a.title);
     loadFranchise(root, id);
+    loadEpisodeGuide(root, a);
 
     animeReviews.wire(root, a.mal_id);
   } catch (err) {

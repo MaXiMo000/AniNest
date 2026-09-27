@@ -2547,3 +2547,56 @@ test('watch together API: create, join as user and guest, vote, picks, limits', 
     setRoomPoolFetcher(null);
   }
 });
+
+test('episode guide: ratings only up to your progress, averages after 5 votes, "clicks at" is a troll-proof median', async () => {
+  const { median } = await import('../src/routes/episodeGuide.js');
+  assert.equal(median([4, 2, 900, 3, 3]), 3, 'one wild vote does not move it');
+  assert.equal(median([2, 4]), 2);
+  assert.equal(median([]), null);
+
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await anon.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 1, rating: 5 } })).status, 401);
+  assert.equal((await anon.get('/api/episode-guide/abc')).status, 400);
+
+  const viewers = [];
+  for (let i = 0; i < 5; i += 1) {
+    const a = makeAgent();
+    await a.get('/api/health');
+    await a.post('/api/auth/register', { csrf: true, body: uniqueUser() });
+    await a.post('/api/favorites', { csrf: true, body: { mal_id: 92701, title: 'Guide Test', status: 'watching' } });
+    await a.post('/api/favorites/92701/progress', { csrf: true, body: { episodes_watched: 4, episodes: 12 } });
+    viewers.push(a);
+  }
+  const [first] = viewers;
+  assert.equal((await first.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 5, rating: 4 } })).status, 403, 'not watched yet');
+  assert.equal((await first.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 1, rating: 6 } })).status, 400);
+  assert.equal((await first.post('/api/episode-guide/92701/clicked', { csrf: true, body: { episode: 9 } })).status, 403);
+
+  for (const [i, a] of viewers.entries()) {
+    assert.equal((await a.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 1, rating: 2 + (i % 3) } })).status, 200);
+    await a.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 2, rating: 5 } });
+  }
+  await first.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 3, rating: 1 } });
+  await first.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 1, rating: 5 } }); // changes mine
+
+  let guide = (await anon.get('/api/episode-guide/92701')).json;
+  assert.deepEqual(guide.episodes, [
+    { episode: 1, n: 5, avg: 3.4 }, // 5, 3, 4, 2, 3
+    { episode: 2, n: 5, avg: 5 },
+    { episode: 3, n: 1, avg: null }, // one vote is not enough to show
+  ]);
+  assert.equal(guide.clicksAt, null, 'no "clicks at" before 5 people say so');
+  assert.equal(guide.mine, undefined, 'anonymous visitors get no personal part');
+
+  for (const [i, a] of viewers.entries()) await a.post('/api/episode-guide/92701/clicked', { csrf: true, body: { episode: [3, 3, 4, 2, 3][i] } });
+  guide = (await first.get('/api/episode-guide/92701')).json;
+  assert.equal(guide.clicksAt, 3);
+  assert.equal(guide.clickVotes, 5);
+  assert.deepEqual(guide.mine, { ratings: { 1: 5, 2: 5, 3: 1 }, clickedAt: 3, watched: 4 });
+
+  await first.post('/api/episode-guide/92701/rate', { csrf: true, body: { episode: 3, rating: null } });
+  await first.post('/api/episode-guide/92701/clicked', { csrf: true, body: { episode: null } });
+  guide = (await first.get('/api/episode-guide/92701')).json;
+  assert.deepEqual([guide.episodes.length, guide.clickVotes, guide.mine.clickedAt], [2, 4, null], 'both can be taken back');
+});

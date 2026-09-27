@@ -32,7 +32,7 @@ that differ from that proposal, and the **checklist** for each phase.
 | 4 | Episode guide: MAL filler/recap skip guide, then per-episode ratings and "when does it get good" | Skip guide works day one; ratings layer on top | 1-1.5 weeks |
 | 5 | Vibe search v1 (rule parser to AniList tags), then v2 (Claude Haiku parser) | Headline feature, no users needed | ~1 week + 2 days |
 | 6 | Taste compatibility, then Watch-together rooms | Uses favorites, reviews, quiz | 3 days + 1 week |
-| 7 | Franchise community orders (chronological, recommended, votes) | Needs some users to be worth it | ~1 week |
+| ~~7~~ | ~~Franchise community orders~~ | Dropped (owner decision, 2026-09-27) | - |
 | 8 | Drop-point stats + spoiler protection | Needs weeks of Phase 0 data first | 3-4 days |
 | 9 | AniNest Wrapped (PNG share card) | Needs `episode_log`; ship before December | 3-4 days |
 | 10 | Season OP/ED tournament | Reuses the jukebox | 3-4 days |
@@ -97,10 +97,13 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 
 ## Phase 4: Episode guide
 
-- [ ] Jikan `/anime/:id/episodes` (paged, persistent-cached 7d) gives titles and MAL `filler`/`recap` flags
-- [ ] "Skip guide" on the detail page: "You can safely skip 26, 54, 97-108" (works with zero users)
-- [ ] `episode_ratings` (1-5, emoji scale, only up to your own progress), `it_clicked`, stats computed on write
-- [ ] Chart: one bar per episode, grey until 5 ratings, filler dimmed; "Most people say it clicks at episode N" uses the **median**
+- [x] `episode_ratings` (1-5, emoji scale, only up to your own progress), `it_clicked`; stats computed on read (GROUP BY),
+      no stats table. Ratings and the "clicked" mark can be taken back
+- [x] Chart: one bar per episode, grey until 5 ratings, a table view, the "clicks at" episode highlighted; "Most people say
+      it clicks at episode N" uses the **median** and needs 5 votes
+- [ ] **Blocked on Jikan** (504 "failed to connect to MyAnimeList" since 2026-09-24): `/anime/:id/episodes` (paged,
+      persistent-cached 7d) for MAL `filler`/`recap` flags, then dim filler bars and add the "Skip guide"
+      ("You can safely skip 26, 54, 97-108"). No other free source has filler flags
 
 ## Phase 5: Vibe search
 
@@ -132,5 +135,5 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 
 ## Phase 7 onward
 
-Filled in when each phase starts, using the proposal's table designs: community orders and votes (7), drop-point stats
+Filled in when each phase starts, using the proposal's table designs: drop-point stats
 and spoiler guard (8), Wrapped (9), OP/ED tournament (10), manga continuation (11), prediction league (12).

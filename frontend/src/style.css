@@ -2507,3 +2507,25 @@ a.wo-title:hover { color: var(--pink2); }
   .swipe-card { grid-template-columns: 90px 1fr; }
   .swipe-card img { width: 90px; }
 }
+
+/* Episode guide chart: one bar per episode, anchored to the baseline */
+.ep-headline { font-weight: 800; margin: 0 0 12px; }
+.ep-chart-wrap { position: relative; overflow-x: auto; padding-bottom: 4px; }
+.ep-chart {
+  display: grid; grid-template-columns: repeat(var(--eps), minmax(6px, 24px)); gap: 2px;
+  align-items: end; height: 140px; min-width: min-content;
+  border-bottom: 2px solid var(--muted);
+}
+.ep-bar { height: 100%; display: flex; align-items: flex-end; cursor: default; outline-offset: 2px; }
+.ep-bar > span { display: block; width: 100%; background: var(--purple); border-radius: 4px 4px 0 0; }
+.ep-bar:hover > span, .ep-bar:focus > span { background: var(--pink2); }
+.ep-bar--thin > span { background: var(--muted); opacity: 0.45; }
+.ep-bar--clicks > span { background: var(--pink2); }
+.ep-tip { min-height: 1.4em; margin-top: 6px; font-size: 0.85rem; font-weight: 800; color: var(--text); }
+.ep-axis { display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.ep-table { margin: 8px 0; font-weight: 700; }
+.ep-table table { border-collapse: collapse; margin-top: 8px; }
+.ep-table th, .ep-table td { padding: 4px 12px; border-bottom: 1px solid var(--bg2); text-align: left; }
+.ep-rate { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+.ep-rate .free-country { margin: 0; }
+.ep-faces { display: flex; gap: 6px; }

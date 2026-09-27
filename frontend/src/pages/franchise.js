@@ -106,7 +106,7 @@ export async function renderFranchise(root, slug) {
       </div>
       <ol class="watch-order">${shown.map((e, i) => entryHTML(e, i)).join('')}</ol>
       ${f.truncated ? '<p class="muted-note">This franchise is huge, so the guide covers the entries closest to where it starts.</p>' : ''}
-      <p class="muted-note">This order is generated from AniList's relation data: sequels and main-story movies are marked essential, side stories and spin-offs optional, recaps skippable. Community-voted chronological and first-timer orders are on the way.</p>
+      <p class="muted-note">This order is generated from AniList's relation data: sequels and main-story movies are marked essential, side stories and spin-offs optional, recaps skippable.</p>
     `;
     root.querySelectorAll('[data-view]').forEach((btn) => {
       btn.addEventListener('click', () => {

@@ -344,8 +344,8 @@ await db.executeMultiple(`
 
   -- Franchise watch guides (lib/franchise.js builds them from AniList's typed
   -- relations, lib/franchiseStore.js stores them). The id and slug stay stable
-  -- across rebuilds, because community watch orders (ROADMAP Phase 7) will
-  -- point at them. Entries are replaced wholesale on each rebuild. mal_id is
+  -- across rebuilds so shared links keep working. Entries are replaced
+  -- wholesale on each rebuild. mal_id is
   -- null for the few AniList entries MAL doesn't list.
   CREATE TABLE IF NOT EXISTS franchises (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -370,6 +370,26 @@ await db.executeMultiple(`
   );
   CREATE INDEX IF NOT EXISTS idx_franchise_entries_mal ON franchise_entries(mal_id);
   CREATE INDEX IF NOT EXISTS idx_franchise_entries_anilist ON franchise_entries(anilist_id);
+
+  -- Episode guide (routes/episodeGuide.js): a 1-5 rating per episode per user,
+  -- only for episodes up to their own progress, and the one episode where a
+  -- show "clicked" for them. Stats are computed on read (GROUP BY), no copies.
+  CREATE TABLE IF NOT EXISTS episode_ratings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, mal_id, episode)
+  );
+  CREATE INDEX IF NOT EXISTS idx_episode_ratings_mal ON episode_ratings(mal_id, episode);
+  CREATE TABLE IF NOT EXISTS it_clicked (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    episode INTEGER NOT NULL,
+    PRIMARY KEY (user_id, mal_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_it_clicked_mal ON it_clicked(mal_id);
 
   -- Watch Together rooms (routes/rooms.js): a group picks something to watch.
   -- Rooms expire after 24h and are deleted lazily. A member is a signed-in user
