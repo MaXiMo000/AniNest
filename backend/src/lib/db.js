@@ -686,6 +686,28 @@ await db.executeMultiple(`
   );
 `);
 
+// Higher or Lower runs dealt by the server (lib/hlGame.js). Each run keeps
+// its own deck (cards: {malId: [value, title, image]}) and seeded-shuffle
+// state; user_id is null for guests, whose runs never reach a leaderboard.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS hl_runs (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    game TEXT NOT NULL,
+    cards TEXT NOT NULL,
+    deck TEXT NOT NULL,
+    rng INTEGER NOT NULL,
+    champion INTEGER NOT NULL,
+    challenger INTEGER NOT NULL,
+    streak INTEGER NOT NULL DEFAULT 0,
+    skips INTEGER NOT NULL DEFAULT 0,
+    dealt_at INTEGER NOT NULL,
+    finished INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_hl_runs_user ON hl_runs(user_id, created_at);
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.

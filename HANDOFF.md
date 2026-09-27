@@ -354,7 +354,7 @@ only takes screenshots when `SCREENSHOTS=1` (with `SHOTS=/path,/path`), for eyeb
 - Ani-One's Chinese-titled shows can't be matched automatically. They land in the review queue and are labelled "Chinese subs".
   Episode numbers follow the channel, not MAL (e.g. *Attack on Titan Final Season* is one 35-episode run, and *Jujutsu Kaisen* S2
   is numbered 25-47).
-- Game results come from the browser. They're time-checked but not authoritative. Making them authoritative means the server picks
+- Higher or Lower's four modes are dealt and judged by the server (`lib/hlGame.js`, `/api/games/hl/*`); their old `/:game/score` route refuses. The other game results come from the browser. They're time-checked but not authoritative. Making them authoritative means the server picks
   each question and checks each answer, and the Daily stops sending its answer to the browser. That's a larger rewrite.
 - Not built, because each needs an outside service: email (verification, password reset, notification emails), 2FA, Redis,
   external error tracking.

@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { GAMES, GAME_RULES } from '../lib/games.js';
 import { dailyStats } from '../lib/gameStats.js';
 import { getMangaDailyChallenge } from '../lib/mangaDaily.js';
+import { HL_GAMES, MIN_GUESS_MS, startHlRun, loadHlRun, guessHl, skipHl } from '../lib/hlGame.js';
 
 export const gamesRouter = Router();
 
@@ -82,17 +83,86 @@ const scoreSchema = z.object({
   run_id: z.string().regex(/^[0-9a-f]{32}$/),
 });
 
+// Only ever raises a player's best for a game, never lowers it, and logs
+// every accepted score for the weekly board and stats. Returns the best.
+async function recordScore(userId, game, streak) {
+  await db.execute({
+    sql: 'INSERT INTO game_score_log (user_id, game, score, created_at) VALUES (?, ?, ?, ?)',
+    args: [userId, game, streak, Date.now()],
+  });
+  await db.execute({
+    sql: `
+      INSERT INTO game_scores (user_id, game, best_streak, updated_at)
+      VALUES (?, ?, ?, datetime('now'))
+      ON CONFLICT(user_id, game) DO UPDATE SET
+        updated_at = CASE WHEN excluded.best_streak > best_streak THEN excluded.updated_at ELSE updated_at END,
+        best_streak = MAX(best_streak, excluded.best_streak)
+    `,
+    args: [userId, game, streak],
+  });
+  const row = await db.execute({ sql: 'SELECT best_streak FROM game_scores WHERE user_id = ? AND game = ?', args: [userId, game] });
+  return Number(row.rows[0].best_streak);
+}
+
+async function tooManyRuns(userId) {
+  const since = Date.now() - 60 * 60 * 1000;
+  const recent = await db.execute({
+    sql: `SELECT (SELECT COUNT(*) FROM game_runs WHERE user_id = ? AND started_at > ?)
+               + (SELECT COUNT(*) FROM hl_runs WHERE user_id = ? AND created_at > ?) AS n`,
+    args: [userId, since, userId, since],
+  });
+  return Number(recent.rows[0].n) >= MAX_RUNS_PER_HOUR;
+}
+
+// ---- Higher or Lower, dealt and judged by the server (lib/hlGame.js).
+// Anyone can play; only a signed-in player's run reaches the leaderboard,
+// recorded by the server when the run ends. ----
+
+const hlStartSchema = z.object({
+  game: z.enum(Object.keys(HL_GAMES)),
+  seed: z.string().regex(/^[a-z0-9]{1,16}$/).nullable().optional(),
+});
+
+gamesRouter.post('/hl/start', asyncRoute(async (req, res) => {
+  const parsed = hlStartSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Unknown game.' });
+  if (req.user && await tooManyRuns(req.user.id)) return res.status(429).json({ error: 'Slow down a little.' });
+  const run = await startHlRun(parsed.data.game, { userId: req.user?.id ?? null, seed: parsed.data.seed || null });
+  if (!run) return res.status(503).json({ error: 'Not enough anime data for this mode right now. Try another one!' });
+  res.status(201).json(run);
+}));
+
+const hlGuessSchema = z.object({ direction: z.enum(['higher', 'lower']) });
+const runIdOk = (id) => /^[0-9a-f]{32}$/.test(id);
+
+gamesRouter.post('/hl/:runId/guess', asyncRoute(async (req, res) => {
+  const parsed = hlGuessSchema.safeParse(req.body);
+  const row = parsed.success && runIdOk(req.params.runId) ? await loadHlRun(req.params.runId, req.user?.id) : null;
+  if (!row) return res.status(404).json({ error: 'That game has ended. Start a new one!' });
+  if (Date.now() - Number(row.dealt_at) < MIN_GUESS_MS) return res.status(429).json({ error: 'Too fast! Take a look first.' });
+  const out = await guessHl(row, parsed.data.direction);
+  if (!out) return res.status(409).json({ error: 'That round was already answered.' });
+  if (out.gameOver && row.user_id != null) out.best = await recordScore(Number(row.user_id), row.game, out.streak);
+  res.json(out);
+}));
+
+gamesRouter.post('/hl/:runId/skip', asyncRoute(async (req, res) => {
+  const row = runIdOk(req.params.runId) ? await loadHlRun(req.params.runId, req.user?.id) : null;
+  if (!row) return res.status(404).json({ error: 'That game has ended. Start a new one!' });
+  const next = await skipHl(row);
+  if (!next) return res.status(409).json({ error: 'No skips left.' });
+  res.json(next);
+}));
+
 // Called when a signed-in player starts a game. The returned run id is
 // single-use and is the only thing that lets a score be submitted.
+// Higher or Lower's modes don't use this: the server judges those itself.
 gamesRouter.post('/:game/start', requireAuth, asyncRoute(async (req, res) => {
   const { game } = req.params;
   if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
+  if (HL_GAMES[game]) return res.status(400).json({ error: 'This game is scored by the server.' });
 
-  const recent = await db.execute({
-    sql: 'SELECT COUNT(*) AS n FROM game_runs WHERE user_id = ? AND started_at > ?',
-    args: [req.user.id, Date.now() - 60 * 60 * 1000],
-  });
-  if (Number(recent.rows[0].n) >= MAX_RUNS_PER_HOUR) return res.status(429).json({ error: 'Slow down a little.' });
+  if (await tooManyRuns(req.user.id)) return res.status(429).json({ error: 'Slow down a little.' });
 
   // Housekeeping: old runs are useless (a score can't be plausible days later).
   await db.execute({ sql: 'DELETE FROM game_runs WHERE started_at < ?', args: [Date.now() - RUN_RETENTION_MS] });
@@ -111,6 +181,7 @@ gamesRouter.post('/:game/start', requireAuth, asyncRoute(async (req, res) => {
 gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
   const { game } = req.params;
   if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
+  if (HL_GAMES[game]) return res.status(400).json({ error: 'This game is scored by the server.' });
   const parsed = scoreSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
   const { streak, run_id: runId } = parsed.data;
@@ -131,24 +202,7 @@ gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
     return res.status(400).json({ error: "That score doesn't add up for the time played." });
   }
 
-  await db.execute({
-    sql: 'INSERT INTO game_score_log (user_id, game, score, created_at) VALUES (?, ?, ?, ?)',
-    args: [req.user.id, game, streak, Date.now()],
-  });
-
-  await db.execute({
-    sql: `
-      INSERT INTO game_scores (user_id, game, best_streak, updated_at)
-      VALUES (?, ?, ?, datetime('now'))
-      ON CONFLICT(user_id, game) DO UPDATE SET
-        updated_at = CASE WHEN excluded.best_streak > best_streak THEN excluded.updated_at ELSE updated_at END,
-        best_streak = MAX(best_streak, excluded.best_streak)
-    `,
-    args: [req.user.id, game, streak],
-  });
-
-  const row = await db.execute({ sql: 'SELECT best_streak FROM game_scores WHERE user_id = ? AND game = ?', args: [req.user.id, game] });
-  res.json({ best: Number(row.rows[0].best_streak) });
+  res.json({ best: await recordScore(req.user.id, game, streak) });
 }));
 
 const LEADERBOARD_LIMIT = 20;

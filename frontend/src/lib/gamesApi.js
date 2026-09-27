@@ -13,4 +13,8 @@ export const Games = {
   submitDailyResult: (date, won, rounds) => apiPost('/api/games/daily/result', { date, won, rounds }),
   submitMangaDailyResult: (date, won, rounds) => apiPost('/api/games/manga-daily/result', { date, won, rounds }),
   myStats: () => apiGet('/api/games/me/stats'),
+  // Higher or Lower is dealt and judged by the server (backend/src/lib/hlGame.js).
+  hlStart: (game, seed) => apiPost('/api/games/hl/start', { game, seed: seed || null }),
+  hlGuess: (runId, direction) => apiPost(`/api/games/hl/${runId}/guess`, { direction }),
+  hlSkip: (runId) => apiPost(`/api/games/hl/${runId}/skip`),
 };

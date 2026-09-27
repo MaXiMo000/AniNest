@@ -42,6 +42,7 @@ function json(route, body, status = 200) {
 // `user`: null for a logged-out visitor, or { username } for a signed-in one.
 export async function mockApi(page, { user = null } = {}) {
   const today = new Date().toISOString().slice(0, 10);
+  const hl = { field: 'score', at: 0, streak: 0, skips: 1 };
   // Opening clips: answered here (a fast 404, so the player shows its
   // "won't load" state) instead of reaching the real AnimeThemes CDN, whose
   // speed and reachability vary between machines.
@@ -94,6 +95,30 @@ export async function mockApi(page, { user = null } = {}) {
       });
     }
     if (p === '/api/games/me/stats') return json(route, { games: {}, daily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] }, mangaDaily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] } });
+    // Higher or Lower is dealt by the server: a tiny stand-in that walks POOL
+    // in order and judges with the same tie-wins rule.
+    if (p === '/api/games/hl/start' || /^\/api\/games\/hl\/[^/]+\/(guess|skip)$/.test(p)) {
+      const hlValue = { 'higher-lower': 'score', 'hl-popularity': 'members', 'hl-episodes': 'episodes', 'hl-year': 'year' };
+      const card = (i, withValue) => {
+        const a = POOL[i % POOL.length];
+        return { mal_id: a.mal_id, title: a.title, image: a.images.jpg.image_url, ...(withValue ? { value: a[hl.field] } : {}) };
+      };
+      const view = () => ({ runId: 'b'.repeat(32), streak: hl.streak, skipsLeft: hl.skips, champion: card(hl.at, true), challenger: card(hl.at + 1, false) });
+      if (p === '/api/games/hl/start') {
+        hl.field = hlValue[JSON.parse(req.postData() || '{}').game] || 'score';
+        Object.assign(hl, { at: 0, streak: 0, skips: 1 });
+        return json(route, view(), 201);
+      }
+      if (p.endsWith('/skip')) { hl.skips -= 1; hl.at += 1; return json(route, view()); }
+      const { direction } = JSON.parse(req.postData() || '{}');
+      const champ = POOL[hl.at % POOL.length][hl.field];
+      const value = POOL[(hl.at + 1) % POOL.length][hl.field];
+      const correct = direction === 'higher' ? value >= champ : value <= champ;
+      if (!correct) return json(route, { correct, value, streak: hl.streak, gameOver: true });
+      hl.at += 1;
+      hl.streak += 1;
+      return json(route, { correct, value, streak: hl.streak, gameOver: false, next: view() });
+    }
     if (/^\/api\/games\/[^/]+\/leaderboard$/.test(p)) return json(route, { leaderboard: [{ username: 'alice', best_streak: 12 }], myRank: null, myBest: null });
     if (/^\/api\/games\/[^/]+\/start$/.test(p)) return json(route, { runId: 'a'.repeat(32) }, 201);
     if (/^\/api\/games\/[^/]+\/score$/.test(p)) return json(route, { best: 1 });

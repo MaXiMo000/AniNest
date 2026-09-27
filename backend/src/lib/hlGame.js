@@ -1,0 +1,188 @@
+import crypto from 'node:crypto';
+import { db } from './db.js';
+import { cached } from './cache.js';
+import * as animeSource from './animeSource.js';
+
+// Higher or Lower, dealt and judged by the server (routes/games.js /hl/*), so
+// its four leaderboards hold real streaks: the browser only ever sees the
+// champion's number and the challenger's card, and learns the challenger's
+// number after it has guessed. Each run stores its own deck, so a pool
+// refresh mid-run can't change the answers.
+
+export const HL_GAMES = {
+  'higher-lower': (a) => Number(a.score),
+  'hl-popularity': (a) => Number(a.members),
+  'hl-episodes': (a) => Number(a.episodes),
+  'hl-year': (a) => Number(a.year),
+};
+const VALID = {
+  'higher-lower': (v) => v > 0,
+  'hl-popularity': (v) => v > 0,
+  'hl-episodes': (v) => v > 0,
+  'hl-year': (v) => v > 1900,
+};
+export const SKIPS = 1;
+// The least time between seeing a challenger and guessing. The page's own
+// reveal animation already takes longer; this only stops scripted play.
+export const MIN_GUESS_MS = 700;
+
+// ---- The pool: the same spread as the browser's games pool (lib/animePool.js
+// in the frontend): top anime sampled across many pages, the current season,
+// and top-rated per genre, so scores aren't all bunched at 9.0. ----
+const TOP_PAGES = [1, 3, 6, 10, 15, 20, 30, 40];
+const GENRES = [1, 2, 4, 7, 8, 10, 14, 18, 19, 22, 24, 30, 36, 37, 40, 41];
+
+async function livePool() {
+  const lists = await Promise.all([
+    ...TOP_PAGES.map((p) => animeSource.topAnime(p).catch(() => ({ data: [] }))),
+    ...[1, 2].map((p) => animeSource.seasonNow(p).catch(() => ({ data: [] }))),
+    ...GENRES.map((g) => animeSource.search({ genres: String(g), order_by: 'score', sort: 'desc', page: 1 }).catch(() => ({ data: [] }))),
+  ]);
+  const seen = new Set();
+  const out = [];
+  for (const a of lists.flatMap((l) => l.data || [])) {
+    const id = Number(a?.mal_id);
+    if (!id || seen.has(id) || !a.title) continue;
+    seen.add(id);
+    out.push({
+      id, title: a.title, image: a.images?.jpg?.image_url || null,
+      score: a.score, members: a.members, episodes: a.episodes, year: a.year,
+    });
+  }
+  return out;
+}
+
+let poolSource = livePool;
+// Test hook: the suite never calls the anime APIs.
+export function setHlPool(fn) { poolSource = fn || livePool; }
+const getPool = () => cached('hl:pool', 6 * 60 * 60 * 1000, () => poolSource());
+
+// ---- Seeded dealing: "challenge a friend" links deal the same deck. The
+// generator's state is stored with the run so reshuffles stay repeatable. ----
+export function hashString(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// mulberry32 with its state passed in and out: [float in [0,1), next state].
+function rand(state) {
+  const a = (state + 0x6d2b79f5) >>> 0;
+  let t = a;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return [((t ^ (t >>> 14)) >>> 0) / 4294967296, a];
+}
+
+export function shuffleSeeded(list, state) {
+  const out = [...list];
+  let s = state;
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    let r;
+    [r, s] = rand(s);
+    const j = Math.floor(r * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return [out, s];
+}
+
+// A tie counts as a win either way.
+export const isCorrect = (direction, champion, challenger) => (direction === 'higher' ? challenger >= champion : challenger <= champion);
+
+// ---- Runs ----
+
+const card = (cards, id, withValue) => {
+  const [value, title, image] = cards[id];
+  return { mal_id: Number(id), title, image, ...(withValue ? { value } : {}) };
+};
+
+function view(run, cards) {
+  return {
+    runId: run.id,
+    streak: Number(run.streak),
+    skipsLeft: Number(run.skips),
+    champion: card(cards, run.champion, true),
+    challenger: card(cards, run.challenger, false),
+  };
+}
+
+// Next challenger off the deck, reshuffling (without the champion) when empty.
+function draw(deck, rngState, cards, champion) {
+  let d = deck;
+  let s = rngState;
+  if (!d.length) [d, s] = shuffleSeeded(Object.keys(cards).map(Number).filter((id) => id !== champion).sort((a, b) => a - b), s);
+  return { challenger: d[d.length - 1], deck: d.slice(0, -1), rng: s };
+}
+
+export async function startHlRun(game, { userId = null, seed = null }) {
+  const valueOf = HL_GAMES[game];
+  const pool = (await getPool()).filter((a) => VALID[game](valueOf(a)));
+  if (pool.length < 8) return null;
+  const cards = Object.fromEntries(pool.map((a) => [a.id, [valueOf(a), a.title, a.image]]));
+  const ids = pool.map((a) => a.id).sort((a, b) => a - b);
+  const [deck, rng] = shuffleSeeded(ids, seed ? hashString(String(seed)) : crypto.randomBytes(4).readUInt32BE());
+  const champion = deck.pop();
+  const next = draw(deck, rng, cards, champion);
+  const run = {
+    id: crypto.randomBytes(16).toString('hex'), streak: 0, skips: SKIPS, champion, challenger: next.challenger,
+  };
+  await db.batch([
+    { sql: 'DELETE FROM hl_runs WHERE created_at < ?', args: [Date.now() - 24 * 60 * 60 * 1000] },
+    {
+      sql: `INSERT INTO hl_runs (id, user_id, game, cards, deck, rng, champion, challenger, streak, skips, dealt_at, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+      args: [run.id, userId, game, JSON.stringify(cards), JSON.stringify(next.deck), next.rng, champion, next.challenger, SKIPS, Date.now(), Date.now()],
+    },
+  ], 'write');
+  return view(run, cards);
+}
+
+// The run, if it belongs to this visitor (a guest run to no account, an
+// account's run only to that account) and is still going.
+export async function loadHlRun(runId, userId) {
+  const row = (await db.execute({ sql: 'SELECT * FROM hl_runs WHERE id = ? AND finished = 0', args: [runId] })).rows[0];
+  if (!row) return null;
+  if ((row.user_id == null ? null : Number(row.user_id)) !== (userId ?? null)) return null;
+  return row;
+}
+
+// { correct, value, streak, gameOver, next? }. Guarded on the current
+// challenger, so a double-sent guess can't count twice.
+export async function guessHl(row, direction) {
+  const cards = JSON.parse(row.cards);
+  const champ = cards[row.champion][0];
+  const value = cards[row.challenger][0];
+  const correct = isCorrect(direction, champ, value);
+  if (!correct) {
+    const res = await db.execute({ sql: 'UPDATE hl_runs SET finished = 1 WHERE id = ? AND challenger = ? AND finished = 0', args: [row.id, row.challenger] });
+    return res.rowsAffected ? { correct: false, value, streak: Number(row.streak), gameOver: true } : null;
+  }
+  const champion = Number(row.challenger);
+  const next = draw(JSON.parse(row.deck), Number(row.rng), cards, champion);
+  const streak = Number(row.streak) + 1;
+  const res = await db.execute({
+    sql: `UPDATE hl_runs SET champion = ?, challenger = ?, deck = ?, rng = ?, streak = ?, dealt_at = ?
+          WHERE id = ? AND challenger = ? AND finished = 0`,
+    args: [champion, next.challenger, JSON.stringify(next.deck), next.rng, streak, Date.now(), row.id, row.challenger],
+  });
+  if (!res.rowsAffected) return null;
+  return {
+    correct: true, value, streak, gameOver: false,
+    next: view({ ...row, champion, challenger: next.challenger, streak, skips: row.skips }, cards),
+  };
+}
+
+export async function skipHl(row) {
+  if (Number(row.skips) <= 0) return null;
+  const cards = JSON.parse(row.cards);
+  const next = draw(JSON.parse(row.deck), Number(row.rng), cards, Number(row.champion));
+  const res = await db.execute({
+    sql: 'UPDATE hl_runs SET challenger = ?, deck = ?, rng = ?, skips = skips - 1, dealt_at = ? WHERE id = ? AND challenger = ? AND skips > 0',
+    args: [next.challenger, JSON.stringify(next.deck), next.rng, Date.now(), row.id, row.challenger],
+  });
+  if (!res.rowsAffected) return null;
+  return view({ ...row, challenger: next.challenger, skips: Number(row.skips) - 1 }, cards);
+}

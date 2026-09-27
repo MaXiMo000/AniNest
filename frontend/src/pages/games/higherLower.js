@@ -1,16 +1,18 @@
-import { getAnimePool } from '../../lib/animePool.js';
-import { imageOf } from '../../lib/api.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry } from '../../lib/ui.js';
-import { shuffle } from '../../lib/shuffle.js';
-import { randomFor, stableOrder } from '../../lib/rng.js';
+import { Games } from '../../lib/gamesApi.js';
+import { escapeHtml, loadingHTML, errorHTML, wireRetry, showToast } from '../../lib/ui.js';
 import {
-  startServerRun, recordLocalResult, getLocalStats, gameOverHTML, wireGameOver, challengeBannerHTML,
+  recordLocalResult, getLocalStats, gameOverHTML, wireGameOver, challengeBannerHTML,
 } from '../../lib/gameKit.js';
 import {
   celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle, countUp, sfx, popText,
 } from '../../lib/gameFx.js';
 import { navigate } from '../../lib/router.js';
-import { freshFirst, markSeen } from '../../lib/recentlySeen.js';
+
+// Higher or Lower. The server deals and judges every round
+// (backend/src/lib/hlGame.js): the page only knows the champion's number
+// until it guesses, then learns the challenger's. So the four leaderboards
+// hold real streaks, and a "challenge a friend" seed deals the same deck to
+// both players. Anyone can play; signed-in runs are recorded by the server.
 
 const REVEAL_DELAY_MS = 1400;
 
@@ -20,28 +22,24 @@ function compact(n) {
   return String(Math.round(n));
 }
 
-// Each mode compares one number. `valid` filters the pool to entries that
-// have it; `format` is how it is shown (also used mid count-up animation).
+// Each mode compares one number; `format` is how it is shown (also used mid
+// count-up animation). The server knows which number each mode uses.
 export const HL_MODES = {
   score: {
     slug: 'higher-lower', legacyKey: 'aninest_hl_best', emoji: '⭐', label: 'Score',
-    question: 'community score', value: (a) => Number(a.score), format: (v) => Number(v).toFixed(1),
-    valid: (a) => Number(a.score) > 0,
+    question: 'community score', format: (v) => Number(v).toFixed(1),
   },
   popularity: {
     slug: 'hl-popularity', emoji: '👥', label: 'Popularity',
-    question: 'number of fans (members)', value: (a) => Number(a.members), format: compact,
-    valid: (a) => Number(a.members) > 0,
+    question: 'number of fans (members)', format: compact,
   },
   episodes: {
     slug: 'hl-episodes', emoji: '🎞️', label: 'Episodes',
-    question: 'episode count', value: (a) => Number(a.episodes), format: (v) => String(Math.round(v)),
-    valid: (a) => Number(a.episodes) > 0,
+    question: 'episode count', format: (v) => String(Math.round(v)),
   },
   year: {
     slug: 'hl-year', emoji: '📅', label: 'Release Year',
-    question: 'release year (higher = newer)', value: (a) => Number(a.year), format: (v) => String(Math.round(v)),
-    valid: (a) => Number(a.year) > 1900,
+    question: 'release year (higher = newer)', format: (v) => String(Math.round(v)),
   },
 };
 
@@ -53,26 +51,18 @@ export function comboFor(streak) {
   return 1;
 }
 
-// A tie counts as a win either way - punishing an exact match as a "wrong"
-// guess would feel unfair, not skill-testing.
-export function isCorrectGuess(direction, championValue, challengerValue) {
-  return direction === 'higher' ? challengerValue >= championValue : challengerValue <= championValue;
-}
-
-function cardHTML(anime, mode, { hidden, id, label }) {
-  const img = imageOf(anime) || '';
-  const value = mode.value(anime);
+function cardHTML(card, mode, { hidden, id, label }) {
   return `
     <div class="vs-card" id="${id}">
       <span class="vs-card-label">${label}</span>
       <div class="vs-poster-wrap">
-        ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(anime.title)}" />` : ''}
+        ${card.image ? `<img src="${escapeHtml(card.image)}" alt="${escapeHtml(card.title)}" />` : ''}
       </div>
-      <div class="vs-title">${escapeHtml(anime.title)}</div>
+      <div class="vs-title">${escapeHtml(card.title)}</div>
       <div class="vs-flip ${hidden ? '' : 'is-flipped'}">
         <div class="vs-flip-inner">
           <div class="vs-score vs-face vs-face--back is-hidden">?</div>
-          <div class="vs-score vs-face vs-face--front" data-value="${value}">${hidden ? '' : mode.format(value)}</div>
+          <div class="vs-score vs-face vs-face--front">${hidden ? '' : mode.format(card.value)}</div>
         </div>
       </div>
     </div>`;
@@ -90,50 +80,28 @@ function modeTabsHTML(current) {
 
 export async function renderHigherLower(root, params = new URLSearchParams()) {
   root.innerHTML = loadingHTML('SHUFFLING THE DECK');
-
-  let rawPool;
-  try {
-    rawPool = await getAnimePool();
-  } catch {
-    root.innerHTML = errorHTML('Couldn’t load anime for the game — try again shortly!');
-    wireRetry(root, () => renderHigherLower(root, params));
-    return;
-  }
-
   document.title = 'Higher or Lower — AniNest';
   const modeKey = HL_MODES[params.get('mode')] ? params.get('mode') : 'score';
   const mode = HL_MODES[modeKey];
   const seed = params.get('seed');
-  const pool = rawPool.filter(mode.valid);
-  if (pool.length < 8) {
-    root.innerHTML = errorHTML('Not enough anime data for this mode right now. Try another one!');
-    wireRetry(root, () => navigate('#/games/higher-lower'));
+
+  let state;
+  try {
+    state = await Games.hlStart(mode.slug, seed);
+  } catch (err) {
+    root.innerHTML = errorHTML(err.message || 'Couldn’t start the game — try again shortly!');
+    wireRetry(root, () => (err.status === 503 ? navigate('#/games/higher-lower') : renderHigherLower(root, params)));
     return;
   }
 
-  // Game state lives in this closure, not a module-level store - the game
-  // is scoped to a single page visit and doesn't need to survive navigation.
-  const rand = randomFor(seed);
-  const SEEN_KEY = 'higher-lower';
-  const deal = (list) => (seed ? shuffle(list, rand) : freshFirst(shuffle(list, rand), SEEN_KEY));
-  let deck = deal(seed ? stableOrder(pool) : pool);
-  let champion = deck.pop();
-  let challenger = deck.pop();
-  let streak = 0;
   let points = 0;
-  let skipsLeft = 1;
-  let locked = false; // true during the reveal animation, blocks a double guess
+  let locked = false; // true while a guess is out or the reveal plays
+  let last = null; // the final round, for the game-over line
   const best = getLocalStats(mode.slug, mode.legacyKey).best;
-  const run = startServerRun(mode.slug);
-
-  function drawChallenger() {
-    if (deck.length === 0) deck = deal(pool.filter((a) => a.mal_id !== champion.mal_id));
-    challenger = deck.pop();
-  }
 
   function renderRound() {
     locked = false;
-    if (!seed) { markSeen(SEEN_KEY, champion.mal_id); markSeen(SEEN_KEY, challenger.mal_id); }
+    const { streak, champion, challenger, skipsLeft } = state;
     const combo = comboFor(streak);
     root.innerHTML = `
       <div class="hl-header">
@@ -176,37 +144,48 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
     });
   }
 
-  function skip() {
-    if (locked || skipsLeft <= 0) return;
-    skipsLeft -= 1;
+  async function skip() {
+    if (locked || state.skipsLeft <= 0) return;
+    locked = true;
     sfx('click');
-    drawChallenger();
-    renderRound();
+    try {
+      state = await Games.hlSkip(state.runId);
+    } catch (err) {
+      showToast(err.message || 'Couldn’t skip — try again.');
+    }
+    if (root.isConnected) renderRound();
   }
 
-  function guess(direction) {
+  async function guess(direction) {
     if (locked) return;
     locked = true;
     root.querySelectorAll('.hl-actions button').forEach((b) => { b.disabled = true; });
 
-    const correct = isCorrectGuess(direction, mode.value(champion), mode.value(challenger));
-    const cardEl = root.querySelector('#vs-challenger');
-    const flip = cardEl?.querySelector('.vs-flip');
-    const front = cardEl?.querySelector('.vs-face--front');
-    flip?.classList.add('is-flipped');
-    if (front) {
-      const target = mode.value(challenger);
-      countUp(front, target, { from: modeKey === 'year' ? target - 30 : 0, ms: 650, format: mode.format });
+    let out;
+    try {
+      out = await Games.hlGuess(state.runId, direction);
+    } catch (err) {
+      if (!root.isConnected) return;
+      showToast(err.message || 'Lost connection — try that again.');
+      if (err.status === 404) renderHigherLower(root, params);
+      else renderRound();
+      return;
     }
+    if (!root.isConnected) return;
+
+    const { correct, value } = out;
+    last = { champion: state.champion, challenger: { ...state.challenger, value } };
+    const cardEl = root.querySelector('#vs-challenger');
+    cardEl?.querySelector('.vs-flip')?.classList.add('is-flipped');
+    const front = cardEl?.querySelector('.vs-face--front');
+    if (front) countUp(front, value, { from: modeKey === 'year' ? value - 30 : 0, ms: 650, format: mode.format });
 
     setTimeout(() => {
       cardEl?.classList.add(correct ? 'vs-correct' : 'vs-wrong');
       if (correct) {
-        streak += 1;
-        const gained = 10 * comboFor(streak - 1);
-        points += gained;
-        celebrateCorrect(streak, cardEl);
-        if (comboFor(streak) > comboFor(streak - 1)) popText(`COMBO ×${comboFor(streak)}!`, { color: 'var(--blue)' });
+        points += 10 * comboFor(out.streak - 1);
+        celebrateCorrect(out.streak, cardEl);
+        if (comboFor(out.streak) > comboFor(out.streak - 1)) popText(`COMBO ×${comboFor(out.streak)}!`, { color: 'var(--blue)' });
       } else {
         lamentWrong(cardEl);
       }
@@ -215,11 +194,10 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
     setTimeout(() => {
       if (!root.isConnected) return;
       if (correct) {
-        champion = challenger;
-        drawChallenger();
+        state = out.next;
         renderRound();
       } else {
-        renderGameOver();
+        renderGameOver(out.streak);
       }
     }, REVEAL_DELAY_MS);
   }
@@ -235,9 +213,8 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
   document.addEventListener('keydown', onKey);
   window.addEventListener('hashchange', () => document.removeEventListener('keydown', onKey), { once: true });
 
-  function renderGameOver() {
+  function renderGameOver(streak) {
     document.removeEventListener('keydown', onKey);
-    run.submit(streak);
     const stats = recordLocalResult(mode.slug, streak, mode.legacyKey);
     root.innerHTML = gameOverHTML({
       emoji: '💥',
@@ -245,7 +222,7 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
       stats,
       slug: mode.slug,
       extra: `<p class="section-sub">${mode.emoji} ${escapeHtml(mode.label)} mode · ⭐ ${points} points</p>
-        <p class="section-sub">The run ended on <a href="#/anime/${challenger.mal_id}"><strong>${escapeHtml(challenger.title)}</strong></a> (${escapeHtml(mode.format(mode.value(challenger)))}) vs ${escapeHtml(mode.format(mode.value(champion)))}.</p>`,
+        <p class="section-sub">The run ended on <a href="#/anime/${Number(last.challenger.mal_id)}"><strong>${escapeHtml(last.challenger.title)}</strong></a> (${escapeHtml(mode.format(last.challenger.value))}) vs ${escapeHtml(mode.format(last.champion.value))}.</p>`,
     });
     wireGameOver(root, {
       stats,
