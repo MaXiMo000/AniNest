@@ -2,6 +2,7 @@ import { apiGet, apiPost } from '../lib/http.js';
 import { Auth } from '../lib/authStore.js';
 import { escapeHtml, emptyHTML, errorHTML, loadingHTML, showToast, wireRetry } from '../lib/ui.js';
 import { autoplayVideoOnView } from '../lib/autoplayOnView.js';
+import { powSelectHTML } from '../lib/powSelect.js';
 
 // Season OP/ED tournament (backend/src/routes/tournaments.js): the season's
 // 16 most popular shows' openings (or endings) in a bracket, one round every
@@ -162,8 +163,39 @@ function wire(root, slot, state) {
   }));
 }
 
+const SEASON_RE = /^(WINTER|SPRING|SUMMER|FALL)$/;
+const pickHref = (kind, pick) => `#/tournament?kind=${kind}${pick ? `&season=${pick.season}&year=${pick.year}` : ''}`;
+
+// Past seasons, filled in after the bracket loads (GET /api/tournaments/seasons).
+async function loadSeasonPicker(root, kind, pick) {
+  const slot = root.querySelector('#season-picker');
+  if (!slot) return;
+  let seasons;
+  try {
+    ({ seasons } = await apiGet('/api/tournaments/seasons'));
+  } catch {
+    return;
+  }
+  if (!slot.isConnected || seasons.length < 2) return;
+  const current = pick ? `${pick.season}:${pick.year}` : null;
+  slot.innerHTML = `
+    <span class="section-sub" style="font-weight:800">Season</span>
+    ${powSelectHTML({
+    id: 'season-select',
+    options: [{ value: '', label: 'Latest' }, ...seasons.map((x) => ({ value: `${x.season}:${x.year}`, label: seasonLabel(x) }))],
+    value: current || '',
+  })}`;
+  slot.querySelector('#season-select').addEventListener('change', (e) => {
+    const [season, year] = e.target.value.split(':');
+    window.location.hash = pickHref(kind, e.target.value ? { season, year } : null);
+  });
+}
+
 export async function renderTournament(root, params) {
   const kind = params?.get('kind') === 'ED' ? 'ED' : 'OP';
+  const season = String(params?.get('season') || '').toUpperCase();
+  const year = Number(params?.get('year'));
+  const pick = SEASON_RE.test(season) && Number.isInteger(year) && year > 1990 ? { season, year } : null;
   document.title = `Best ${KIND_LABEL[kind]} Tournament — AniNest`;
   root.innerHTML = `
     <div class="section-head">
@@ -171,15 +203,18 @@ export async function renderTournament(root, params) {
       <span class="section-sub">The season's best opening and ending, decided by you. 16 songs from the most popular shows, one round every few days.</span>
     </div>
     <div class="vibe-examples" role="tablist">
-      ${Object.entries(KIND_LABEL).map(([k, label]) => `<a class="chip${k === kind ? ' active' : ''}" role="tab" aria-selected="${k === kind}" href="#/tournament?kind=${k}">Best ${label}</a>`).join('')}
+      ${Object.entries(KIND_LABEL).map(([k, label]) => `<a class="chip${k === kind ? ' active' : ''}" role="tab" aria-selected="${k === kind}" href="${pickHref(k, pick)}">Best ${label}</a>`).join('')}
     </div>
+    <div id="season-picker" class="hero-actions" style="align-items:center;gap:10px;margin:6px 0 10px"></div>
     <div id="tourney-slot">${loadingHTML('LOADING THE BRACKET')}</div>`;
   const slot = root.querySelector('#tourney-slot');
 
   const load = async (tries = 0) => {
     let res;
     try {
-      res = await apiGet(`/api/tournaments/current?kind=${kind}`);
+      res = await apiGet(pick
+        ? `/api/tournaments/${pick.year}/${pick.season.toLowerCase()}?kind=${kind}`
+        : `/api/tournaments/current?kind=${kind}`);
     } catch {
       if (!root.isConnected) return;
       slot.innerHTML = errorHTML('Couldn’t load the tournament.');
@@ -192,6 +227,11 @@ export async function renderTournament(root, params) {
       if (tries < PENDING_TRIES) setTimeout(() => load(tries + 1), PENDING_RETRY_MS);
       return;
     }
+    if (!res.data && pick) {
+      slot.innerHTML = emptyHTML(`There was no Best ${KIND_LABEL[kind]} bracket in ${seasonLabel(pick)}.`, '🎵');
+      loadSeasonPicker(root, kind, pick);
+      return;
+    }
     if (!res.data) {
       slot.innerHTML = emptyHTML(`Not enough ${KIND_LABEL[kind].toLowerCase()}s are known for ${seasonLabel(res)} yet. Check back soon.`, '🎵');
       return;
@@ -200,6 +240,7 @@ export async function renderTournament(root, params) {
     root.querySelector('.section-title').textContent = `🏆 Best ${KIND_LABEL[kind]} · ${seasonLabel(res.data)}`;
     slot.innerHTML = pageHTML(state.data);
     wire(root, slot, state);
+    loadSeasonPicker(root, kind, pick);
   };
   load();
 }

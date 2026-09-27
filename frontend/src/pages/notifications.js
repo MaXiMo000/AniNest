@@ -1,21 +1,12 @@
 import { Notifications } from '../lib/notificationsApi.js';
 import { Auth } from '../lib/authStore.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML, showToast } from '../lib/ui.js';
+import { pushState, enablePush, disablePush } from '../lib/push.js';
+import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML, showToast, timeAgo } from '../lib/ui.js';
 
 const KIND_META = {
   'anime-episodes': { emoji: '🆓', label: 'Free episodes' },
   'manga-chapter': { emoji: '📖', label: 'New chapter' },
 };
-
-function timeAgo(iso) {
-  const then = new Date(`${String(iso).replace(' ', 'T')}Z`).getTime();
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 function rowHTML(n) {
   const meta = KIND_META[n.kind] || { emoji: '🔔', label: 'Update' };
@@ -59,11 +50,14 @@ export async function renderNotifications(root) {
       <h1 class="section-title">🔔 Notifications</h1>
       <span class="section-sub">New free episodes for anime you're following, and new chapters of manga you're reading.</span>
     </div>
+    <div id="push-slot"></div>
     ${data.unread ? '<div class="hero-actions" style="margin-bottom:12px"><button class="btn-pow btn-pow--sm" id="mark-all">✅ Mark all as read</button></div>' : ''}
     ${data.notifications.length
       ? `<div class="notif-list">${data.notifications.map(rowHTML).join('')}</div>`
       : emptyHTML('Nothing new yet. Favorite an anime or add manga to your reading list and you\'ll be told when there\'s more to watch or read.', '🔕')}
   `;
+
+  loadPushToggle(root);
 
   root.querySelector('#mark-all')?.addEventListener('click', async () => {
     try {
@@ -77,5 +71,39 @@ export async function renderNotifications(root) {
   // Opening one marks it read (fire-and-forget) on the way to the title.
   root.querySelectorAll('.notif-row[data-unread="1"]').forEach((row) => {
     row.addEventListener('click', () => { Notifications.markRead(Number(row.dataset.id)).catch(() => {}); });
+  });
+}
+
+// "Alerts on this device": only drawn when push can actually work here.
+async function loadPushToggle(root) {
+  const slot = root.querySelector('#push-slot');
+  if (!slot) return;
+  let state;
+  try {
+    state = await pushState();
+  } catch {
+    return;
+  }
+  if (!state.available || !slot.isConnected) return;
+  slot.innerHTML = `
+    <div class="push-toggle">
+      <span>📲 ${state.subscribed ? 'Alerts are on for this device.' : 'Get these as alerts on this device, even with AniNest closed.'}</span>
+      <button class="chip" id="push-btn">${state.subscribed ? 'Turn off' : 'Turn on'}</button>
+    </div>`;
+  const btn = slot.querySelector('#push-btn');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      if (state.subscribed) {
+        await disablePush(state);
+        showToast('Alerts turned off for this device.');
+      } else {
+        await enablePush(state);
+        showToast('Alerts are on 📲');
+      }
+    } catch (err) {
+      showToast(err.message || 'Couldn’t change alerts — try again.');
+    }
+    loadPushToggle(root);
   });
 }

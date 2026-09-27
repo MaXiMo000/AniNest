@@ -30,6 +30,28 @@ tournamentsRouter.get('/current', asyncRoute(async (req, res) => {
   await respond(req, res, await ensureTournament(season, year, kind), { season, year, kind });
 }));
 
+// Every season that has a bracket, newest first, for the page's season picker.
+tournamentsRouter.get('/seasons', asyncRoute(async (_req, res) => {
+  const rows = await db.execute(`
+    SELECT season, year, GROUP_CONCAT(kind) AS kinds FROM theme_tournaments
+    GROUP BY season, year
+    ORDER BY year DESC, CASE season WHEN 'FALL' THEN 4 WHEN 'SUMMER' THEN 3 WHEN 'SPRING' THEN 2 ELSE 1 END DESC`);
+  res.json({ seasons: rows.rows.map((r) => ({ season: r.season, year: Number(r.year), kinds: String(r.kinds).split(',').sort() })) });
+}));
+
+// Brackets one anime's songs are in, for the jukebox on its detail page.
+tournamentsRouter.get('/for-anime/:malId', asyncRoute(async (req, res) => {
+  const malId = Number(req.params.malId);
+  if (!Number.isInteger(malId) || malId <= 0) return res.status(400).json({ error: 'Invalid anime id.' });
+  const rows = await db.execute({
+    sql: `SELECT t.season, t.year, t.kind, e.slug, e.song_title FROM theme_tournament_entries e
+          JOIN theme_tournaments t ON t.id = e.tournament_id
+          WHERE e.mal_id = ? ORDER BY t.year DESC, t.id DESC`,
+    args: [malId],
+  });
+  res.json({ entries: rows.rows.map((r) => ({ season: r.season, year: Number(r.year), kind: r.kind, slug: r.slug, title: r.song_title })) });
+}));
+
 // An earlier season's bracket, e.g. /2026/summer?kind=ED. Read only: nothing
 // is built for a season that never had one, so this can't be used to make
 // the server walk arbitrary seasons.

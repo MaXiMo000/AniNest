@@ -33,6 +33,15 @@ export const Auth = {
     set({ user });
     return user;
   },
+  // Server-side, a deleted account's session is already gone; this just
+  // forgets it here.
+  async setPrivate(isPrivate) {
+    const res = await apiPost('/api/auth/privacy', { private: isPrivate });
+    set({ user: { ...state.user, isPrivate: res.isPrivate } });
+  },
+  forget() {
+    set({ user: null });
+  },
   async logout() {
     await apiPost('/api/auth/logout').catch(() => {});
     set({ user: null });

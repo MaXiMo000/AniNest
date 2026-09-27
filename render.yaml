@@ -16,6 +16,13 @@ services:
         value: '24'
       - key: NODE_ENV
         value: production
+      # Proxies in front of Express: the frontend's /api/* rewrite plus
+      # Render's load balancer. It sets which X-Forwarded-For entry is the
+      # visitor's IP, so rate limits are per visitor. The backend logs
+      # "proxy hop check" once after boot; if forwardedHops there differs,
+      # change this to match.
+      - key: TRUST_PROXY
+        value: '2'
       # The database lives on Turso (free, SQLite-compatible) rather than a
       # Render disk - see backend/src/lib/db.js. Get these from `turso db show`
       # / `turso db tokens create` after creating a free database at
@@ -43,6 +50,10 @@ services:
       # Leave unset and nobody is an admin; the feature just stays hidden.
       - key: ADMIN_USERNAMES
         sync: false
+      # Same, by numeric user id, which nobody can claim by registering a
+      # name first. Preferred over ADMIN_USERNAMES.
+      - key: ADMIN_USER_IDS
+        sync: false
       # Powers the admin-only "search official YouTube channels" assist on
       # the watch-source curation page (see backend/src/lib/youtube.js).
       # Optional - free Google Cloud API key (YouTube Data API v3, no
@@ -51,6 +62,32 @@ services:
       # pasting a URL directly, and regular users can still submit links
       # for review either way - this key only affects the search shortcut.
       - key: YOUTUBE_API_KEY
+        sync: false
+      # Optional "Forgot password?" emails through Resend (free tier at
+      # resend.com). Both must be set, and MAIL_FROM must be an address on a
+      # domain verified in Resend. Leave blank and the reset page says it
+      # isn't set up yet; everything else works either way.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      # Or send through Gmail (no domain needed): SMTP_USER is the Gmail
+      # address, SMTP_PASS a Google app password. Resend wins if both are set.
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      # Optional browser push alerts. Generate once with
+      # `npx web-push generate-vapid-keys`; blank = the in-app bell only.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      # Optional vibe search v2 (Claude Haiku reads requests the rules can't).
+      # Blank = rules only.
+      - key: ANTHROPIC_API_KEY
         sync: false
 
   - name: aninest-frontend
@@ -95,12 +132,11 @@ services:
         name: Permissions-Policy
         value: geolocation=(), microphone=(), camera=()
       # The real header version of index.html's <meta> CSP — this one can
-      # (and does) add frame-ancestors, which a <meta> tag cannot. Update
-      # connect-src's onrender.com wildcard to your exact backend origin
-      # once you're on a final domain, for a tighter policy.
+      # (and does) add frame-ancestors, which a <meta> tag cannot. The API is
+      # same-origin (the /api/* rewrite below), so connect-src is just 'self'.
       - path: /*
         name: Content-Security-Policy
-        value: "default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com https://aninest-backend.onrender.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+        value: "default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
     # Not strictly required — this app uses hash-based routing (#/browse,
     # #/anime/123), so the browser only ever requests / from the server and
     # everything after the # is handled client-side. Kept anyway as a safe

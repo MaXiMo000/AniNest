@@ -21,7 +21,7 @@ export const Notifications = {
     if (!Auth.get().user) { setBadge(0); return; }
     try {
       const { unread } = await apiGet('/api/notifications/unread-count');
-      setBadge(unread);
+      setBadge(Number(unread) || 0);
     } catch { /* a failed poll just leaves the last number in place */ }
   },
 

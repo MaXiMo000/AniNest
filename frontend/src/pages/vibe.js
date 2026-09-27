@@ -22,6 +22,7 @@ function chipsHTML(parsed, like) {
   const notes = [];
   if (like?.notFound) notes.push(`Couldn't find an anime called “${escapeHtml(like.notFound)}”, so that part was left out.`);
   if (like?.malId) notes.push(`Starting from shows people who liked <a href="#/anime/${Number(like.malId)}">${escapeHtml(like.title)}</a> recommend.`);
+  if (parsed.source === 'ai') notes.push('✨ Read with AI, since some words weren’t in the built-in list. These chips are what it understood.');
   if (parsed.unknown.length) notes.push(`Didn't understand: ${parsed.unknown.map((w) => `“${escapeHtml(w)}”`).join(', ')}.`);
   return `
     <div class="vibe-chips" aria-label="What was understood">${chips}</div>

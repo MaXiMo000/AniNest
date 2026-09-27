@@ -13,7 +13,7 @@ function resultsListHTML(slot, results) {
     <ul class="compare-results-list">
       ${results.map((a) => `
         <li><button class="compare-result" data-slot="${slot}" data-id="${a.mal_id}">
-          ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" />` : ''}
+          ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" loading="lazy" />` : ''}
           <span>${escapeHtml(a.title)}</span>
         </button></li>
       `).join('')}

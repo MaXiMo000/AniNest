@@ -9,7 +9,8 @@ import { logger } from './lib/logger.js';
 import { tidewatchMetrics } from './lib/tidewatch-metrics.js';
 import { attachUser } from './middleware/session.js';
 import { ensureCsrfCookie, verifyCsrf } from './middleware/csrf.js';
-import { generalLimiter, authLimiter } from './middleware/rateLimits.js';
+import { generalLimiter, authLimiter, screenshotLimiter } from './middleware/rateLimits.js';
+import { db } from './lib/db.js';
 import { authRouter } from './routes/auth.js';
 import { favoritesRouter } from './routes/favorites.js';
 import { animeRouter } from './routes/anime.js';
@@ -34,6 +35,31 @@ import { roomsRouter } from './routes/rooms.js';
 import { episodeGuideRouter } from './routes/episodeGuide.js';
 import { tournamentsRouter } from './routes/tournaments.js';
 import { wrappedRouter } from './routes/wrapped.js';
+import { reviewReportsRouter, adminReviewReportsRouter } from './routes/reviewReports.js';
+import { shareRouter } from './routes/share.js';
+import { freeRouter } from './routes/free.js';
+import { feedRouter } from './routes/feed.js';
+
+function trustProxyHops() {
+  const n = Number(process.env.TRUST_PROXY);
+  return Number.isInteger(n) && n >= 0 ? n : 1;
+}
+
+// Logs, once per process, how many addresses the first proxied request
+// carried in X-Forwarded-For (never the addresses themselves). If it doesn't
+// match TRUST_PROXY, fix the env var: that number decides whose IP the rate
+// limits see.
+function logForwardedHopsOnce(app) {
+  let logged = false;
+  app.use((req, _res, next) => {
+    const xff = req.get('x-forwarded-for');
+    if (!logged && xff) {
+      logged = true;
+      logger.info({ forwardedHops: xff.split(',').length, trustProxy: app.get('trust proxy') }, 'proxy hop check');
+    }
+    next();
+  });
+}
 
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
@@ -44,7 +70,14 @@ export function createApp() {
   const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',').map((s) => s.trim());
 
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  // How many proxies sit between the visitor and this process. In production
+  // that is two: the frontend static site's /api/* rewrite, then Render's own
+  // load balancer in front of this service (render.yaml sets TRUST_PROXY=2).
+  // With only 1, req.ip is the rewrite proxy's address, so every visitor
+  // shared one rate-limit bucket. Too high a number lets a client spoof its
+  // IP through X-Forwarded-For, so keep it equal to the real hop count.
+  app.set('trust proxy', trustProxyHops());
+  logForwardedHopsOnce(app);
 
   app.use(helmet({
     // This process only ever serves JSON — the CSP that matters lives on the
@@ -84,10 +117,30 @@ export function createApp() {
   app.use(ensureCsrfCookie);
   app.use(verifyCsrf);
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  // Touches the database so Render's health check notices a broken Turso
+  // connection, not just a live process. 503 if it doesn't answer in 3s.
+  app.get('/api/health', async (req, res) => {
+    let timer;
+    try {
+      await Promise.race([
+        db.execute('SELECT 1'),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('database timed out')), 3000); }),
+      ]);
+      res.json({ ok: true });
+    } catch (err) {
+      req.log.error({ err }, 'health check: database unreachable');
+      res.status(503).json({ ok: false, error: 'Database unreachable.' });
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 
   app.use('/api/auth/register', authLimiter);
   app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/password', authLimiter);
+  app.use('/api/auth/delete-account', authLimiter);
+  app.use('/api/auth/forgot', authLimiter);
+  app.use('/api/auth/reset', authLimiter);
   app.use('/api/auth', authRouter);
   app.use('/api/favorites', favoritesRouter);
   app.use('/api/anime', animeRouter);
@@ -99,7 +152,7 @@ export function createApp() {
   app.use('/api/studios', studiosRouter);
   app.use('/api/people', peopleRouter);
   app.use('/api/import', importRouter);
-  app.use('/api/screenshot-search', screenshotSearchRouter);
+  app.use('/api/screenshot-search', screenshotLimiter, screenshotSearchRouter);
   app.use('/api/manga', mangaRouter);
   app.use('/api/manga-favorites', mangaFavoritesRouter);
   app.use('/api/manga-reviews', mangaReviewsRouter);
@@ -112,6 +165,11 @@ export function createApp() {
   app.use('/api/wrapped', wrappedRouter);
   app.use('/api/anime-watch-sources', animeWatchSourcesRouter);
   app.use('/api/admin/watch-sources', adminWatchSourcesRouter);
+  app.use('/api/review-reports', reviewReportsRouter);
+  app.use('/api/share', shareRouter);
+  app.use('/api/free', freeRouter);
+  app.use('/api/feed', feedRouter);
+  app.use('/api/admin/review-reports', adminReviewReportsRouter);
   // Not under /api/users: usersRouter's /:username would swallow /leaderboard.
   app.use('/api/leaderboard', leaderboardRouter);
 

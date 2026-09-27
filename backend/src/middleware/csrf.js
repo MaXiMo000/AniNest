@@ -28,19 +28,15 @@ export function ensureCsrfCookie(req, res, next) {
     token = crypto.randomBytes(24).toString('hex');
     res.cookie(CSRF_COOKIE, token, {
       httpOnly: true,
-      // Same reasoning as the session cookie (see auth.js's cookieOpts):
-      // frontend and backend are different *sites* under onrender.com (a
-      // public suffix), so SameSite=Lax never sends this cookie back on
-      // cross-site fetch() calls in production — every request looked like
-      // a brand-new client, generating a fresh token each time and making
-      // every mutating request fail with "Invalid or missing CSRF token."
-      // regardless of what the frontend sent.
-      // Production now reaches this API through the frontend's /api/*
-      // rewrite (render.yaml), so the cookie is first-party there. None is
-      // kept only so a build still pointed at the backend URL keeps
-      // working in browsers that allow third-party cookies.
+      // Lax: production reaches this API through the frontend's own /api/*
+      // rewrite (render.yaml), so this is a first-party cookie and never needs
+      // to travel on a cross-site request. That also means a cross-site page
+      // can't make the browser attach it at all, a second CSRF layer on top of
+      // the header check. (It was None while the frontend called the backend's
+      // own onrender.com URL, which is what made logins 403 when browsers
+      // blocked third-party cookies.)
       secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
+      sameSite: 'lax',
       path: '/',
     });
     req.cookies[CSRF_COOKIE] = token;

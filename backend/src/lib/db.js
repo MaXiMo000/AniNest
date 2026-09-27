@@ -1,5 +1,6 @@
 import { createClient } from '@libsql/client';
 import { track } from './tidewatch-metrics.js';
+import { logger } from './logger.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -457,6 +458,100 @@ await db.executeMultiple(`
   );
 `);
 
+// One-time password reset links (routes/auth.js). Only the SHA-256 of the
+// emailed token is stored, same as sessions.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL
+  )
+`);
+
+// Failed logins per account, for lib/loginThrottle.js. Times are epoch ms.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS login_failures (
+    key TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL,
+    first_failed_at INTEGER NOT NULL,
+    locked_until INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
+// Review moderation (routes/reviewReports.js): signed-in users report a
+// review, an admin hides it or dismisses the reports. A hidden review drops
+// out of every public list; its author still sees it as their own.
+await ensureColumn('reviews', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('manga_reviews', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS review_reports (
+    kind TEXT NOT NULL,
+    review_id INTEGER NOT NULL,
+    reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (kind, review_id, reporter_id)
+  )
+`);
+
+// "Private profile": hides lists and reviews from the public profile page
+// (routes/users.js). Reviews still show on each title's own page.
+await ensureColumn('users', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
+
+// Title and cover for anime that have free official uploads, so the
+// "Free in my country" page (routes/free.js) can list them without an
+// AniList call per show. Filled in the background by lib/animeTitles.js.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS anime_titles (
+    mal_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    image TEXT,
+    score REAL,
+    type TEXT,
+    episodes INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
+// Who follows whom, for the activity feed (routes/feed.js). The feed itself is
+// built on read from favorites and reviews, so there is no events table.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS follows (
+    follower_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (follower_id, followee_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id);
+`);
+// When a list entry's watch status last changed, so the feed can say
+// "alex completed Frieren" at the right time. Null on older rows.
+await ensureColumn('favorites', 'status_at', 'TEXT');
+
+// Browser push subscriptions (lib/push.js), one per device a user turned
+// alerts on for. Only used when VAPID keys are configured.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+`);
+
+// Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
+// can't be two different people. Registration checks this too (routes/auth.js);
+// the index is the backstop. If older look-alike accounts already exist the
+// index can't be built, so boot carries on with the route check alone.
+try {
+  await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)');
+} catch (err) {
+  logger.warn({ err }, 'case-insensitive username index not created: look-alike usernames already exist');
+}
+
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's
 // no signup flow for this, on purpose, so it's driven by an env var rather
 // than a DB row anyone could flip. Comma-separated usernames, re-applied on
@@ -465,13 +560,31 @@ await db.executeMultiple(`
 // an empty/unset ADMIN_USERNAMES simply means nobody is an admin yet, which
 // is fine - the YouTube-search-assist and moderation-queue routes just 404
 // behind requireAdmin until someone is.
-const adminUsernames = (process.env.ADMIN_USERNAMES || '')
-  .split(',').map((s) => s.trim()).filter(Boolean);
+//
+// ADMIN_USER_IDS is the safer form: an id can't be claimed by whoever
+// registers a name first. With ADMIN_USERNAMES, a listed name that isn't
+// registered yet would make its eventual registrant an admin on the next
+// boot, so boot logs a warning naming it.
+const splitList = (raw) => (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
+const adminUsernames = splitList(process.env.ADMIN_USERNAMES);
+const adminIds = splitList(process.env.ADMIN_USER_IDS).map(Number).filter((n) => Number.isInteger(n) && n > 0);
 if (adminUsernames.length) {
   const placeholders = adminUsernames.map(() => '?').join(',');
   await db.execute({
     sql: `UPDATE users SET is_admin = 1 WHERE username IN (${placeholders})`,
     args: adminUsernames,
+  });
+  const found = await db.execute({ sql: `SELECT username FROM users WHERE username IN (${placeholders})`, args: adminUsernames });
+  const existing = new Set(found.rows.map((r) => r.username));
+  const missing = adminUsernames.filter((u) => !existing.has(u));
+  if (missing.length) {
+    logger.warn({ missing }, 'ADMIN_USERNAMES lists names nobody has registered; whoever registers them becomes admin on the next boot. Remove them or use ADMIN_USER_IDS.');
+  }
+}
+if (adminIds.length) {
+  await db.execute({
+    sql: `UPDATE users SET is_admin = 1 WHERE id IN (${adminIds.map(() => '?').join(',')})`,
+    args: adminIds,
   });
 }
 

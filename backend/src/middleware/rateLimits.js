@@ -25,3 +25,14 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many attempts. Try again in a few minutes.' },
 });
+
+// Screenshot search uploads up to 5 MB per request and forwards it to
+// trace.moe, whose free quota is per calling IP - ours, shared by every
+// visitor. A few searches a minute is plenty for a person.
+export const screenshotLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.SCREENSHOT_RATE_LIMIT) || 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'That’s a lot of screenshots! Wait a minute and try again.' },
+});

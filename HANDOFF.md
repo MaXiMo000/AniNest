@@ -233,7 +233,24 @@ it's in your favorites and not marked completed or dropped. For anime, a notific
 followed manga. The first time a manga is seen only records a baseline. Each user gets one unread notification per title, and its
 count grows. Notification failures are logged and never break the action that triggered them.
 
-**Also in the app**: recommendations built from your favorites, studio and voice-actor pages, AniList list import, screenshot
+**Web push** (optional, `lib/push.js`, `public/push-sw.js`): with VAPID keys set, the notifications page offers "alerts on
+this device". Every notification bump also pushes to that user's devices. Endpoints must belong to a browser push service
+(allowlist in `isPushEndpoint`, since the server POSTs to them); 404/410 answers delete the subscription. The service worker
+pulls the handlers in through `workbox.importScripts`, so push only works in a built app (`vite build && vite preview`).
+
+**Follows and Friends' Activity** (`routes/users.js`, `routes/feed.js`, `#/feed`): follow from a profile. The feed is built on
+read from `favorites` (one item per entry: added, or its latest status change via `status_at`) and `reviews`, last 30 days, max
+60, skipping private accounts and hidden reviews. No events table.
+
+**Skip guide** (`lib/episodeFlags.js`, `GET /api/episode-guide/:id/flags`): MAL filler and recap flags from Jikan's episode
+list, cached 7 days in the DB. Loaded after the guide, so while Jikan is down the guide just shows without it.
+
+**Vibe search v2** (optional, `lib/vibeAi.js`): with `ANTHROPIC_API_KEY`, a request with words the rules don't know goes to
+Claude Haiku for the same filters (structured output; names limited to the vocabulary in code). Cached a day in memory, capped
+per day, and any failure falls back to the rules.
+
+**Also in the app**: a private-profile option, the "Free in My Country" page (`routes/free.js`), past tournament seasons,
+a December Wrapped nudge on Home, recommendations built from your favorites, studio and voice-actor pages, AniList list import, screenshot
 search (trace.moe), a client-side tier-list maker, compare mode, the weekly schedule, PWA install, a recently viewed rail, and an
 optional Turnstile check on registration.
 
@@ -246,14 +263,27 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `PORT`, `NODE_ENV` | basics |
 | `FRONTEND_ORIGIN` | the only origin CORS allows (comma-separated for more than one) |
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | production database. Unset means a local file at `backend/data/aninest.db` (or `DB_PATH`) |
-| `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot |
+| `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot (boot warns about names nobody has registered) |
+| `ADMIN_USER_IDS` | same by numeric user id; preferred, since an id can't be claimed by registering a name first |
+| `TRUST_PROXY` | proxy hops in front of Express (2 on Render: the frontend's `/api` rewrite plus the load balancer). Decides whose IP the rate limits see; the backend logs `proxy hop check` once after boot to confirm |
+| `RESEND_API_KEY`, `MAIL_FROM` | optional; enable "Forgot your password?" emails through Resend (needs a verified domain). Unset, the page says reset isn't set up |
+| `SMTP_USER`, `SMTP_PASS` (`SMTP_HOST`, `SMTP_PORT`) | optional alternative to Resend with no domain: a Gmail address and app password (host and port default to Gmail). Resend wins if both are set |
+| `LOGIN_MAX_FAILURES` | wrong passwords per account before a 15-minute lock (default 10) |
+| `SCREENSHOT_RATE_LIMIT`, `CACHE_MAX_ENTRIES` | screenshot searches per minute per visitor (default 6); in-memory cache cap (default 5000) |
 | `YOUTUBE_API_KEY` | optional; enables admin import and search. Without it, admins can still paste links and users can still submit them |
 | `TURNSTILE_SECRET_KEY` | optional bot check on registration (the frontend needs `VITE_TURNSTILE_SITE_KEY` too) |
 | `RATE_LIMIT`, `AUTH_RATE_LIMIT` | limiter ceilings (defaults: 120/min per IP, 10 per 15 min on auth). The tests raise them |
 | `MANGA_POLL` | `off` disables the manga-chapter job |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | optional browser push alerts (`npx web-push generate-vapid-keys`). Unset, only the bell |
+| `ANTHROPIC_API_KEY`, `VIBE_AI_DAILY_LIMIT` | optional vibe search v2 through Claude Haiku (default cap 500 calls a day). Unset, rules only |
 | `LOG_LEVEL` | pino log level |
 
 Frontend (baked in at build time, so changing one needs a rebuild): `VITE_API_URL`, `VITE_TURNSTILE_SITE_KEY`.
+
+Account management lives in `routes/auth.js`: change password (signs out other devices), log out other devices, JSON data export,
+delete account (explicit deletes in `lib/account.js`, not FK cascades), and single-use 30-minute reset links. Usernames are unique
+regardless of case. Logins lock per account after repeated failures (`lib/loginThrottle.js`). Reviews can be reported, and admins
+hide them from `#/admin/reviews`. `/api/share/anime/:id` and `/api/share/u/:name` serve per-page link previews.
 
 Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256 hashes. No secret is involved, so there is no
 `SESSION_SECRET`. To log everyone out, clear the `sessions` table.
@@ -280,8 +310,11 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Gotchas that cost real time
 
-- **Cross-site cookies**: the frontend and backend are different sites (`onrender.com` is a public suffix), so production cookies must be
-  `SameSite=None; Secure`. Dev uses Lax. With Lax in production, no cookie ever comes back and every request looks logged out.
+- **Cookies must stay first-party**: the frontend and backend are different sites (`onrender.com` is a public suffix), so the browser
+  must reach the API through the frontend's `/api/*` rewrite (render.yaml), never the backend URL. Cookies are `SameSite=Lax`, which
+  only works because of that rewrite; `backend/test/csrf.test.js` guards the config.
+- **Rate limits and proxies**: the rewrite adds a proxy hop, so `TRUST_PROXY` must equal the real hop count or every visitor shares
+  one rate-limit bucket (too low) or can spoof their IP (too high).
 - **Blueprint plan drift**: `render.yaml` must say `plan: starter` to match the dashboard. While it said `free`, every sync tried to
   downgrade the service and failed.
 - **Render Blueprint schema**: `env: node` / `env: static`, flat `headers` entries, and `routes` as `{type, source, destination}`.

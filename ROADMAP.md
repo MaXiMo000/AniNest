@@ -91,7 +91,8 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Country picker: guessed from the `Intl` time zone, then the language; kept in localStorage (not on the account)
 - [x] Detail page: "📍 Free in [country]" picker, only uploads that play there, "N more are licensed only outside X",
       "checked with YouTube 2 days ago", and a clear message when nothing is licensed in your country
-- [ ] Later: Browse "Free in my country" filter and a `#/free` page (need titles/covers joined in; the table has only ids)
+- [x] `#/free` page (More menu): every show with an approved upload that plays in your country, best rated first
+      (`GET /api/free?country=`). Titles and covers come from an `anime_titles` table filled in the background
 - [ ] Skipped: "Did this play for you?" reports. YouTube's own region lists are authoritative and checked daily, so
       add these only if people report links that YouTube says should play
 
@@ -101,9 +102,10 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
       no stats table. Ratings and the "clicked" mark can be taken back
 - [x] Chart: one bar per episode, grey until 5 ratings, a table view, the "clicks at" episode highlighted; "Most people say
       it clicks at episode N" uses the **median** and needs 5 votes
-- [ ] **Blocked on Jikan** (504 "failed to connect to MyAnimeList" since 2026-09-24): `/anime/:id/episodes` (paged,
-      persistent-cached 7d) for MAL `filler`/`recap` flags, then dim filler bars and add the "Skip guide"
-      ("You can safely skip 26, 54, 97-108"). No other free source has filler flags
+- [x] Skip guide: `GET /api/episode-guide/:id/flags` pages Jikan's `/anime/:id/episodes` (max 12 pages,
+      persistent-cached 7d, `lib/episodeFlags.js`) for MAL `filler`/`recap` flags; filler bars are faded and the guide
+      says "You can safely skip 4 filler episodes: 26, 54, 97–108". Loaded separately, so while Jikan is down
+      (504s since 2026-09-24) the guide simply shows without it. No other free source has filler flags
 
 ## Phase 5: Vibe search
 
@@ -114,8 +116,10 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Query AniList with the filters (tag rank ≥ 55, popularity > 3000, best score first); "like X" filters X's
       community recommendations locally; every result lists why it matched; unrecognised words are shown back
 - [x] Page `#/vibe?q=...` (shareable), in More and on Browse; nothing understood offers a title search instead
-- [ ] v2: optional `ANTHROPIC_API_KEY`, Haiku returns the same filter JSON (validated with zod, falls back to v1).
-      Worth it only if the "didn't understand" words pile up in real searches
+- [x] v2 (`lib/vibeAi.js`): with `ANTHROPIC_API_KEY` set, a request with words the rules don't know goes to Claude
+      Haiku, which returns the same filter JSON (structured output, validated with zod, names limited to the
+      vocabulary, a "like" title only if the person wrote it). Cached a day in memory, capped by
+      `VIBE_AI_DAILY_LIMIT` (500), and any failure falls back to v1. The page says when the AI read it
 - Also fixed on the way: the router gives every page a fresh container, so a slow page can no longer overwrite the
   page the user moved on to
 
@@ -143,7 +147,8 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] 3-day rounds on a fixed clock; more votes wins, ties (and 0-0 on a quiet site) go to the better seed, so every bracket finishes
 - [x] One vote per account per match, changeable while the round is open; counts hidden until you vote in that match
 - [x] Page `#/tournament` (More menu): current round as head-to-heads with a shared player, bracket view, champion banner
-- [ ] Later: link from the detail page's jukebox when a song is in a bracket; a past-seasons picker (the API already serves them)
+- [x] The detail page's jukebox links to each bracket the show's songs are in (`GET /api/tournaments/for-anime/:malId`), and
+      the page has a past-seasons picker (`GET /api/tournaments/seasons`, `#/tournament?kind=&season=&year=`)
 
 ## Phase 9: AniNest Wrapped
 
@@ -154,7 +159,7 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Page `#/wrapped` (Library menu), "so far" until December
 - [x] PNG share card (1080x1350) drawn in a canvas: download, or the system share sheet where supported. Text only,
       since other hosts' cover images would block the export
-- [ ] Later: a December nudge (notification or home banner) pointing people to their Wrapped
+- [x] A December nudge: a home banner for signed-in people through December and Jan 1-14, hideable per year
 
 ## Phase 7 onward
 

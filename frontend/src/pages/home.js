@@ -5,6 +5,7 @@ import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { Auth } from '../lib/authStore.js';
 import { Recs } from '../lib/recommendationsApi.js';
 import { todayName } from './schedule.js';
+import { wrappedNudgeHTML, wireWrappedNudge } from '../lib/wrappedNudge.js';
 
 const FEATURED_GENRES = [
   { id: 1, name: 'Action' }, { id: 22, name: 'Romance' }, { id: 4, name: 'Comedy' },
@@ -96,6 +97,8 @@ export async function renderHome(root) {
 
     ${tickerHTML(airingToday)}
 
+    ${wrappedNudgeHTML(user)}
+
     ${recentlyViewed.length ? `
     <section class="section">
       <div class="section-head">
@@ -156,6 +159,7 @@ export async function renderHome(root) {
   root.querySelectorAll('#retry-section').forEach((btn) => {
     btn.addEventListener('click', () => renderHome(root));
   });
+  wireWrappedNudge(root);
   const luckyBtn = root.querySelector('#lucky-btn');
   if (luckyBtn) {
     luckyBtn.addEventListener('click', async () => {

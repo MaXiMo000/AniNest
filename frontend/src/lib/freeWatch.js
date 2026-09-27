@@ -6,7 +6,7 @@ import { getCountry, setCountry, countryName, playableIn, COUNTRIES } from './co
 // stores each video's region lists daily; unchecked ones count as playable).
 const visibleSources = (sources) => sources.filter((s) => playableIn(s, getCountry()));
 
-function countryPickerHTML() {
+export function countryPickerHTML() {
   const current = getCountry();
   const codes = current && !COUNTRIES.includes(current) ? [current, ...COUNTRIES] : COUNTRIES;
   return `

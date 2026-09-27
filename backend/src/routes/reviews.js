@@ -26,7 +26,7 @@ reviewsRouter.get('/:malId', asyncRoute(async (req, res) => {
       sql: `
         SELECT r.id, r.rating, r.body, r.created_at, r.updated_at, u.username
         FROM reviews r JOIN users u ON u.id = r.user_id
-        WHERE r.mal_id = ?
+        WHERE r.mal_id = ? AND r.hidden = 0
         ORDER BY r.updated_at DESC
         LIMIT 100
       `,

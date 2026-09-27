@@ -2,9 +2,10 @@ import { Users } from '../lib/usersApi.js';
 import { Api, imageOf } from '../lib/api.js';
 import { MangaApi } from '../lib/mangaApi.js';
 import { mangaImg } from '../lib/mangaImage.js';
-import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
+import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML, showToast } from '../lib/ui.js';
 import { profileStats, STATUS_ORDER } from '../lib/profileStats.js';
 import { Auth } from '../lib/authStore.js';
+import { shareButtonHTML, wireShare } from '../lib/share.js';
 
 // "You and alex: 82% taste match" for a signed-in visitor on someone else's
 // profile (backend/src/lib/taste.js). Loaded after the page; any failure just
@@ -22,6 +23,7 @@ async function loadTasteMatch(root, username) {
   if (!slot.isConnected) return;
   const m = res.match;
   const name = escapeHtml(username);
+  if (res.private) return;
   if (!m) {
     slot.innerHTML = `<div class="taste-match"><p class="muted-note">Add at least ${Number(res.minList)} anime to both your lists to see how your tastes compare.</p></div>`;
     return;
@@ -34,6 +36,41 @@ async function loadTasteMatch(root, username) {
       ${m.bothLove.length ? `<p>💞 You both love: ${titles(m.bothLove)}</p>` : ''}
       ${m.disagree.length ? `<p>⚔️ You disagree on: ${titles(m.disagree)}</p>` : ''}
     </div>`;
+}
+
+// "👥 12 followers · 3 following" plus a Follow button for a signed-in
+// visitor on someone else's profile.
+function followHTML(follows, username) {
+  if (!follows) return '';
+  const me = Auth.get().user;
+  const own = me && me.username.toLowerCase() === username.toLowerCase();
+  const counts = `<span class="stat-pill" id="follow-counts">👥 ${Number(follows.followers)} follower${follows.followers === 1 ? '' : 's'} · ${Number(follows.following)} following</span>`;
+  const button = me && !own
+    ? `<button class="chip follow-btn${follows.isFollowing ? ' is-following' : ''}" id="follow-btn" aria-pressed="${follows.isFollowing}">${follows.isFollowing ? '✓ Following' : '➕ Follow'}</button>`
+    : '';
+  return `<div class="hero-actions" style="justify-content:center;margin-top:12px">${counts}${button}${own ? '<a href="#/feed" class="chip">👥 Friends’ Activity</a>' : ''}</div>`;
+}
+
+function wireFollow(root, username, follows) {
+  const btn = root.querySelector('#follow-btn');
+  if (!btn || !follows) return;
+  let state = follows;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      state = state.isFollowing ? await Users.unfollow(username) : await Users.follow(username);
+      btn.textContent = state.isFollowing ? '✓ Following' : '➕ Follow';
+      btn.classList.toggle('is-following', state.isFollowing);
+      btn.setAttribute('aria-pressed', String(state.isFollowing));
+      const counts = root.querySelector('#follow-counts');
+      if (counts) counts.textContent = `👥 ${Number(state.followers)} follower${state.followers === 1 ? '' : 's'} · ${Number(state.following)} following`;
+      showToast(state.isFollowing ? `Following ${username}. Their activity shows in Friends’ Activity.` : `Unfollowed ${username}.`);
+    } catch (err) {
+      showToast(err.message || 'Something went wrong — try again.');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 // Public profiles show up to this many reviews, each enriched with the
@@ -107,7 +144,7 @@ function reviewRowHTML(r, anime) {
   const img = anime ? imageOf(anime) : '';
   return `
     <a class="review-card" href="#/anime/${r.mal_id}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
-      ${img ? `<img src="${escapeHtml(img)}" alt="" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
+      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
       <div style="flex:1;min-width:0">
         <div class="review-head">
           <span class="badge-score small">${r.rating}</span>
@@ -124,7 +161,7 @@ function mangaReviewRowHTML(r, manga) {
   const img = mangaImg(manga?.coverImage);
   return `
     <a class="review-card" href="#/manga/${encodeURIComponent(r.manga_id)}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
-      ${img ? `<img src="${escapeHtml(img)}" alt="" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
+      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
       <div style="flex:1;min-width:0">
         <div class="review-head">
           <span class="badge-score small">${r.rating}</span>
@@ -156,6 +193,21 @@ export async function renderProfile(root, username) {
   const joined = user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : null;
   document.title = `${user.username} — AniNest`;
 
+  if (data.private) {
+    root.innerHTML = `
+      <div class="account-page">
+        <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
+        <h1 class="detail-title" style="-webkit-text-stroke:0.5px var(--ink)">${escapeHtml(user.username)}</h1>
+        ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
+        ${followHTML(data.follows, user.username)}
+        ${xpCardHTML(xp)}
+        ${badgesRowHTML(badges)}
+      </div>
+      ${emptyHTML(`${user.username} keeps their lists and reviews private.`, '🔒')}`;
+    wireFollow(root, user.username, data.follows);
+    return;
+  }
+
   const shownReviews = reviews.slice(0, MAX_REVIEWS_SHOWN);
   const animeByMalId = new Map();
   await Promise.all(shownReviews.map(async (r) => {
@@ -183,9 +235,10 @@ export async function renderProfile(root, username) {
         <span class="stat-pill">💖 ${favorites.length} favorite${favorites.length === 1 ? '' : 's'}</span>
         <span class="stat-pill">💬 ${reviews.length + mangaReviews.length} review${reviews.length + mangaReviews.length === 1 ? '' : 's'}</span>
       </div>
+      ${followHTML(data.follows, user.username)}
       ${xpCardHTML(xp)}
       ${badgesRowHTML(badges)}
-      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
+      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a>${shareButtonHTML('📤 Share profile').replace('btn-pow btn-pow--outline', 'chip')}</div>
     </div>
 
     <div id="taste-match"></div>
@@ -210,5 +263,7 @@ export async function renderProfile(root, username) {
       ${shownMangaReviews.map((r) => mangaReviewRowHTML(r, mangaById.get(r.manga_id))).join('')}
     </section>` : ''}
   `;
+  wireShare(root, { kind: 'u', id: user.username, title: `${user.username} on AniNest` });
+  wireFollow(root, user.username, data.follows);
   loadTasteMatch(root, user.username);
 }

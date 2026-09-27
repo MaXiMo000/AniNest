@@ -243,6 +243,7 @@ button { font-family: var(--font-body); cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
   background: none;
   border: none;
   padding: 4px 2px;
@@ -436,6 +437,19 @@ body.is-admin [data-admin-only] { display: flex; }
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 
 /* ===================== Airing-today ticker ===================== */
+.wrapped-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(255,45,120,0.18), rgba(123,47,247,0.18)), var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 24px 0;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+.wrapped-nudge-text { flex: 1 1 260px; font-weight: 700; }
 .ticker-bar {
   display: flex;
   align-items: center;
@@ -1801,6 +1815,12 @@ a.game-card:hover .game-card-art span { transform: scale(1.18) rotate(-8deg); }
   .search-form { max-width: 240px; }
   .main-nav { gap: 12px; }
 }
+/* A long username plus the signed-in bell also pushed the theme toggle off
+   the right edge here; the avatar alone still links to the account page. */
+@media (max-width: 1360px) and (min-width: 1101px) {
+  .user-chip .user-name { display: none; }
+  .main-nav .user-chip { padding: 4px; }
+}
 @media (max-width: 1100px) {
   .main-nav { display: none; }
   .nav-toggle { display: inline-flex; }
@@ -2516,13 +2536,16 @@ a.wo-title:hover { color: var(--pink2); }
   align-items: end; height: 140px; min-width: min-content;
   border-bottom: 2px solid var(--muted);
 }
+.ep-bar.ep-bar--filler > span { opacity: 0.35; }
+.ep-bar.ep-bar--filler { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(127,127,127,0.18) 4px 8px); }
+.ep-skip p { margin: 0 0 6px; font-weight: 700; }
 .ep-bar { height: 100%; display: flex; align-items: flex-end; cursor: default; outline-offset: 2px; }
 .ep-bar > span { display: block; width: 100%; background: var(--purple); border-radius: 4px 4px 0 0; }
 .ep-bar:hover > span, .ep-bar:focus > span { background: var(--pink2); }
 .ep-bar--thin > span { background: var(--muted); opacity: 0.45; }
 .ep-bar--clicks > span { background: var(--pink2); }
 .ep-tip { min-height: 1.4em; margin-top: 6px; font-size: 0.85rem; font-weight: 800; color: var(--text); }
-.ep-axis { display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.ep-axis { max-width: calc(var(--eps) * 26px); display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
 .ep-table { margin: 8px 0; font-weight: 700; }
 .ep-table table { border-collapse: collapse; margin-top: 8px; }
 .ep-table th, .ep-table td { padding: 4px 12px; border-bottom: 1px solid var(--bg2); text-align: left; }
@@ -2600,3 +2623,15 @@ a.wo-title:hover { color: var(--pink2); }
 .wrapped-month span { display: block; width: 100%; min-height: 2px; background: var(--pink); border-radius: 4px 4px 0 0; }
 .wrapped-month em { font-style: normal; font-size: 0.7rem; font-weight: 800; color: var(--muted); }
 .wrapped-share { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 8px; }
+
+/* Friends' activity feed */
+.feed-following { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
+.feed-row { align-items: flex-start; }
+.feed-poster { flex-shrink: 0; width: 44px; display: flex; justify-content: center; }
+.feed-poster img { width: 44px; height: 62px; object-fit: cover; border-radius: 6px; border: 2px solid var(--ink); }
+.feed-line { color: var(--text) !important; font-size: 0.95rem !important; overflow-wrap: anywhere; }
+.feed-line a { color: inherit; }
+.feed-line a:hover { color: var(--pink2); }
+.feed-quote { font-style: italic; margin-top: 4px; overflow-wrap: anywhere; }
+.follow-btn.is-following { background: var(--bg2); }
+.push-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; font-weight: 700; }

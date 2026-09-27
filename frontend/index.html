@@ -28,11 +28,9 @@
   <meta name="theme-color" content="#120c22" />
   <!-- Dev-friendly baseline CSP. A <meta> CSP can't set frame-ancestors (that's
        done via a real header in render.yaml for the deployed site instead).
-       connect-src includes localhost (dev) and a *.onrender.com wildcard so this
-       keeps working after a Render deploy without editing this file per-deploy —
-       tighten it to the exact backend origin if you move off Render. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com http://localhost:8787 https://aninest-backend.onrender.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787 https://*.onrender.com; base-uri 'self'; form-action 'self'; object-src 'none'" />
-  <link rel="preconnect" href="https://aninest-backend.onrender.com" crossorigin="use-credentials">
+       localhost:8787 is the dev backend; in production the API is same-origin
+       (render.yaml proxies /api/*), so 'self' covers it. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com http://localhost:8787; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787; base-uri 'self'; form-action 'self'; object-src 'none'" />
   <link rel="preconnect" href="https://s4.anilist.co">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -66,10 +64,12 @@
             <a href="#/vibe" data-route="/vibe">✨ Vibe Search</a>
             <a href="#/together" data-route="/together">🍿 Watch Together</a>
             <a href="#/tournament" data-route="/tournament">🏆 OP/ED Tournament</a>
+            <a href="#/free" data-route="/free">📺 Free in My Country</a>
             <a href="#/schedule" data-route="/schedule">📅 Schedule</a>
             <a href="#/compare" data-route="/compare">⚖️ Compare</a>
             <a href="#/leaderboard/xp" data-route="/leaderboard/xp">⭐ XP Leaderboard</a>
             <a href="#/admin/watch-sources" data-route="/admin/watch-sources" data-admin-only>🛠️ Watch-Source Curation</a>
+            <a href="#/admin/reviews" data-route="/admin/reviews" data-admin-only>🚩 Reported Reviews</a>
           </div>
         </div>
 
@@ -79,6 +79,7 @@
             <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Anime Favorites <span id="fav-count" class="fav-count">0</span></a>
             <a href="#/manga-favorites" data-route="/manga-favorites" class="nav-fav">📖 Manga List <span id="manga-fav-count" class="fav-count">0</span></a>
             <a href="#/wrapped" data-route="/wrapped">🎁 Your Wrapped</a>
+            <a href="#/feed" data-route="/feed">👥 Friends’ Activity</a>
           </div>
         </div>
 

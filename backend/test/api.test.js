@@ -2391,6 +2391,55 @@ test('vibe search API: validation, the not-understood path, filters and "like"',
   }
 });
 
+test('vibe search v2: the AI reader handles words the rules miss, and falls back when it fails', async () => {
+  const { setVibeSources } = await import('../src/lib/vibeSearch.js');
+  const { setVibeReader, toVibe } = await import('../src/lib/vibeAi.js');
+  const media = (idMal, extra = {}) => ({
+    id: idMal, idMal, title: { english: `Show ${idMal}` }, genres: ['Sci-Fi'], tags: [{ name: 'Space', rank: 90 }],
+    episodes: 24, format: 'TV', status: 'FINISHED', startDate: { year: 1998 }, coverImage: {}, ...extra,
+  });
+  const calls = [];
+  const asked = [];
+  setVibeSources({ vibe: async (filters) => { calls.push(filters); return [media(92501)]; }, like: async () => null });
+  const empty = { genres: [], tags: [], excludeGenres: [], excludeTags: [], minEpisodes: null, maxEpisodes: null, formats: [], yearFrom: null, yearTo: null, status: null, like: null };
+  let answer = { ...empty, genres: ['Sci-Fi'], tags: ['Space'], yearTo: 2005 };
+  setVibeReader(async (q) => { asked.push(q); if (answer instanceof Error) throw answer; return answer; });
+  const agent = makeAgent();
+  try {
+    // Every word known: the rules answer and the AI is never asked.
+    await agent.get(`/api/anime/vibe?q=${encodeURIComponent('cozy fantasy')}`);
+    assert.equal(asked.length, 0);
+
+    const q = 'lonely bounty hunters drifting through the stars, old school';
+    const res = await agent.get(`/api/anime/vibe?q=${encodeURIComponent(q)}`);
+    assert.equal(res.json.parsed.source, 'ai');
+    assert.deepEqual(res.json.parsed.unknown, []);
+    assert.deepEqual(calls.at(-1).genres, ['Sci-Fi']);
+    assert.deepEqual(calls.at(-1).tags, ['Space']);
+    assert.equal(calls.at(-1).to, 20060000);
+    assert.ok(res.json.parsed.chips.some((c) => c.label === '2005 or earlier'));
+    await agent.get(`/api/anime/vibe?q=${encodeURIComponent(q)}`);
+    assert.equal(asked.length, 1, 'the same request is read once');
+
+    answer = new Error('overloaded');
+    const fallback = await agent.get(`/api/anime/vibe?q=${encodeURIComponent('dreamy cozy vibes')}`);
+    assert.equal(fallback.status, 200);
+    assert.equal(fallback.json.parsed.source, 'rules');
+    assert.deepEqual(fallback.json.parsed.unknown, ['dreamy']);
+
+    // Names outside the vocabulary are dropped; so is a title the person never wrote.
+    assert.deepEqual(toVibe({ ...empty, tags: ['Made Up Tag', 'Space'], formats: ['TV', 'ONA'], status: 'HIATUS' }, 'x').tags, ['Space']);
+    assert.deepEqual(toVibe({ ...empty, formats: ['TV', 'ONA'] }, 'x').formats, ['TV']);
+    assert.throws(() => toVibe({ ...empty, genres: 'Action' }, 'x'), 'a wrong shape is rejected');
+    assert.equal(toVibe({ ...empty, like: 'Cowboy Bebop' }, 'space westerns').like, null);
+    assert.equal(toVibe({ ...empty, like: 'Cowboy Bebop' }, 'something like cowboy bebop').like, 'Cowboy Bebop');
+    assert.equal(toVibe({ ...empty, maxEpisodes: -3, yearFrom: 3000 }, 'x').maxEpisodes, null);
+  } finally {
+    setVibeSources(null);
+    setVibeReader(null);
+  }
+});
+
 test('taste match: genre profile, agreement on shared shows, weighting by overlap', async () => {
   const { tasteMatch } = await import('../src/lib/taste.js');
   const fav = (mal_id, status, genres) => ({ mal_id, title: `Show ${mal_id}`, status, genres });
@@ -2700,6 +2749,13 @@ test('OP/ED tournament API: built once from the season, vote, hidden counts, rou
     assert.deepEqual([mine.finished, mine.currentRound, mine.champion], [true, null, 2]);
     assert.equal((await anon.get('/api/tournaments/2025/fall')).json.data, null, 'the archive never builds');
     assert.equal((await anon.get('/api/tournaments/2026/monsoon')).status, 400);
+
+    const seasons = (await anon.get('/api/tournaments/seasons')).json.seasons;
+    assert.deepEqual(seasons.find((x) => x.season === 'SUMMER' && x.year === 2026).kinds, ['ED', 'OP']);
+    const inBrackets = (await anon.get('/api/tournaments/for-anime/92805')).json.entries;
+    assert.deepEqual(inBrackets.map((e) => [e.kind, e.slug, e.season, e.year]), [['OP', 'OP1', 'SUMMER', 2026]], 'no ending, so only the OP bracket');
+    assert.deepEqual((await anon.get('/api/tournaments/for-anime/92819')).json.entries, [], 'seed 20 missed the 16-song cut');
+    assert.equal((await anon.get('/api/tournaments/for-anime/abc')).status, 400);
   } finally {
     setTournamentSources(null);
     setTournamentClock(null);

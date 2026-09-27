@@ -24,14 +24,14 @@ function chartHTML(guide, count) {
       ? `Episode ${ep}: ${e.avg} / 5 from ${e.n} ratings`
       : `Episode ${ep}: ${e ? `${e.n} of ${guide.minVotes} ratings needed` : 'no ratings yet'}`;
     const height = e?.avg != null ? Math.max(8, (e.avg / 5) * 100) : 6;
-    bars.push(`<span class="ep-bar${e?.avg != null ? '' : ' ep-bar--thin'}${guide.clicksAt === ep ? ' ep-bar--clicks' : ''}" tabindex="0" role="img" aria-label="${escapeHtml(label)}" data-tip="${escapeHtml(label)}"><span style="height:${height}%"></span></span>`);
+    bars.push(`<span data-ep="${ep}" class="ep-bar${e?.avg != null ? '' : ' ep-bar--thin'}${guide.clicksAt === ep ? ' ep-bar--clicks' : ''}" tabindex="0" role="img" aria-label="${escapeHtml(label)}" data-tip="${escapeHtml(label)}"><span style="height:${height}%"></span></span>`);
   }
   return `
     <div class="ep-chart-wrap">
       <div class="ep-chart" style="--eps:${count}">${bars.join('')}</div>
       <div class="ep-tip" role="status" aria-live="polite"></div>
     </div>
-    <div class="ep-axis"><span>Ep 1</span><span>Ep ${count}</span></div>`;
+    <div class="ep-axis" style="--eps:${count}"><span>Ep 1</span><span>Ep ${count}</span></div>`;
 }
 
 function tableHTML(guide) {
@@ -63,6 +63,54 @@ function yourPartHTML(guide) {
     ${mine.clickedAt ? `<p class="muted-note">You said it clicked at episode ${mine.clickedAt}.</p>` : ''}`;
 }
 
+// "26, 54, 97-108": consecutive episodes collapsed into ranges.
+export function skipRanges(episodes) {
+  const sorted = [...new Set(episodes)].sort((a, b) => a - b);
+  const parts = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j += 1;
+    parts.push(j > i ? `${sorted[i]}–${sorted[j]}` : `${sorted[i]}`);
+    i = j;
+  }
+  return parts.join(', ');
+}
+
+// The skip guide, from MAL's filler/recap flags (loaded separately so the
+// guide never waits on Jikan). Dims those bars and says what can be skipped.
+export function skipGuideHTML(flags) {
+  if (!flags?.available) return '';
+  const { filler = [], recap = [] } = flags;
+  if (!filler.length && !recap.length) return '<p class="muted-note">✅ No filler: MyAnimeList marks every episode as canon.</p>';
+  const lines = [];
+  if (filler.length) lines.push(`You can safely skip <strong>${filler.length} filler episode${filler.length === 1 ? '' : 's'}</strong>: ${escapeHtml(skipRanges(filler))}.`);
+  if (recap.length) lines.push(`Recap episode${recap.length === 1 ? '' : 's'}: ${escapeHtml(skipRanges(recap))}.`);
+  return `<div class="ep-skip"><p>⏭️ ${lines.join(' ')}</p><p class="muted-note">Faded bars are filler or recap, per MyAnimeList.</p></div>`;
+}
+
+async function loadSkipGuide(slot, anime) {
+  const target = slot.querySelector('#ep-skip-slot');
+  if (!target) return;
+  let flags;
+  try {
+    flags = await apiGet(`/api/episode-guide/${Number(anime.mal_id)}/flags`);
+  } catch {
+    return;
+  }
+  if (!target.isConnected) return;
+  target.innerHTML = skipGuideHTML(flags);
+  const filler = new Set(flags.filler || []);
+  const recap = new Set(flags.recap || []);
+  slot.querySelectorAll('.ep-bar[data-ep]').forEach((bar) => {
+    const ep = Number(bar.dataset.ep);
+    if (!filler.has(ep) && !recap.has(ep)) return;
+    bar.classList.add('ep-bar--filler');
+    const kind = filler.has(ep) ? 'filler' : 'recap';
+    bar.dataset.tip = `${bar.dataset.tip} · ${kind}`;
+    bar.setAttribute('aria-label', bar.dataset.tip);
+  });
+}
+
 export async function loadEpisodeGuide(root, anime) {
   const slot = root.querySelector('#episode-guide-slot');
   if (!slot) return;
@@ -83,12 +131,14 @@ export async function loadEpisodeGuide(root, anime) {
     <section class="section">
       <div class="section-head"><h2 class="section-title">📈 Episode Guide</h2></div>
       <p class="ep-headline">${headline}</p>
+      <div id="ep-skip-slot"></div>
       ${count ? chartHTML(guide, count) : ''}
       ${count ? `<p class="muted-note">Each bar is the community's average rating; grey means fewer than ${guide.minVotes} ratings so far.</p>` : ''}
       ${tableHTML(guide)}
       ${yourPartHTML(guide)}
     </section>`;
   wire(slot, root, anime, guide);
+  loadSkipGuide(slot, anime);
 }
 
 function wire(slot, root, anime, guide) {
