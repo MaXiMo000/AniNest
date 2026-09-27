@@ -2792,3 +2792,12 @@ body.nav-open .nav-toggle-bars span:nth-child(3) { transform: translateY(-6.5px)
 .verify-banner { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin: 14px auto 0; max-width: 560px; padding: 12px 14px; background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink); font-weight: 700; text-align: left; overflow-wrap: anywhere; }
 .notify-settings label.is-locked { opacity: 0.7; cursor: not-allowed; }
 .notify-settings small { display: block; color: var(--muted); font-weight: 700; margin-top: 2px; }
+
+/* Two-factor login (pages/account.js) */
+.twofa-box { margin-top: 18px; padding-top: 14px; border-top: 2px dashed var(--hairline); text-align: center; }
+.twofa-box h3 { margin: 0 0 6px; }
+.twofa-form { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
+.twofa-form .list-input { flex: 1 1 160px; max-width: 240px; }
+.twofa-qr { width: 200px; height: 200px; background: #fff; padding: 8px; border: var(--border-w) solid var(--ink); border-radius: 12px; margin: 8px auto; display: block; }
+.twofa-key { font-weight: 800; letter-spacing: 1px; overflow-wrap: anywhere; }
+.twofa-codes { display: inline-block; text-align: left; background: var(--bg2); border: 2px solid var(--ink); border-radius: 10px; padding: 10px 16px; font-size: 1.05rem; line-height: 1.6; user-select: all; }

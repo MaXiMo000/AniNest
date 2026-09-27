@@ -140,7 +140,7 @@ export function createApp() {
     }
   });
 
-  for (const route of ['register', 'login', 'password', 'delete-account', 'forgot', 'reset', 'verify-email']) {
+  for (const route of ['register', 'login', 'password', 'delete-account', 'forgot', 'reset', 'verify-email', '2fa']) {
     app.use(`/api/auth/${route}`, authLimiter());
   }
   app.use('/api/auth', authRouter);

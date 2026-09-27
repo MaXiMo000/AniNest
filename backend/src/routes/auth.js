@@ -1,11 +1,16 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
+import QRCode from 'qrcode';
 import { z } from 'zod';
 import { db } from '../lib/db.js';
 import {
   hashPassword, verifyPassword, createSession, destroySession, destroyOtherSessions, destroyAllSessionsForUser,
   setPassword, createPasswordReset, consumePasswordReset, consumeEmailVerification, SESSION_COOKIE, SESSION_MAX_AGE_MS,
 } from '../lib/auth.js';
-import { sendVerificationEmail, sendPasswordChangedEmail, noteSignIn, DEVICE_COOKIE } from '../lib/accountMail.js';
+import { sendVerificationEmail, sendPasswordChangedEmail, sendSecurityNotice, noteSignIn, DEVICE_COOKIE } from '../lib/accountMail.js';
+import {
+  verifyTotp, newSecret, otpauthUri, encryptSecret, decryptSecret, totpAvailable, newRecoveryCodes, hashRecoveryCode,
+} from '../lib/totp.js';
 import { verifyTurnstile } from '../lib/turnstile.js';
 import { requireAuth } from '../middleware/session.js';
 import { exportUserData, deleteUserData } from '../lib/account.js';
@@ -118,19 +123,177 @@ authRouter.post('/login', async (req, res, next) => {
       await recordFailure(key);
       return res.status(401).json({ error: 'Invalid username/email or password.' });
     }
+    // With two-factor login on, the password only earns a short-lived ticket
+    // for the code step. The failure count isn't cleared yet: wrong codes
+    // count toward the same lock as wrong passwords.
+    if (Number(user.totp_enabled)) {
+      return res.json({ twoFactor: true, ticket: await createLoginChallenge(Number(user.id)) });
+    }
     await clearFailures(key);
+    await finishSignIn(req, res, user);
+  } catch (err) { next(err); }
+});
 
-    const userId = Number(user.id);
-    const { token } = await createSession(userId);
-    res.cookie(SESSION_COOKIE, token, cookieOpts());
-    await rememberDevice(req, res, { id: userId });
-    res.json({
-      user: {
-        id: userId, username: user.username, email: user.email, createdAt: user.created_at,
-        isAdmin: Boolean(Number(user.is_admin)), isPrivate: Boolean(Number(user.is_private)),
-        emailVerified: Boolean(Number(user.email_verified)),
-      },
+async function finishSignIn(req, res, user) {
+  const userId = Number(user.id);
+  const { token } = await createSession(userId);
+  res.cookie(SESSION_COOKIE, token, cookieOpts());
+  await rememberDevice(req, res, { id: userId });
+  res.json({
+    user: {
+      id: userId, username: user.username, email: user.email, createdAt: user.created_at,
+      isAdmin: Boolean(Number(user.is_admin)), isPrivate: Boolean(Number(user.is_private)),
+      emailVerified: Boolean(Number(user.email_verified)),
+    },
+  });
+}
+
+// ---- Two-factor login ----
+
+const CHALLENGE_MS = 5 * 60 * 1000;
+const CHALLENGE_TRIES = 5;
+const sha256 = (v) => crypto.createHash('sha256').update(v).digest('hex');
+
+async function createLoginChallenge(userId) {
+  const ticket = crypto.randomBytes(32).toString('hex');
+  await db.batch([
+    { sql: 'DELETE FROM login_challenges WHERE user_id = ? OR expires_at < ?', args: [userId, Date.now()] },
+    { sql: 'INSERT INTO login_challenges (token_hash, user_id, expires_at) VALUES (?, ?, ?)', args: [sha256(ticket), userId, Date.now() + CHALLENGE_MS] },
+  ], 'write');
+  return ticket;
+}
+
+// A 6-digit code from the app (each usable once), or one of the recovery
+// codes (burned on use). Returns true when it checks out.
+async function checkSecondFactor(user, code) {
+  const clean = String(code || '').trim();
+  if (/^\d{6}$/.test(clean)) {
+    const step = verifyTotp(decryptSecret(user.totp_secret), clean, { lastStep: Number(user.totp_last_step) });
+    if (step == null) return false;
+    // Guarded so two requests racing with the same code can't both win.
+    const res = await db.execute({
+      sql: 'UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?',
+      args: [step, user.id, step],
     });
+    return res.rowsAffected === 1;
+  }
+  const res = await db.execute({
+    sql: 'DELETE FROM totp_recovery_codes WHERE user_id = ? AND code_hash = ?',
+    args: [user.id, hashRecoveryCode(clean)],
+  });
+  return res.rowsAffected === 1;
+}
+
+const secondStepSchema = z.object({
+  ticket: z.string().regex(/^[0-9a-f]{64}$/),
+  code: z.string().trim().min(6).max(20),
+});
+
+authRouter.post('/login/2fa', async (req, res, next) => {
+  try {
+    const parsed = secondStepSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter the 6-digit code from your app, or a recovery code.' });
+    const found = await db.execute({ sql: 'SELECT user_id, expires_at, attempts FROM login_challenges WHERE token_hash = ?', args: [sha256(parsed.data.ticket)] });
+    const challenge = found.rows[0];
+    if (!challenge || Number(challenge.expires_at) < Date.now() || Number(challenge.attempts) >= CHALLENGE_TRIES) {
+      return res.status(401).json({ error: 'That sign-in timed out. Log in again.', restart: true });
+    }
+    await db.execute({ sql: 'UPDATE login_challenges SET attempts = attempts + 1 WHERE token_hash = ?', args: [sha256(parsed.data.ticket)] });
+    const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [challenge.user_id] })).rows[0];
+    const key = throttleKey(user, '');
+    if (await lockedFor(key)) return res.status(429).json({ error: 'Too many wrong tries for this account. Try again in a few minutes.', restart: true });
+    if (!user || !Number(user.totp_enabled) || !(await checkSecondFactor(user, parsed.data.code))) {
+      await recordFailure(key);
+      return res.status(401).json({ error: 'That code didn’t work. Check your app’s clock and try the newest code.' });
+    }
+    await db.execute({ sql: 'DELETE FROM login_challenges WHERE user_id = ?', args: [user.id] });
+    await clearFailures(key);
+    await finishSignIn(req, res, user);
+  } catch (err) { next(err); }
+});
+
+// Status, setup (password first), turning it on with a first code, turning it
+// off (password and a code), and fresh recovery codes (a code).
+authRouter.get('/2fa', requireAuth, async (req, res, next) => {
+  try {
+    const row = (await db.execute({
+      sql: 'SELECT totp_enabled, (SELECT COUNT(*) FROM totp_recovery_codes WHERE user_id = users.id) AS codes FROM users WHERE id = ?',
+      args: [req.user.id],
+    })).rows[0];
+    res.json({ available: totpAvailable(), enabled: Boolean(Number(row.totp_enabled)), recoveryCodesLeft: Number(row.codes) });
+  } catch (err) { next(err); }
+});
+
+const passwordOnly = z.object({ password: z.string().min(1).max(200) });
+const codeOnly = z.object({ code: z.string().trim().min(6).max(20) });
+
+authRouter.post('/2fa/setup', requireAuth, async (req, res, next) => {
+  try {
+    if (!totpAvailable()) return res.status(503).json({ error: 'Two-factor login isn’t set up on this site yet.' });
+    const parsed = passwordOnly.safeParse(req.body);
+    if (!parsed.success || !(await passwordMatches(req.user.id, parsed.data.password))) {
+      return res.status(401).json({ error: 'That password is wrong.' });
+    }
+    const current = (await db.execute({ sql: 'SELECT totp_enabled FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+    if (Number(current.totp_enabled)) return res.status(409).json({ error: 'Two-factor login is already on.' });
+    const secret = newSecret();
+    await db.execute({ sql: 'UPDATE users SET totp_secret = ?, totp_last_step = -1 WHERE id = ?', args: [encryptSecret(secret), req.user.id] });
+    const uri = otpauthUri(secret, req.user.username);
+    res.json({ secret, uri, qr: await QRCode.toString(uri, { type: 'svg', margin: 1 }) });
+  } catch (err) { next(err); }
+});
+
+authRouter.post('/2fa/enable', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = codeOnly.safeParse(req.body);
+    const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+    if (Number(user.totp_enabled)) return res.status(409).json({ error: 'Two-factor login is already on.' });
+    if (!user.totp_secret) return res.status(409).json({ error: 'Start the setup again.' });
+    const step = parsed.success && verifyTotp(decryptSecret(user.totp_secret), parsed.data.code);
+    if (step == null || step === false) return res.status(400).json({ error: 'That code didn’t match. Type the newest code from your app.' });
+    const codes = newRecoveryCodes();
+    await db.batch([
+      { sql: 'UPDATE users SET totp_enabled = 1, totp_last_step = ? WHERE id = ?', args: [step, req.user.id] },
+      { sql: 'DELETE FROM totp_recovery_codes WHERE user_id = ?', args: [req.user.id] },
+      ...codes.map((c) => ({ sql: 'INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (?, ?)', args: [req.user.id, hashRecoveryCode(c)] })),
+    ], 'write');
+    sendSecurityNotice(req.user.id, 'Two-factor login is on for your AniNest account', 'Two-factor login was turned on for your AniNest account');
+    res.json({ recoveryCodes: codes });
+  } catch (err) { next(err); }
+});
+
+const disableSchema = z.object({ password: z.string().min(1).max(200), code: z.string().trim().min(6).max(20) });
+
+authRouter.post('/2fa/disable', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = disableSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter your password and a code.' });
+    const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+    if (!Number(user.totp_enabled)) return res.status(409).json({ error: 'Two-factor login is already off.' });
+    if (!(await passwordMatches(req.user.id, parsed.data.password)) || !(await checkSecondFactor(user, parsed.data.code))) {
+      return res.status(401).json({ error: 'The password or the code is wrong.' });
+    }
+    await db.batch([
+      { sql: 'UPDATE users SET totp_enabled = 0, totp_secret = NULL, totp_last_step = -1 WHERE id = ?', args: [req.user.id] },
+      { sql: 'DELETE FROM totp_recovery_codes WHERE user_id = ?', args: [req.user.id] },
+    ], 'write');
+    sendSecurityNotice(req.user.id, 'Two-factor login is off for your AniNest account', 'Two-factor login was turned off for your AniNest account');
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+authRouter.post('/2fa/recovery-codes', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = codeOnly.safeParse(req.body);
+    const user = (await db.execute({ sql: 'SELECT * FROM users WHERE id = ?', args: [req.user.id] })).rows[0];
+    if (!Number(user.totp_enabled)) return res.status(409).json({ error: 'Turn on two-factor login first.' });
+    if (!parsed.success || !(await checkSecondFactor(user, parsed.data.code))) return res.status(401).json({ error: 'That code didn’t work.' });
+    const codes = newRecoveryCodes();
+    await db.batch([
+      { sql: 'DELETE FROM totp_recovery_codes WHERE user_id = ?', args: [req.user.id] },
+      ...codes.map((c) => ({ sql: 'INSERT INTO totp_recovery_codes (user_id, code_hash) VALUES (?, ?)', args: [req.user.id, hashRecoveryCode(c)] })),
+    ], 'write');
+    res.json({ recoveryCodes: codes });
   } catch (err) { next(err); }
 });
 

@@ -28,8 +28,16 @@ export const Auth = {
     set({ user });
     return user;
   },
+  // Resolves to the user, or to { twoFactor: true, ticket } when the account
+  // has two-factor login on and the code step (loginSecondStep) comes next.
   async login(identifier, password) {
-    const { user } = await apiPost('/api/auth/login', { identifier, password });
+    const res = await apiPost('/api/auth/login', { identifier, password });
+    if (res.twoFactor) return res;
+    set({ user: res.user });
+    return res.user;
+  },
+  async loginSecondStep(ticket, code) {
+    const { user } = await apiPost('/api/auth/login/2fa', { ticket, code });
     set({ user });
     return user;
   },

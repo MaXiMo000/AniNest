@@ -1868,6 +1868,74 @@ test('email verification, password-change and new-device alerts', async () => {
   }
 });
 
+test('TOTP: RFC 6238 vector, drift window, replay, base32 and encryption round trips', async () => {
+  const t = await import('../src/lib/totp.js');
+  // RFC 6238 appendix B: ASCII secret "12345678901234567890", T=59s -> 94287082 (last 6 digits).
+  assert.equal(t.hotp(Buffer.from('12345678901234567890'), 1), '287082');
+  const secret = t.base32Encode(Buffer.from('12345678901234567890'));
+  assert.equal(secret, 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ');
+  assert.deepEqual(t.base32Decode(secret), Buffer.from('12345678901234567890'));
+  assert.equal(t.verifyTotp(secret, '287082', { now: 59000 }), 1);
+  assert.equal(t.verifyTotp(secret, '287082', { now: 59000 + 30000 }), 1, 'one step of drift is fine');
+  assert.equal(t.verifyTotp(secret, '287082', { now: 59000 + 90000 }), null, 'older codes are not');
+  assert.equal(t.verifyTotp(secret, '287082', { now: 59000, lastStep: 1 }), null, 'a used code can’t be replayed');
+  assert.equal(t.verifyTotp(secret, 'abcdef', { now: 59000 }), null);
+  const sealed = t.encryptSecret(secret);
+  assert.notEqual(sealed, secret);
+  assert.equal(t.decryptSecret(sealed), secret);
+  const codes = t.newRecoveryCodes();
+  assert.equal(new Set(codes).size, 10);
+  assert.match(codes[0], /^[a-z2-9]{4}-[a-z2-9]{4}$/);
+  assert.equal(t.hashRecoveryCode(codes[0].toUpperCase().replace('-', ' ')), t.hashRecoveryCode(codes[0]), 'case and dashes don’t matter');
+});
+
+test('two-factor login: setup, login needs the code, recovery codes, turning it off', async () => {
+  const t = await import('../src/lib/totp.js');
+  const codeFor = (secret, offset = 0) => t.hotp(t.base32Decode(secret), t.stepAt(Date.now()) + offset);
+  const { agent, user } = await registeredAgent();
+  assert.deepEqual((await agent.get('/api/auth/2fa')).json, { available: true, enabled: false, recoveryCodesLeft: 0 });
+  assert.equal((await agent.post('/api/auth/2fa/setup', { csrf: true, body: { password: 'wrong' } })).status, 401);
+  const setup = (await agent.post('/api/auth/2fa/setup', { csrf: true, body: { password: user.password } })).json;
+  assert.match(setup.uri, /^otpauth:\/\/totp\/AniNest%3A.+\?secret=[A-Z2-7]+&issuer=AniNest/);
+  assert.match(setup.qr, /^<svg/);
+  const stored = (await db.execute({ sql: 'SELECT totp_secret FROM users WHERE username = ?', args: [user.username] })).rows[0].totp_secret;
+  assert.ok(!stored.includes(setup.secret), 'the secret is stored encrypted');
+  assert.equal((await agent.post('/api/auth/2fa/enable', { csrf: true, body: { code: '000000' } })).status, 400);
+  const { recoveryCodes } = (await agent.post('/api/auth/2fa/enable', { csrf: true, body: { code: codeFor(setup.secret) } })).json;
+  assert.equal(recoveryCodes.length, 10);
+
+  const login = (a) => a.post('/api/auth/login', { csrf: true, body: { identifier: user.username, password: user.password } });
+  const second = (a, ticket, code) => a.post('/api/auth/login/2fa', { csrf: true, body: { ticket, code } });
+  const phone = makeAgent();
+  await phone.get('/api/health');
+  const first = await login(phone);
+  assert.equal(first.json.twoFactor, true);
+  assert.equal(first.json.user, undefined, 'no session from the password alone');
+  assert.equal((await phone.get('/api/auth/me')).json.user, null);
+  assert.equal((await second(phone, first.json.ticket, '123456')).status, 401);
+  assert.equal((await second(phone, first.json.ticket, codeFor(setup.secret, 1))).status, 200, 'next step’s code, allowed as drift');
+  assert.equal((await phone.get('/api/auth/me')).json.user.username, user.username);
+
+  // The same code again is refused (replay), and a spent ticket is gone.
+  const again = makeAgent();
+  await again.get('/api/health');
+  const t2 = (await login(again)).json.ticket;
+  assert.equal((await second(again, t2, codeFor(setup.secret, 1))).status, 401, 'a used code can’t be reused');
+  assert.equal((await second(again, t2, recoveryCodes[0].toUpperCase())).status, 200, 'a recovery code works');
+  const lost = makeAgent();
+  await lost.get('/api/health');
+  const t3 = (await login(lost)).json.ticket;
+  assert.equal((await second(lost, t3, recoveryCodes[0])).status, 401, 'each recovery code works once');
+  assert.equal((await second(lost, 'f'.repeat(64), '123456')).json.restart, true);
+  assert.equal((await agent.get('/api/auth/2fa')).json.recoveryCodesLeft, 9);
+
+  assert.equal((await agent.post('/api/auth/2fa/disable', { csrf: true, body: { password: user.password, code: '000000' } })).status, 401);
+  assert.equal((await agent.post('/api/auth/2fa/disable', { csrf: true, body: { password: user.password, code: recoveryCodes[1] } })).status, 204);
+  const after = makeAgent();
+  await after.get('/api/health');
+  assert.equal((await login(after)).json.user.username, user.username, 'plain login again');
+});
+
 test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');
   const { notifyNewEpisodes } = await import('../src/lib/notifications.js');

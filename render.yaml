@@ -89,6 +89,10 @@ services:
       # Blank = rules only.
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Encrypts two-factor login secrets. Render generates it once; never
+      # change or delete it, or everyone with two-factor login on is locked out.
+      - key: TOTP_KEY
+        generateValue: true
 
   - name: aninest-frontend
     type: web

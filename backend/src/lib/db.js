@@ -664,6 +664,28 @@ await db.executeMultiple(`
   );
 `);
 
+// Two-factor login (lib/totp.js, routes/auth.js). totp_secret is encrypted
+// and set as soon as setup starts; totp_enabled flips on once a first code
+// checks out. totp_last_step stops a code being used twice. A login that
+// passes the password step gets a short-lived challenge ticket instead of a
+// session until the code is given.
+await ensureColumn('users', 'totp_secret', 'TEXT');
+await ensureColumn('users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('users', 'totp_last_step', 'INTEGER NOT NULL DEFAULT -1');
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS totp_recovery_codes (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    code_hash TEXT NOT NULL,
+    PRIMARY KEY (user_id, code_hash)
+  );
+  CREATE TABLE IF NOT EXISTS login_challenges (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0
+  );
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.

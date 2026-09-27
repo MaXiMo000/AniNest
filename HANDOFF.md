@@ -274,6 +274,7 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `TRUST_PROXY` | proxy hops in front of Express (2 on Render: the frontend's `/api` rewrite plus the load balancer). Decides whose IP the rate limits see; the backend logs `proxy hop check` once after boot to confirm |
 | `RESEND_API_KEY`, `MAIL_FROM` | optional; enable "Forgot your password?" emails and the opt-in weekly digest through Resend (needs a verified domain). Unset, the page says reset isn't set up and the digest option is hidden |
 | `SMTP_USER`, `SMTP_PASS` (`SMTP_HOST`, `SMTP_PORT`) | optional alternative to Resend with no domain: a Gmail address and app password (host and port default to Gmail). Resend wins if both are set. Gmail allows about 500 mails a day, which caps the weekly digest (100 per hourly run) |
+| `TOTP_KEY` | encrypts two-factor login secrets (render.yaml generates it). Without it in production the two-factor option is hidden. Never change it once people use 2FA: their secrets can't be read any more |
 | `LOGIN_MAX_FAILURES` | wrong passwords per account before a 15-minute lock (default 10) |
 | `SCREENSHOT_RATE_LIMIT`, `CACHE_MAX_ENTRIES` | screenshot searches per minute per visitor (default 6); in-memory cache cap (default 5000) |
 | `YOUTUBE_API_KEY` | optional; enables admin import and search. Without it, admins can still paste links and users can still submit them |

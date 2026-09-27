@@ -35,17 +35,20 @@ async function verifiedEmail(userId) {
 const when = () => `${new Date().toUTCString().replace('GMT', 'UTC')}`;
 const help = () => `If this wasn't you, reset your password now: ${origin()}/#/forgot-password\nThen use "Log out other devices" on your account page.`;
 
-export function sendPasswordChangedEmail(userId) {
-  background('password-changed', async () => {
+// A short "this changed on your account" email to a confirmed address.
+export function sendSecurityNotice(userId, subject, what) {
+  background(subject, async () => {
     const u = await verifiedEmail(userId);
     if (!u) return;
     await sendMail({
       to: u.email,
-      subject: 'Your AniNest password was changed',
-      text: `Hi ${u.username},\n\nThe password for your AniNest account was changed on ${when()}.\n\nIf that was you, there's nothing to do.\n${help()}`,
+      subject,
+      text: `Hi ${u.username},\n\n${what} on ${when()}.\n\nIf that was you, there's nothing to do.\n${help()}`,
     });
   });
 }
+
+export const sendPasswordChangedEmail = (userId) => sendSecurityNotice(userId, 'Your AniNest password was changed', 'The password for your AniNest account was changed');
 
 // "Chrome on Windows" from a User-Agent, or a plain fallback. Only for the
 // email text; nothing depends on it.

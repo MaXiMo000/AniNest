@@ -109,6 +109,86 @@ function showVerifyBanner(root) {
   });
 }
 
+// Two-factor login (backend/src/routes/auth.js /2fa): off -> password ->
+// scan the QR (or type the key) -> first code -> recovery codes, shown once.
+function recoveryCodesHTML(codes) {
+  return `
+    <p><strong>Save these recovery codes.</strong> Each one signs you in once if you lose your phone. This is the only time they’re shown.</p>
+    <pre class="twofa-codes">${codes.map(escapeHtml).join('\n')}</pre>
+    <div class="hero-actions" style="justify-content:center">
+      <button type="button" class="chip" data-copy-codes>📋 Copy</button>
+      <button type="button" class="chip" data-done>Done</button>
+    </div>`;
+}
+
+async function wireTwoFactor(root) {
+  const box = root.querySelector('#twofa-box');
+  let status;
+  try { status = await apiGet('/api/auth/2fa'); } catch { return; }
+  if (!box.isConnected || !status.available) return;
+  const isAdmin = Auth.get().user?.isAdmin;
+  const showCodes = (codes) => {
+    box.innerHTML = recoveryCodesHTML(codes);
+    box.querySelector('[data-copy-codes]').addEventListener('click', () => navigator.clipboard.writeText(codes.join('\n')).then(() => showToast('Copied.'), () => {}));
+    box.querySelector('[data-done]').addEventListener('click', () => wireTwoFactor(root));
+  };
+  if (status.enabled) {
+    box.innerHTML = `
+      <h3>🔐 Two-factor login is on</h3>
+      <p class="section-sub">Signing in asks for a code from your app. ${status.recoveryCodesLeft} recovery code${status.recoveryCodesLeft === 1 ? '' : 's'} left.</p>
+      <form class="twofa-form" data-action="codes">
+        <input name="code" class="list-input" inputmode="numeric" autocomplete="one-time-code" placeholder="Code from your app" aria-label="Code from your app" required />
+        <button class="chip" type="submit">New recovery codes</button>
+      </form>
+      <form class="twofa-form" data-action="disable">
+        <input name="password" type="password" class="list-input" autocomplete="current-password" placeholder="Password" aria-label="Password" required />
+        <input name="code" class="list-input" inputmode="numeric" autocomplete="one-time-code" placeholder="Code or recovery code" aria-label="Code or recovery code" required />
+        <button class="chip" type="submit">Turn off</button>
+      </form>`;
+    box.querySelector('[data-action="codes"]').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try { showCodes((await apiPost('/api/auth/2fa/recovery-codes', { code: e.target.code.value.trim() })).recoveryCodes); } catch (err) { showToast(err.message); }
+    });
+    box.querySelector('[data-action="disable"]').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await apiPost('/api/auth/2fa/disable', { password: e.target.password.value, code: e.target.code.value.trim() });
+        showToast('Two-factor login is off.');
+        wireTwoFactor(root);
+      } catch (err) { showToast(err.message); }
+    });
+    return;
+  }
+  box.innerHTML = `
+    <h3>🔐 Two-factor login</h3>
+    <p class="section-sub">${isAdmin ? '<strong>Strongly recommended for admin accounts.</strong> ' : ''}After your password, sign-in also asks for a code from an authenticator app (Google Authenticator, Authy, 1Password…).</p>
+    <form class="twofa-form" data-action="setup">
+      <input name="password" type="password" class="list-input" autocomplete="current-password" placeholder="Your password" aria-label="Your password" required />
+      <button class="btn-pow btn-pow--blue" type="submit">SET UP</button>
+    </form>`;
+  box.querySelector('[data-action="setup"]').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    let setup;
+    try { setup = await apiPost('/api/auth/2fa/setup', { password: e.target.password.value }); } catch (err) { showToast(err.message); return; }
+    // The QR is an SVG made by our own server from the otpauth link; shown as an image, never as markup.
+    box.innerHTML = `
+      <h3>🔐 Scan this with your app</h3>
+      <img class="twofa-qr" alt="QR code for your authenticator app" src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(setup.qr)}" />
+      <p class="section-sub">Can’t scan? <a href="${escapeHtml(setup.uri)}">Open in your app</a>, or type this key: <code class="twofa-key">${escapeHtml(setup.secret.match(/.{1,4}/g).join(' '))}</code></p>
+      <form class="twofa-form" data-action="enable">
+        <input name="code" class="list-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" aria-label="6-digit code" required />
+        <button class="btn-pow btn-pow--pink" type="submit">TURN ON</button>
+      </form>`;
+    box.querySelector('[data-action="enable"]').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        showCodes((await apiPost('/api/auth/2fa/enable', { code: ev.target.code.value.trim() })).recoveryCodes);
+        showToast('Two-factor login is on 🔐');
+      } catch (err) { showToast(err.message); }
+    });
+  });
+}
+
 async function wireNotifySettings(root) {
   const box = root.querySelector('#notify-box');
   let settings;
@@ -155,6 +235,7 @@ function securitySectionHTML() {
         <button type="submit" class="btn-pow btn-pow--blue">CHANGE PASSWORD</button>
       </form>
       <div id="password-result" style="text-align:center;margin-top:8px"></div>
+      <div id="twofa-box" class="twofa-box"></div>
       <label class="hero-actions" style="justify-content:center;margin-top:14px;gap:10px;font-weight:700;cursor:pointer">
         <input id="private-toggle" type="checkbox" ${Auth.get().user?.isPrivate ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--pink)" />
         🔒 Private profile: hide my lists and reviews from other people
@@ -287,6 +368,7 @@ export function renderAccount(root) {
   wireCalendar(root);
   wireSecurity(root);
   wireNotifySettings(root);
+  wireTwoFactor(root);
 
   // Badges reuse the public profile endpoint (same data, same computation
   // - see backend/src/lib/badges.js) rather than a second route just for
