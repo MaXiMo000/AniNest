@@ -155,7 +155,7 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Page `#/wrapped` (Library menu), "so far" until December
 - [x] PNG share card (1080x1350) drawn in a canvas: download, or the system share sheet where supported. Text only,
       since other hosts' cover images would block the export
-- [ ] Later: a December nudge (notification or home banner) pointing people to their Wrapped
+- [x] A December nudge: a home banner for signed-in people through December and Jan 1-14, hideable per year
 
 ## Phase 7 onward
 

@@ -56,6 +56,7 @@ export async function mockApi(page, { user = null } = {}) {
     if (p === '/api/auth/me') return json(route, { user: user ? { id: 1, ...user } : null });
     if (p === '/api/favorites') return json(route, { favorites: [] });
     if (p === '/api/manga-favorites') return json(route, { favorites: [] });
+    if (p === '/api/notifications/unread-count') return json(route, { unread: 0 });
     if (p.startsWith('/api/notifications')) return json(route, { count: 0, notifications: [] });
     if (p === '/api/anime/top' || p === '/api/anime/season/now' || p === '/api/anime/search') {
       const page = Number(url.searchParams.get('page') || 1);

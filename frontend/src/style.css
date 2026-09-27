@@ -436,6 +436,19 @@ body.is-admin [data-admin-only] { display: flex; }
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 
 /* ===================== Airing-today ticker ===================== */
+.wrapped-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(255,45,120,0.18), rgba(123,47,247,0.18)), var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 24px 0;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+.wrapped-nudge-text { flex: 1 1 260px; font-weight: 700; }
 .ticker-bar {
   display: flex;
   align-items: center;
