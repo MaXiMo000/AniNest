@@ -17,8 +17,10 @@ export const generalLimiter = rateLimit({
 });
 
 // Auth endpoints get a much tighter limit to blunt credential-stuffing /
-// brute-force and registration-spam attempts.
-export const authLimiter = rateLimit({
+// brute-force and registration-spam attempts. A factory so each endpoint gets
+// its own budget: signing up, mistyping a password and asking for a reset
+// shouldn't add up to "Too many attempts".
+export const authLimiter = () => rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.AUTH_RATE_LIMIT) || 10,
   standardHeaders: true,

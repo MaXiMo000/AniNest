@@ -204,7 +204,7 @@ export async function renderWrapped(root, params) {
   const load = async () => {
     let w;
     try {
-      w = await apiGet(`/api/wrapped?year=${year}&tz=${new Date().getTimezoneOffset()}`);
+      w = await apiGet(`/api/wrapped?year=${year}&tz=${new Date().getTimezoneOffset()}&zone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`);
     } catch {
       if (!root.isConnected) return;
       slot.innerHTML = errorHTML('Couldn’t load your Wrapped.');

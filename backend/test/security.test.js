@@ -159,18 +159,32 @@ test('delete account: needs the password, removes the user and their data', asyn
   assert.equal((await again.post('/api/auth/register', { body: user })).status, 201, 'the name and email are free again');
 });
 
-test('password reset: generic answer, single-use link, signs everything out', async () => {
+test('password reset: generic answer, single-use link, signs everything out, lifts the lock', async () => {
   const sent = [];
-  setMailSender(async (mail) => { sent.push(mail); });
+  let release;
+  const mailServer = new Promise((resolve) => { release = resolve; });
+  setMailSender(async (mail) => { await mailServer; sent.push(mail); });
   try {
     const { agent, user } = await registered();
     const anon = await makeAgent().ready();
     const unknown = await anon.post('/api/auth/forgot', { body: { email: 'nobody-here@test.local' } });
     assert.equal(unknown.status, 200, 'an unknown email gets the same answer');
-    assert.equal(sent.length, 0);
 
+    // Answers before the (still stalled) mail server does, so timing can't tell.
     assert.equal((await anon.post('/api/auth/forgot', { body: { email: user.email.toUpperCase() } })).status, 200);
-    assert.equal(sent.length, 1);
+    assert.equal(sent.length, 0);
+    release();
+    for (let i = 0; i < 100 && !sent.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => { setTimeout(r, 10); });
+    }
+    assert.equal(sent.length, 1, 'only the registered email gets mail');
+
+    for (let i = 0; i < 3; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await anon.post('/api/auth/login', { body: { identifier: user.username, password: 'wrong' } });
+    }
+    assert.equal((await anon.post('/api/auth/login', { body: { identifier: user.username, password: user.password } })).status, 429);
     assert.equal(sent[0].to, user.email);
     const token = /token=([0-9a-f]{64})/.exec(sent[0].text)[1];
 

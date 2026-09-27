@@ -34,10 +34,14 @@ const PERSONAS = {
 };
 
 // "2026-03-04 21:15:00" (SQLite datetime, UTC) shifted into the viewer's
-// local time: tzOffsetMin is Date#getTimezoneOffset (minutes BEHIND UTC).
-function localDate(watchedAt, tzOffsetMin) {
-  const ms = Date.parse(`${watchedAt.replace(' ', 'T')}Z`) - tzOffsetMin * 60000;
-  return new Date(ms);
+// local time. With an IANA timeZone each date gets its own offset, so daylight
+// saving is right all year; otherwise tzOffsetMin (Date#getTimezoneOffset,
+// minutes BEHIND UTC) is applied to every date.
+function localDate(watchedAt, tzOffsetMin, fmt) {
+  const utc = Date.parse(`${watchedAt.replace(' ', 'T')}Z`);
+  if (!fmt) return new Date(utc - tzOffsetMin * 60000);
+  const p = Object.fromEntries(fmt.formatToParts(utc).map((x) => [x.type, Number(x.value)]));
+  return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second));
 }
 const dayKey = (d) => d.toISOString().slice(0, 10);
 
@@ -58,10 +62,13 @@ function longestStreak(days) {
 // logs: [{ mal_id, episode, watched_at }] (any years; filtered here)
 // favorites: [{ mal_id, title, image, type, genres: [names], episodes }]
 // reviews: [{ mal_id, rating (1-10) }]
-export function buildWrapped({ year, logs, favorites, reviews = [], tzOffsetMin = 0 }) {
+export function buildWrapped({ year, logs, favorites, reviews = [], tzOffsetMin = 0, timeZone }) {
   const shows = new Map(favorites.map((f) => [Number(f.mal_id), f]));
+  const fmt = timeZone && new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
+  });
   const mine = logs
-    .map((l) => ({ ...l, mal_id: Number(l.mal_id), episode: Number(l.episode), at: localDate(l.watched_at, tzOffsetMin) }))
+    .map((l) => ({ ...l, mal_id: Number(l.mal_id), episode: Number(l.episode), at: localDate(l.watched_at, tzOffsetMin, fmt) }))
     .filter((l) => l.at.getUTCFullYear() === year);
   if (!mine.length) return { year, empty: true };
 

@@ -199,13 +199,16 @@ authRouter.post('/forgot', async (req, res, next) => {
     const found = await db.execute({ sql: 'SELECT id, username FROM users WHERE email = ?', args: [parsed.data.email] });
     const user = found.rows[0];
     if (user) {
-      const token = await createPasswordReset(Number(user.id));
       const origin = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
-      await sendMail({
-        to: parsed.data.email,
-        subject: 'Reset your AniNest password',
-        text: `Hi ${user.username},\n\nReset your AniNest password here (the link works once, for 30 minutes):\n${origin}/#/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email and nothing changes.`,
-      });
+      // In the background: waiting on the mail server only when the account
+      // exists would make registered emails answer noticeably slower.
+      createPasswordReset(Number(user.id))
+        .then((token) => sendMail({
+          to: parsed.data.email,
+          subject: 'Reset your AniNest password',
+          text: `Hi ${user.username},\n\nReset your AniNest password here (the link works once, for 30 minutes):\n${origin}/#/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email and nothing changes.`,
+        }))
+        .catch((err) => req.log.error({ err }, 'password reset email failed'));
     }
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -224,6 +227,8 @@ authRouter.post('/reset', async (req, res, next) => {
     if (!userId) return res.status(400).json({ error: 'That reset link is invalid or has expired. Ask for a new one.' });
     await setPassword(userId, parsed.data.password);
     await destroyAllSessionsForUser(userId);
+    // The lockout message points people here, so a reset has to lift it.
+    await clearFailures(throttleKey({ id: userId }));
     res.status(204).end();
   } catch (err) { next(err); }
 });

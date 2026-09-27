@@ -23,6 +23,11 @@ wrappedRouter.get('/', requireAuth, asyncRoute(async (req, res) => {
   // The browser's Date#getTimezoneOffset, so days and months are the viewer's own.
   const tz = Number(req.query.tz ?? 0);
   const tzOffsetMin = Number.isInteger(tz) && Math.abs(tz) <= 840 ? tz : 0;
+  // The browser's IANA zone ("Europe/Berlin"), preferred since it knows DST.
+  let timeZone;
+  try {
+    if (req.query.zone) timeZone = new Intl.DateTimeFormat('en-US', { timeZone: String(req.query.zone).slice(0, 64) }).resolvedOptions().timeZone;
+  } catch { /* unknown zone: fall back to the fixed offset */ }
 
   // A day either side of the year, so a timezone shift can't drop the edges.
   const from = `${year - 1}-12-31 00:00:00`;
@@ -41,6 +46,7 @@ wrappedRouter.get('/', requireAuth, asyncRoute(async (req, res) => {
     ...buildWrapped({
       year,
       tzOffsetMin,
+      timeZone,
       logs: logs.rows,
       favorites: favs.rows.map((f) => ({ ...f, genres: parseJson(f.genres) })),
       reviews: reviews.rows.map((r) => ({ mal_id: Number(r.mal_id), rating: Number(r.rating) })),

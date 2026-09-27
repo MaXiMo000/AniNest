@@ -690,6 +690,10 @@ test('auth endpoints report a decrementing rate-limit budget', async () => {
 
   assert.ok(Number.isFinite(remaining1), 'expected a RateLimit-Remaining header');
   assert.equal(remaining2, remaining1 - 1, 'remaining budget should decrement by exactly 1 per request');
+
+  await agent.post('/api/auth/reset', { csrf: true, body: { token: 'x', password: 'y' } });
+  const third = await attempt();
+  assert.equal(Number(third.headers.get('ratelimit-remaining')), remaining2 - 1, 'a reset request spends its own budget, not login\'s');
 });
 
 // A real end-to-end 429 check. This mounts a fresh express-rate-limit
@@ -2790,6 +2794,12 @@ test('Wrapped: the year from episode_log, local days, binges, streaks, finished 
   assert.equal(w.persona, 'Adrenaline Chaser');
   assert.deepEqual(buildWrapped({ year: 2024, logs, favorites }), { year: 2024, empty: true });
   assert.equal(buildWrapped({ year: 2026, logs, favorites, tzOffsetMin: 0 }).episodes, 6, 'in UTC the Dec 31 episode is still 2026');
+
+  // Sydney is UTC+11 in January (DST) and UTC+10 in September. Opening Wrapped
+  // in September sends -600; only the named zone puts this at 00:30 Jan 1.
+  const newYear = [{ mal_id: 92901, episode: 1, watched_at: '2025-12-31 13:30:00' }];
+  assert.equal(buildWrapped({ year: 2026, logs: newYear, favorites, timeZone: 'Australia/Sydney', tzOffsetMin: -600 }).episodes, 1);
+  assert.equal(buildWrapped({ year: 2026, logs: newYear, favorites, tzOffsetMin: -600 }).empty, true, 'the fixed offset gets it wrong');
 });
 
 test('Wrapped API: your own year only, validation', async () => {
@@ -2810,4 +2820,5 @@ test('Wrapped API: your own year only, validation', async () => {
   assert.equal((await agent.get(`/api/wrapped?year=${year + 1}`)).status, 400, 'no future years');
   assert.equal((await agent.get('/api/wrapped?year=abc')).status, 400);
   assert.equal((await agent.get(`/api/wrapped?year=${year}&tz=99999`)).status, 200, 'a silly offset falls back to UTC');
+  assert.equal((await agent.get(`/api/wrapped?year=${year}&zone=Not/AZone`)).status, 200, 'an unknown zone falls back too');
 });
