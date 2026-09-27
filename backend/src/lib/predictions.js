@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { logger } from './logger.js';
-import { anilistSeason, anilistScoresForMalIds } from './anilist.js';
+import { anilistSeason, anilistBasicsForMalIds } from './anilist.js';
 import { seasonOf, seasonStartMs } from './tournament.js';
 
 // Season prediction league (routes/predictions.js). A season's SHOW_COUNT most
@@ -42,7 +42,7 @@ const imageOf = (a) => a.images?.jpg?.large_image_url || a.images?.jpg?.image_ur
 const liveSources = {
   seasonShows: async (season, year) => (await anilistSeason(season, year, 1)).data
     .map((a) => ({ mal_id: a.mal_id, title: a.title, image: imageOf(a) })),
-  scores: anilistScoresForMalIds,
+  scores: async (malIds) => new Map([...await anilistBasicsForMalIds(malIds)].map(([id, b]) => [id, b.score])),
 };
 let sources = liveSources;
 let clock = () => Date.now();

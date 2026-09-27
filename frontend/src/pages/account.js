@@ -167,6 +167,17 @@ function importSectionHTML() {
         <button type="submit" class="btn-pow btn-pow--pink">IMPORT</button>
       </form>
       <div id="import-result" style="text-align:center;margin-top:12px"></div>
+      <div class="section-head" style="margin-top:20px">
+        <h2 class="section-title">📥 Import from MyAnimeList</h2>
+        <span class="section-sub">On MyAnimeList, open <a href="https://myanimelist.net/panel.php?go=export" target="_blank" rel="noopener">Export</a>, download your anime list, then pick that file here (no need to unzip it). Brings over statuses, episode progress and your scores.</span>
+      </div>
+      <div class="hero-actions" style="justify-content:center">
+        <label class="btn-pow btn-pow--pink" style="cursor:pointer">
+          CHOOSE FILE
+          <input id="mal-import-file" type="file" accept=".xml,.gz,application/xml,text/xml,application/gzip" hidden />
+        </label>
+      </div>
+      <div id="mal-import-result" style="text-align:center;margin-top:12px"></div>
     </section>`;
 }
 
@@ -218,6 +229,27 @@ export function renderAccount(root) {
     await Auth.logout();
     showToast('Logged out. See you next episode!');
     navigate('#/');
+  });
+
+  const malInput = root.querySelector('#mal-import-file');
+  const malResult = root.querySelector('#mal-import-result');
+  malInput.addEventListener('change', async () => {
+    const file = malInput.files[0];
+    if (!file) return;
+    malResult.innerHTML = '<p class="section-sub">Importing…</p>';
+    try {
+      const { added, updated, skipped, rated, total } = await Import.mal(file);
+      await Favorites.loadFromServer();
+      const favLink = root.querySelector('#fav-count-link');
+      if (favLink) favLink.textContent = `💖 My Favorites (${Favorites.count()})`;
+      malResult.innerHTML = total
+        ? `<p class="section-sub">✅ Imported ${added} new, updated ${updated} existing${rated ? `, brought over ${rated} score${rated === 1 ? '' : 's'}` : ''}${skipped ? `, skipped ${skipped} (500-favorite limit reached)` : ''}.</p>`
+        : '<p class="section-sub">That list looks empty — nothing to import.</p>';
+      if (total) showToast(`Imported ${added + updated} anime from MyAnimeList!`);
+    } catch (err) {
+      malResult.innerHTML = `<p class="section-sub">💥 ${escapeHtml(err.message || 'Import failed.')}</p>`;
+    }
+    malInput.value = '';
   });
 
   const importForm = root.querySelector('#import-form');

@@ -612,15 +612,27 @@ export async function anilistGenresForMalIds(malIds) {
   return out;
 }
 
-// AniList average score (0-10, one decimal) for up to 50 MAL ids per request,
-// as Map(malId -> score or null). For the prediction league (lib/predictions.js).
-export async function anilistScoresForMalIds(malIds) {
+// Title, cover, format and average score (0-10, one decimal, or null) for up
+// to 50 MAL ids per request, as Map(malId -> { title, image, type, score }).
+// For the prediction league's live scores and the MyAnimeList file import.
+export async function anilistBasicsForMalIds(malIds) {
   const out = new Map();
   for (let i = 0; i < malIds.length; i += 50) {
     const data = await gql(`
-      query($malIds: [Int]) { Page(perPage: 50) { media(idMal_in: $malIds, type: ANIME) { idMal averageScore } } }
+      query($malIds: [Int]) {
+        Page(perPage: 50) {
+          media(idMal_in: $malIds, type: ANIME) { idMal title { romaji english } coverImage { extraLarge large } format averageScore }
+        }
+      }
     `, { malIds: malIds.slice(i, i + 50) });
-    for (const m of data.Page?.media || []) out.set(m.idMal, m.averageScore != null ? m.averageScore / 10 : null);
+    for (const m of data.Page?.media || []) {
+      out.set(m.idMal, {
+        title: m.title?.english || m.title?.romaji || null,
+        image: m.coverImage?.extraLarge || m.coverImage?.large || null,
+        type: FORMAT_MAP[m.format] || null,
+        score: m.averageScore != null ? m.averageScore / 10 : null,
+      });
+    }
   }
   return out;
 }

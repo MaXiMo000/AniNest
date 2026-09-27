@@ -864,6 +864,73 @@ test('AniList list import rejects an empty username without hitting the anime AP
   assert.equal(missing.status, 400);
 });
 
+const malXml = (animes) => `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist><myinfo><user_export_type>1</user_export_type></myinfo>${animes.map((a) => `
+  <anime>
+    <series_animedb_id>${a.id}</series_animedb_id>
+    <series_title><![CDATA[${a.title}]]></series_title>
+    <series_type>${a.type || 'TV'}</series_type>
+    <series_episodes>${a.episodes ?? 12}</series_episodes>
+    <my_watched_episodes>${a.watched ?? 0}</my_watched_episodes>
+    <my_score>${a.score ?? 0}</my_score>
+    <my_status>${a.status}</my_status>
+  </anime>`).join('')}
+</myanimelist>`;
+
+test('MAL export parser: statuses, progress, scores, gzip, junk', async () => {
+  const { gzipSync } = await import('node:zlib');
+  const { parseMalXml } = await import('../src/lib/malImport.js');
+  const xml = malXml([
+    { id: 1, title: 'Cowboy Bebop & Co', status: 'Completed', watched: 26, episodes: 26, score: 10 },
+    { id: 5, title: 'Paused', status: 'On-Hold', watched: 40, episodes: 24 },
+    { id: 1, title: 'Duplicate', status: 'Dropped' },
+    { id: 9, title: 'Later', status: 'Plan to Watch', episodes: 0 },
+  ]);
+  const parsed = parseMalXml(Buffer.from(xml));
+  assert.deepEqual(parsed.map((e) => [e.mal_id, e.title, e.status, e.episodes, e.episodes_watched, e.my_score]), [
+    [1, 'Cowboy Bebop & Co', 'completed', 26, 26, 10],
+    [5, 'Paused', null, 24, 24, null],
+    [9, 'Later', 'plan_to_watch', null, 0, null],
+  ]);
+  assert.deepEqual(parseMalXml(gzipSync(xml)), parsed, 'the .xml.gz straight from MAL');
+  assert.equal(parseMalXml(Buffer.from('<html>nope</html>')), null);
+  assert.equal(parseMalXml(Buffer.from([0x1f, 0x8b, 1, 2, 3])), null, 'broken gzip');
+});
+
+test('MAL import: file upload fills the list, keeps existing ratings, respects auth', async () => {
+  const { setMalImportLookup } = await import('../src/routes/import.js');
+  const send = (agent, body) => agent.post('/api/import/mal', { csrf: true, raw: body, headers: { 'Content-Type': 'application/octet-stream' } });
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await send(anon, 'x')).status, 401);
+
+  const { agent } = await registeredAgent();
+  assert.equal((await send(agent, 'not xml')).status, 400);
+  await agent.post('/api/reviews', { csrf: true, body: { mal_id: 92961, rating: 3, body: 'mine' } });
+  setMalImportLookup(async (ids) => new Map(ids.filter((id) => id !== 92962).map((id) => [id, { title: `AL ${id}`, image: `https://img/${id}.jpg`, type: 'TV', score: 8.1 }])));
+  try {
+    const res = await send(agent, malXml([
+      { id: 92960, title: 'One', status: 'Watching', watched: 5, score: 9 },
+      { id: 92961, title: 'Two', status: 'Completed', watched: 12, score: 10 },
+      { id: 92962, title: 'Three', status: 'Plan to Watch' },
+    ]));
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json, { added: 3, updated: 0, skipped: 0, rated: 1, total: 3 });
+    const list = (await agent.get('/api/favorites')).json.favorites.sort((a, b) => a.mal_id - b.mal_id);
+    assert.deepEqual(list.map((f) => [f.title, f.status, Number(f.episodes_watched), f.image]), [
+      ['AL 92960', 'watching', 5, 'https://img/92960.jpg'],
+      ['AL 92961', 'completed', 12, 'https://img/92961.jpg'],
+      ['Three', 'plan_to_watch', 0, null],
+    ], 'AniList title and cover when found, MAL title otherwise');
+    assert.equal((await agent.get('/api/reviews/92961')).json.myReview.rating, 3, 'an existing rating is kept');
+    assert.equal((await agent.get('/api/reviews/92960')).json.myReview.rating, 9, 'a MAL score becomes a rating');
+    const again = await send(agent, malXml([{ id: 92960, title: 'One', status: 'Completed', watched: 12 }]));
+    assert.deepEqual([again.json.added, again.json.updated], [0, 1]);
+  } finally {
+    setMalImportLookup(null);
+  }
+});
+
 test('parseYouTubeVideoId only accepts real YouTube video links, rejecting everything else', () => {
   // Valid shapes actually used by YouTube.
   assert.equal(parseYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
