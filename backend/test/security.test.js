@@ -464,3 +464,51 @@ test('follows and the activity feed: what followed people added, finished and ra
   const left = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM follows WHERE follower_id = ? OR followee_id = ?', args: [me.id, me.id] });
   assert.equal(Number(left.rows[0].n), 0);
 });
+
+test('web push: off without keys, then subscriptions get pushes and dead ones are dropped', async () => {
+  const { setPushSender, isPushEndpoint } = await import('../src/lib/push.js');
+  const { notifyNewEpisodes } = await import('../src/lib/notifications.js');
+  const { agent, id } = await registered();
+  const endpoint = 'https://fcm.googleapis.com/fcm/send/abc123';
+  const body = { endpoint, keys: { p256dh: 'BPk', auth: 'xyz' } };
+
+  assert.deepEqual((await agent.get('/api/notifications/push/key')).json, { enabled: false, publicKey: null });
+  assert.equal((await agent.post('/api/notifications/push/subscribe', { body })).status, 404);
+
+  const sent = [];
+  let fail = null;
+  setPushSender(async (sub, payload) => {
+    if (fail) { const err = new Error('gone'); err.statusCode = fail; throw err; }
+    sent.push({ endpoint: sub.endpoint, payload: JSON.parse(payload) });
+  });
+  try {
+    assert.equal(isPushEndpoint('https://evil.example/push'), false);
+    assert.equal(isPushEndpoint('http://fcm.googleapis.com/x'), false);
+    assert.equal(isPushEndpoint('https://fcm.googleapis.com.evil.example/x'), false);
+    assert.equal(isPushEndpoint('https://wns2-par02p.notify.windows.com/w/?token=1'), true);
+    const bad = await agent.post('/api/notifications/push/subscribe', { body: { ...body, endpoint: 'https://127.0.0.1/x' } });
+    assert.equal(bad.status, 400);
+    assert.equal((await agent.post('/api/notifications/push/subscribe', { body })).status, 201);
+    assert.equal((await agent.post('/api/notifications/push/subscribe', { body })).status, 201, 'subscribing again is fine');
+
+    await agent.post('/api/favorites', { body: { mal_id: 777001, title: 'Push Test Show' } });
+    await notifyNewEpisodes(777001, 2);
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].payload, { title: 'Push Test Show', body: '2 new free episodes available', url: '#/anime/777001' });
+
+    fail = 410;
+    await notifyNewEpisodes(777001, 1);
+    await new Promise((r) => setTimeout(r, 50));
+    const left = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?', args: [id] });
+    assert.equal(Number(left.rows[0].n), 0, 'a subscription the browser dropped is forgotten');
+
+    fail = null;
+    await agent.post('/api/notifications/push/subscribe', { body });
+    assert.equal((await agent.post('/api/notifications/push/unsubscribe', { body: { endpoint } })).status, 204);
+    const after = await db.execute({ sql: 'SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?', args: [id] });
+    assert.equal(Number(after.rows[0].n), 0);
+  } finally {
+    setPushSender(null);
+  }
+});

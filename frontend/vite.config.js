@@ -47,6 +47,9 @@ export default defineConfig({
         // Now the new worker activates at once and the next load is current.
         skipWaiting: true,
         clientsClaim: true,
+        // Push alert handlers (public/push-sw.js), used when the server has
+        // VAPID keys and the user turns alerts on from the notifications page.
+        importScripts: ['push-sw.js'],
       },
     }),
   ],

@@ -528,6 +528,20 @@ await db.executeMultiple(`
 // "alex completed Frieren" at the right time. Null on older rows.
 await ensureColumn('favorites', 'status_at', 'TEXT');
 
+// Browser push subscriptions (lib/push.js), one per device a user turned
+// alerts on for. Only used when VAPID keys are configured.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+`);
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the

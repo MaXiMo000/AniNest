@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { logger } from './logger.js';
+import { sendPush } from './push.js';
 
 // In-app notifications for titles a user is following. Two kinds:
 //   'anime-episodes' - free episodes were added for an anime (by an import, an
@@ -31,6 +32,10 @@ async function bump(userId, kind, ref, title, addCount) {
       args: [userId, kind, ref, title, addCount],
     });
   }
+  // Also to their devices, if they turned push on. Not awaited: a slow push
+  // service must not hold up the import or poll that found the news.
+  const { message, link } = describe({ kind, ref, count: addCount });
+  sendPush(userId, { title, body: message, url: link }).catch(() => {});
 }
 
 // Returns how many users were notified.

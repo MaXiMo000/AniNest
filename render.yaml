@@ -71,6 +71,14 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      # Optional browser push alerts. Generate once with
+      # `npx web-push generate-vapid-keys`; blank = the in-app bell only.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
 
   - name: aninest-frontend
     type: web

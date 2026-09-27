@@ -243,6 +243,7 @@ button { font-family: var(--font-body); cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
   background: none;
   border: none;
   padding: 4px 2px;
@@ -1814,6 +1815,12 @@ a.game-card:hover .game-card-art span { transform: scale(1.18) rotate(-8deg); }
   .search-form { max-width: 240px; }
   .main-nav { gap: 12px; }
 }
+/* A long username plus the signed-in bell also pushed the theme toggle off
+   the right edge here; the avatar alone still links to the account page. */
+@media (max-width: 1360px) and (min-width: 1101px) {
+  .user-chip .user-name { display: none; }
+  .main-nav .user-chip { padding: 4px; }
+}
 @media (max-width: 1100px) {
   .main-nav { display: none; }
   .nav-toggle { display: inline-flex; }
@@ -2627,3 +2634,4 @@ a.wo-title:hover { color: var(--pink2); }
 .feed-line a:hover { color: var(--pink2); }
 .feed-quote { font-style: italic; margin-top: 4px; overflow-wrap: anywhere; }
 .follow-btn.is-following { background: var(--bg2); }
+.push-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; font-weight: 700; }
