@@ -387,3 +387,29 @@ test('free in my country: only uploads that play there, titles filled in the bac
     setTitleFetcher(null);
   }
 });
+
+test('episode flags: filler and recap across pages, and a quiet fallback when Jikan is down', async () => {
+  const { setEpisodePageFetcher } = await import('../src/lib/episodeFlags.js');
+  const pages = [];
+  setEpisodePageFetcher(async (malId, page) => {
+    pages.push([malId, page]);
+    if (malId === 93102) throw Object.assign(new Error('Jikan error 504'), { status: 504 });
+    const base = (page - 1) * 100;
+    return {
+      pagination: { has_next_page: page < 2 },
+      data: Array.from({ length: page < 2 ? 100 : 20 }, (_, i) => ({ mal_id: base + i + 1, filler: [26, 105, 106].includes(base + i + 1), recap: base + i + 1 === 50 })),
+    };
+  });
+  try {
+    const anon = makeAgent();
+    const ok = (await anon.get('/api/episode-guide/93101/flags')).json;
+    assert.deepEqual(ok, { available: true, filler: [26, 105, 106], recap: [50] });
+    assert.deepEqual(pages.filter(([id]) => id === 93101).map(([, p]) => p), [1, 2], 'stops when there is no next page');
+    await anon.get('/api/episode-guide/93101/flags');
+    assert.equal(pages.filter(([id]) => id === 93101).length, 2, 'cached after the first load');
+    assert.deepEqual((await anon.get('/api/episode-guide/93102/flags')).json, { available: false, filler: [], recap: [] });
+    assert.equal((await anon.get('/api/episode-guide/abc/flags')).status, 400);
+  } finally {
+    setEpisodePageFetcher(null);
+  }
+});

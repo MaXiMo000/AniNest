@@ -2529,13 +2529,16 @@ a.wo-title:hover { color: var(--pink2); }
   align-items: end; height: 140px; min-width: min-content;
   border-bottom: 2px solid var(--muted);
 }
+.ep-bar.ep-bar--filler > span { opacity: 0.35; }
+.ep-bar.ep-bar--filler { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(127,127,127,0.18) 4px 8px); }
+.ep-skip p { margin: 0 0 6px; font-weight: 700; }
 .ep-bar { height: 100%; display: flex; align-items: flex-end; cursor: default; outline-offset: 2px; }
 .ep-bar > span { display: block; width: 100%; background: var(--purple); border-radius: 4px 4px 0 0; }
 .ep-bar:hover > span, .ep-bar:focus > span { background: var(--pink2); }
 .ep-bar--thin > span { background: var(--muted); opacity: 0.45; }
 .ep-bar--clicks > span { background: var(--pink2); }
 .ep-tip { min-height: 1.4em; margin-top: 6px; font-size: 0.85rem; font-weight: 800; color: var(--text); }
-.ep-axis { display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+.ep-axis { max-width: calc(var(--eps) * 26px); display: flex; justify-content: space-between; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
 .ep-table { margin: 8px 0; font-weight: 700; }
 .ep-table table { border-collapse: collapse; margin-top: 8px; }
 .ep-table th, .ep-table td { padding: 4px 12px; border-bottom: 1px solid var(--bg2); text-align: left; }

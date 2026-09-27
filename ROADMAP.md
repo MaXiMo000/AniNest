@@ -102,9 +102,10 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
       no stats table. Ratings and the "clicked" mark can be taken back
 - [x] Chart: one bar per episode, grey until 5 ratings, a table view, the "clicks at" episode highlighted; "Most people say
       it clicks at episode N" uses the **median** and needs 5 votes
-- [ ] **Blocked on Jikan** (504 "failed to connect to MyAnimeList" since 2026-09-24): `/anime/:id/episodes` (paged,
-      persistent-cached 7d) for MAL `filler`/`recap` flags, then dim filler bars and add the "Skip guide"
-      ("You can safely skip 26, 54, 97-108"). No other free source has filler flags
+- [x] Skip guide: `GET /api/episode-guide/:id/flags` pages Jikan's `/anime/:id/episodes` (max 12 pages,
+      persistent-cached 7d, `lib/episodeFlags.js`) for MAL `filler`/`recap` flags; filler bars are faded and the guide
+      says "You can safely skip 4 filler episodes: 26, 54, 97–108". Loaded separately, so while Jikan is down
+      (504s since 2026-09-24) the guide simply shows without it. No other free source has filler flags
 
 ## Phase 5: Vibe search
 

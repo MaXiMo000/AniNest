@@ -214,7 +214,7 @@ async function loadTournamentNote(root, id) {
   } catch {
     return;
   }
-  if (!slot.isConnected || !entries.length) return;
+  if (!slot.isConnected || !entries?.length) return;
   const label = (e) => `${e.season[0]}${e.season.slice(1).toLowerCase()} ${e.year}`;
   slot.innerHTML = `
     <div class="hero-actions" style="margin:0 0 10px">

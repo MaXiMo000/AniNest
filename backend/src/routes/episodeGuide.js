@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { requireAuth } from '../middleware/session.js';
+import { episodeFlags } from '../lib/episodeFlags.js';
 
 // Community episode guide for one anime: the average 1-5 rating per episode
 // and the episode where people say the show "clicks". You can only rate or
@@ -27,6 +28,20 @@ export function median(values) {
   const s = [...values].sort((a, b) => a - b);
   return s[Math.floor((s.length - 1) / 2)];
 }
+
+// Filler and recap episodes from MAL, separate from the guide itself so the
+// guide never waits on Jikan. available: false when Jikan is down and
+// nothing is stored yet; the page then just shows no skip guide.
+episodeGuideRouter.get('/:id/flags', asyncRoute(async (req, res) => {
+  const malId = parseId(req.params.id);
+  if (!malId) return res.status(400).json({ error: 'Invalid anime id.' });
+  try {
+    res.json({ available: true, ...(await episodeFlags(malId)) });
+  } catch (err) {
+    req.log.warn({ err, malId }, 'episode flags unavailable');
+    res.json({ available: false, filler: [], recap: [] });
+  }
+}));
 
 episodeGuideRouter.get('/:id', asyncRoute(async (req, res) => {
   const malId = parseId(req.params.id);
