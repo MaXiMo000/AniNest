@@ -67,7 +67,7 @@ authRouter.post('/register', async (req, res, next) => {
     const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
     const created = await db.execute({ sql: 'SELECT created_at FROM users WHERE id = ?', args: [userId] });
-    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at, isAdmin: false } });
+    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at, isAdmin: false, isPrivate: false } });
   } catch (err) { next(err); }
 });
 
@@ -114,7 +114,7 @@ authRouter.post('/login', async (req, res, next) => {
     res.json({
       user: {
         id: userId, username: user.username, email: user.email, createdAt: user.created_at,
-        isAdmin: Boolean(Number(user.is_admin)),
+        isAdmin: Boolean(Number(user.is_admin)), isPrivate: Boolean(Number(user.is_private)),
       },
     });
   } catch (err) { next(err); }
@@ -225,5 +225,16 @@ authRouter.post('/reset', async (req, res, next) => {
     await setPassword(userId, parsed.data.password);
     await destroyAllSessionsForUser(userId);
     res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+const privacySchema = z.object({ private: z.boolean() });
+
+authRouter.post('/privacy', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = privacySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
+    await db.execute({ sql: 'UPDATE users SET is_private = ? WHERE id = ?', args: [parsed.data.private ? 1 : 0, req.user.id] });
+    res.json({ isPrivate: parsed.data.private });
   } catch (err) { next(err); }
 });

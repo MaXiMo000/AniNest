@@ -33,11 +33,26 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
   const userResult = await db.execute({
     // Any capitalisation finds the profile; the exact spelling wins if two
     // look-alike accounts predate case-insensitive usernames.
-    sql: 'SELECT id, username, created_at FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
+    sql: 'SELECT id, username, created_at, is_private FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
     args: [username, username],
   });
   const user = userResult.rows[0];
   if (!user) return res.status(404).json({ error: 'User not found.' });
+
+  // A private profile shows its name, level and badges to others, but not
+  // its lists or reviews. The owner always sees everything.
+  if (Number(user.is_private) && req.user?.id !== Number(user.id)) {
+    const { badges = [], ...xpSummary } = (await xpForUser(user.id)) || {};
+    return res.json({
+      user: { username: user.username, createdAt: user.created_at },
+      private: true,
+      favorites: [],
+      reviews: [],
+      mangaReviews: [],
+      badges,
+      xp: xpSummary.total != null ? xpSummary : null,
+    });
+  }
 
   const mangaReviewsResult = await db.execute({
     sql: 'SELECT manga_id, rating, body, created_at, updated_at FROM manga_reviews WHERE user_id = ? AND hidden = 0 ORDER BY updated_at DESC LIMIT 100',
@@ -88,11 +103,12 @@ usersRouter.get('/:username/taste-match', requireAuth, asyncRoute(async (req, re
   const { username } = req.params;
   if (!USERNAME_RE.test(username)) return res.status(404).json({ error: 'User not found.' });
   const found = await db.execute({
-    sql: 'SELECT id FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
+    sql: 'SELECT id, is_private FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
     args: [username, username],
   });
   const other = found.rows[0];
   if (!other) return res.status(404).json({ error: 'User not found.' });
+  if (Number(other.is_private)) return res.json({ match: null, private: true, minList: MIN_LIST });
   if (Number(other.id) === req.user.id) return res.status(400).json({ error: 'That’s you!' });
 
   // Older favorites have no genres yet; without them the match is rougher, not wrong.

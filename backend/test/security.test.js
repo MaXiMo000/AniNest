@@ -333,3 +333,26 @@ test('profile share links carry their own preview tags and redirect to the page'
   assert.match(res.json, new RegExp(`http-equiv="refresh" content="0; url=http://localhost:5173/#/u/${user.username}"`));
   assert.equal((await makeAgent().get('/api/share/u/bad<name>')).status, 404);
 });
+
+test('a private profile hides lists and reviews from others, not from its owner', async () => {
+  const owner = await registered();
+  const viewer = await registered();
+  await owner.agent.post('/api/favorites', { body: { mal_id: 5114, title: 'FMA:B' } });
+  const on = await owner.agent.post('/api/auth/privacy', { body: { private: true } });
+  assert.deepEqual(on.json, { isPrivate: true });
+  assert.equal((await owner.agent.get('/api/auth/me')).json.user.isPrivate, true);
+
+  const seen = await viewer.agent.get(`/api/users/${owner.user.username}`);
+  assert.equal(seen.json.private, true);
+  assert.deepEqual(seen.json.favorites, []);
+  assert.ok(seen.json.xp, 'level still shows');
+  const anon = await makeAgent().get(`/api/users/${owner.user.username}`);
+  assert.deepEqual(anon.json.favorites, []);
+  assert.equal((await owner.agent.get(`/api/users/${owner.user.username}`)).json.favorites.length, 1, 'the owner sees everything');
+  const match = await viewer.agent.get(`/api/users/${owner.user.username}/taste-match`);
+  assert.equal(match.json.private, true);
+  assert.equal(match.json.match, null);
+
+  await owner.agent.post('/api/auth/privacy', { body: { private: false } });
+  assert.equal((await viewer.agent.get(`/api/users/${owner.user.username}`)).json.favorites.length, 1);
+});

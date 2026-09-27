@@ -69,7 +69,7 @@ shareRouter.get('/u/:username', async (req, res) => {
   const { username } = req.params;
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) return res.status(404).json({ error: 'Not found.' });
   const found = await db.execute({
-    sql: `SELECT u.username, (SELECT COUNT(*) FROM favorites f WHERE f.user_id = u.id) AS favs,
+    sql: `SELECT u.username, u.is_private, (SELECT COUNT(*) FROM favorites f WHERE f.user_id = u.id) AS favs,
                  (SELECT COUNT(*) FROM reviews r WHERE r.user_id = u.id AND r.hidden = 0) AS reviews
           FROM users u WHERE u.username = ? COLLATE NOCASE ORDER BY u.username = ? DESC LIMIT 1`,
     args: [username, username],
@@ -78,7 +78,9 @@ shareRouter.get('/u/:username', async (req, res) => {
   if (!u) return send(res, page({ title: 'AniNest', description: 'Your anime & manga home base.', hash: '#/' }));
   send(res, page({
     title: `${u.username} on AniNest`,
-    description: `${Number(u.favs)} anime on their list and ${Number(u.reviews)} reviews. See their taste, badges and XP.`,
+    description: Number(u.is_private)
+      ? 'Their level and badges on AniNest, your anime & manga home base.'
+      : `${Number(u.favs)} anime on their list and ${Number(u.reviews)} reviews. See their taste, badges and XP.`,
     hash: `#/u/${encodeURIComponent(u.username)}`,
   }));
 });

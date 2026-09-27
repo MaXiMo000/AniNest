@@ -82,6 +82,10 @@ function securitySectionHTML() {
         <button type="submit" class="btn-pow btn-pow--blue">CHANGE PASSWORD</button>
       </form>
       <div id="password-result" style="text-align:center;margin-top:8px"></div>
+      <label class="hero-actions" style="justify-content:center;margin-top:14px;gap:10px;font-weight:700;cursor:pointer">
+        <input id="private-toggle" type="checkbox" ${Auth.get().user?.isPrivate ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--pink)" />
+        🔒 Private profile: hide my lists and reviews from my public page
+      </label>
       <div class="hero-actions" style="justify-content:center;margin-top:14px">
         <button id="logout-others" class="chip">📵 Log out other devices</button>
         <a id="export-data" class="chip" href="${API_BASE}/api/auth/export" download>💾 Download my data</a>
@@ -109,6 +113,20 @@ function wireSecurity(root) {
       result.innerHTML = `<p class="section-sub">💥 ${escapeHtml(err.message || 'Couldn’t change your password.')}</p>`;
     }
     btn.disabled = false;
+  });
+
+  const privateToggle = root.querySelector('#private-toggle');
+  privateToggle.addEventListener('change', async () => {
+    const want = privateToggle.checked;
+    privateToggle.disabled = true;
+    try {
+      await Auth.setPrivate(want);
+      showToast(want ? 'Your profile is private now.' : 'Your profile is public again.');
+    } catch {
+      privateToggle.checked = !want;
+      privateToggle.disabled = false;
+      showToast('Something went wrong — try again.');
+    }
   });
 
   root.querySelector('#logout-others').addEventListener('click', async () => {

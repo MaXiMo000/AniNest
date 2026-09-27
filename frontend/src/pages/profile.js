@@ -23,6 +23,7 @@ async function loadTasteMatch(root, username) {
   if (!slot.isConnected) return;
   const m = res.match;
   const name = escapeHtml(username);
+  if (res.private) return;
   if (!m) {
     slot.innerHTML = `<div class="taste-match"><p class="muted-note">Add at least ${Number(res.minList)} anime to both your lists to see how your tastes compare.</p></div>`;
     return;
@@ -156,6 +157,19 @@ export async function renderProfile(root, username) {
   const mangaReviews = data.mangaReviews || [];
   const joined = user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : null;
   document.title = `${user.username} — AniNest`;
+
+  if (data.private) {
+    root.innerHTML = `
+      <div class="account-page">
+        <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
+        <h1 class="detail-title" style="-webkit-text-stroke:0.5px var(--ink)">${escapeHtml(user.username)}</h1>
+        ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
+        ${xpCardHTML(xp)}
+        ${badgesRowHTML(badges)}
+      </div>
+      ${emptyHTML(`${user.username} keeps their lists and reviews private.`, '🔒')}`;
+    return;
+  }
 
   const shownReviews = reviews.slice(0, MAX_REVIEWS_SHOWN);
   const animeByMalId = new Map();

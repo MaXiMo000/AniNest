@@ -494,6 +494,10 @@ await db.execute(`
   )
 `);
 
+// "Private profile": hides lists and reviews from the public profile page
+// (routes/users.js). Reviews still show on each title's own page.
+await ensureColumn('users', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the

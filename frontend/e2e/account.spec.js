@@ -125,3 +125,23 @@ test('admin review queue is not shown to non-admins', async ({ page }) => {
   await page.goto('/#/admin/reviews');
   await expect(page.getByText('filler dimension')).toBeVisible();
 });
+
+test('private profiles show a lock instead of lists, and the owner can toggle it', async ({ page }) => {
+  const errors = watchErrors(page);
+  await mockApi(page, { user: { username: 'tester', email: 'tester@test.local', isPrivate: false } });
+  await page.route(`${API}/api/users/hidden_one`, (route) => reply(route, {
+    user: { username: 'hidden_one', createdAt: '2026-01-01 00:00:00' }, private: true, favorites: [], reviews: [], mangaReviews: [], badges: [], xp: null,
+  }));
+  await page.route(`${API}/api/users/hidden_one/taste-match`, (route) => reply(route, { match: null, private: true, minList: 3 }));
+  await page.goto('/#/u/hidden_one');
+  await expect(page.getByText('keeps their lists and reviews private')).toBeVisible();
+
+  let sent;
+  await page.route(`${API}/api/auth/privacy`, (route) => { sent = route.request().postDataJSON(); return reply(route, { isPrivate: sent.private }); });
+  await page.goto('/#/account');
+  await page.locator('#private-toggle').check();
+  await expect(page.getByText('Your profile is private now.')).toBeVisible();
+  expect(sent).toEqual({ private: true });
+  await expect(page.locator('#private-toggle')).toBeChecked();
+  expect(errors).toEqual([]);
+});
