@@ -233,7 +233,24 @@ it's in your favorites and not marked completed or dropped. For anime, a notific
 followed manga. The first time a manga is seen only records a baseline. Each user gets one unread notification per title, and its
 count grows. Notification failures are logged and never break the action that triggered them.
 
-**Also in the app**: recommendations built from your favorites, studio and voice-actor pages, AniList list import, screenshot
+**Web push** (optional, `lib/push.js`, `public/push-sw.js`): with VAPID keys set, the notifications page offers "alerts on
+this device". Every notification bump also pushes to that user's devices. Endpoints must belong to a browser push service
+(allowlist in `isPushEndpoint`, since the server POSTs to them); 404/410 answers delete the subscription. The service worker
+pulls the handlers in through `workbox.importScripts`, so push only works in a built app (`vite build && vite preview`).
+
+**Follows and Friends' Activity** (`routes/users.js`, `routes/feed.js`, `#/feed`): follow from a profile. The feed is built on
+read from `favorites` (one item per entry: added, or its latest status change via `status_at`) and `reviews`, last 30 days, max
+60, skipping private accounts and hidden reviews. No events table.
+
+**Skip guide** (`lib/episodeFlags.js`, `GET /api/episode-guide/:id/flags`): MAL filler and recap flags from Jikan's episode
+list, cached 7 days in the DB. Loaded after the guide, so while Jikan is down the guide just shows without it.
+
+**Vibe search v2** (optional, `lib/vibeAi.js`): with `ANTHROPIC_API_KEY`, a request with words the rules don't know goes to
+Claude Haiku for the same filters (structured output; names limited to the vocabulary in code). Cached a day in memory, capped
+per day, and any failure falls back to the rules.
+
+**Also in the app**: a private-profile option, the "Free in My Country" page (`routes/free.js`), past tournament seasons,
+a December Wrapped nudge on Home, recommendations built from your favorites, studio and voice-actor pages, AniList list import, screenshot
 search (trace.moe), a client-side tier-list maker, compare mode, the weekly schedule, PWA install, a recently viewed rail, and an
 optional Turnstile check on registration.
 
@@ -256,6 +273,8 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `TURNSTILE_SECRET_KEY` | optional bot check on registration (the frontend needs `VITE_TURNSTILE_SITE_KEY` too) |
 | `RATE_LIMIT`, `AUTH_RATE_LIMIT` | limiter ceilings (defaults: 120/min per IP, 10 per 15 min on auth). The tests raise them |
 | `MANGA_POLL` | `off` disables the manga-chapter job |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | optional browser push alerts (`npx web-push generate-vapid-keys`). Unset, only the bell |
+| `ANTHROPIC_API_KEY`, `VIBE_AI_DAILY_LIMIT` | optional vibe search v2 through Claude Haiku (default cap 500 calls a day). Unset, rules only |
 | `LOG_LEVEL` | pino log level |
 
 Frontend (baked in at build time, so changing one needs a rebuild): `VITE_API_URL`, `VITE_TURNSTILE_SITE_KEY`.

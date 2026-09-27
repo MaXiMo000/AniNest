@@ -48,7 +48,12 @@ const VOCAB = {
   tennis: T('Tennis'), boxing: T('Boxing'), swimming: T('Swimming'), cycling: T('Cycling'), racing: T('Cars'), cars: T('Cars'),
 };
 // Asking FOR fanservice isn't something the site helps with; asking to avoid it is.
-const EXCLUDE_ONLY = new Set(['Ecchi']);
+export const EXCLUDE_ONLY = new Set(['Ecchi']);
+
+// Every genre and tag the vocabulary can produce: the only names the AI
+// reader (lib/vibeAi.js) may use, since all of them are checked against AniList.
+export const GENRE_NAMES = [...new Set(Object.values(VOCAB).filter((x) => x.kind === 'genre').map((x) => x.name))].sort();
+export const TAG_NAMES = [...new Set(Object.values(VOCAB).filter((x) => x.kind === 'tag').map((x) => x.name))].sort();
 
 const TERMS = Object.keys(VOCAB).sort((a, b) => b.length - a.length);
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

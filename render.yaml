@@ -79,6 +79,10 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         sync: false
+      # Optional vibe search v2 (Claude Haiku reads requests the rules can't).
+      # Blank = rules only.
+      - key: ANTHROPIC_API_KEY
+        sync: false
 
   - name: aninest-frontend
     type: web

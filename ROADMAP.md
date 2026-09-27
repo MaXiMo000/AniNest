@@ -116,8 +116,10 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Query AniList with the filters (tag rank ≥ 55, popularity > 3000, best score first); "like X" filters X's
       community recommendations locally; every result lists why it matched; unrecognised words are shown back
 - [x] Page `#/vibe?q=...` (shareable), in More and on Browse; nothing understood offers a title search instead
-- [ ] v2: optional `ANTHROPIC_API_KEY`, Haiku returns the same filter JSON (validated with zod, falls back to v1).
-      Worth it only if the "didn't understand" words pile up in real searches
+- [x] v2 (`lib/vibeAi.js`): with `ANTHROPIC_API_KEY` set, a request with words the rules don't know goes to Claude
+      Haiku, which returns the same filter JSON (structured output, validated with zod, names limited to the
+      vocabulary, a "like" title only if the person wrote it). Cached a day in memory, capped by
+      `VIBE_AI_DAILY_LIMIT` (500), and any failure falls back to v1. The page says when the AI read it
 - Also fixed on the way: the router gives every page a fresh container, so a slow page can no longer overwrite the
   page the user moved on to
 

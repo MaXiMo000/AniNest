@@ -12,6 +12,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@libsql/client": "^0.18.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.6",

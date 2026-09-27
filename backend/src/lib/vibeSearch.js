@@ -1,6 +1,7 @@
 import { cached } from './cache.js';
 import { anilistVibeSearch, anilistLikeCandidates, normalizeAniListMedia } from './anilist.js';
 import { parseVibe, isEmptyVibe } from './vibeParser.js';
+import { aiParseVibe } from './vibeAi.js';
 
 // Runs a parsed vibe (lib/vibeParser.js) against AniList. Without "like X" it
 // is one filtered query. With it, X's community recommendations are the
@@ -54,11 +55,18 @@ export function setVibeSources(sources) {
 }
 
 export async function vibeSearch(query) {
-  const v = parseVibe(query);
-  const parsed = { chips: v.chips, unknown: v.unknown };
+  let v = parseVibe(query);
+  let source = 'rules';
+  // Words the rules didn't know: let the optional AI reader (lib/vibeAi.js)
+  // read the whole request instead. null (off, failed, over budget) keeps v1.
+  if (v.unknown.length) {
+    const ai = await aiParseVibe(query);
+    if (ai && !isEmptyVibe(ai)) { v = ai; source = 'ai'; }
+  }
+  const parsed = { chips: v.chips, unknown: v.unknown, source };
   if (isEmptyVibe(v)) return { parsed, data: [], understood: false };
 
-  const key = `vibe:${query.trim().toLowerCase().replace(/\s+/g, ' ')}`;
+  const key = `vibe:${source}:${query.trim().toLowerCase().replace(/\s+/g, ' ')}`;
   return cached(key, 10 * 60 * 1000, async () => {
     let candidates;
     let likeNote = null;
