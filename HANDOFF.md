@@ -246,7 +246,12 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `PORT`, `NODE_ENV` | basics |
 | `FRONTEND_ORIGIN` | the only origin CORS allows (comma-separated for more than one) |
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | production database. Unset means a local file at `backend/data/aninest.db` (or `DB_PATH`) |
-| `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot |
+| `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot (boot warns about names nobody has registered) |
+| `ADMIN_USER_IDS` | same by numeric user id; preferred, since an id can't be claimed by registering a name first |
+| `TRUST_PROXY` | proxy hops in front of Express (2 on Render: the frontend's `/api` rewrite plus the load balancer). Decides whose IP the rate limits see; the backend logs `proxy hop check` once after boot to confirm |
+| `RESEND_API_KEY`, `MAIL_FROM` | optional; enable "Forgot your password?" emails through Resend. Unset, the page says reset isn't set up |
+| `LOGIN_MAX_FAILURES` | wrong passwords per account before a 15-minute lock (default 10) |
+| `SCREENSHOT_RATE_LIMIT`, `CACHE_MAX_ENTRIES` | screenshot searches per minute per visitor (default 6); in-memory cache cap (default 5000) |
 | `YOUTUBE_API_KEY` | optional; enables admin import and search. Without it, admins can still paste links and users can still submit them |
 | `TURNSTILE_SECRET_KEY` | optional bot check on registration (the frontend needs `VITE_TURNSTILE_SITE_KEY` too) |
 | `RATE_LIMIT`, `AUTH_RATE_LIMIT` | limiter ceilings (defaults: 120/min per IP, 10 per 15 min on auth). The tests raise them |
@@ -254,6 +259,11 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `LOG_LEVEL` | pino log level |
 
 Frontend (baked in at build time, so changing one needs a rebuild): `VITE_API_URL`, `VITE_TURNSTILE_SITE_KEY`.
+
+Account management lives in `routes/auth.js`: change password (signs out other devices), log out other devices, JSON data export,
+delete account (explicit deletes in `lib/account.js`, not FK cascades), and single-use 30-minute reset links. Usernames are unique
+regardless of case. Logins lock per account after repeated failures (`lib/loginThrottle.js`). Reviews can be reported, and admins
+hide them from `#/admin/reviews`. `/api/share/anime/:id` and `/api/share/u/:name` serve per-page link previews.
 
 Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256 hashes. No secret is involved, so there is no
 `SESSION_SECRET`. To log everyone out, clear the `sessions` table.
@@ -280,8 +290,11 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 ## Gotchas that cost real time
 
-- **Cross-site cookies**: the frontend and backend are different sites (`onrender.com` is a public suffix), so production cookies must be
-  `SameSite=None; Secure`. Dev uses Lax. With Lax in production, no cookie ever comes back and every request looks logged out.
+- **Cookies must stay first-party**: the frontend and backend are different sites (`onrender.com` is a public suffix), so the browser
+  must reach the API through the frontend's `/api/*` rewrite (render.yaml), never the backend URL. Cookies are `SameSite=Lax`, which
+  only works because of that rewrite; `backend/test/csrf.test.js` guards the config.
+- **Rate limits and proxies**: the rewrite adds a proxy hop, so `TRUST_PROXY` must equal the real hop count or every visitor shares
+  one rate-limit bucket (too low) or can spoof their IP (too high).
 - **Blueprint plan drift**: `render.yaml` must say `plan: starter` to match the dashboard. While it said `free`, every sync tried to
   downgrade the service and failed.
 - **Render Blueprint schema**: `env: node` / `env: static`, flat `headers` entries, and `routes` as `{type, source, destination}`.
