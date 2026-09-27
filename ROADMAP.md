@@ -50,8 +50,8 @@ that differ from that proposal, and the **checklist** for each phase.
 - [x] Email verification on sign-up; an email when the password changes or a new device logs in (alerts only to confirmed addresses; the digest needs one too)
 - [x] Optional two-factor login (authenticator app, recovery codes, secrets encrypted with `TOTP_KEY`); recommended on admin accounts
 - [ ] Server-picked game rounds, so scores are authoritative (see HANDOFF "Known limitations")
-- [ ] A separate Turso dev database instead of production keys in `backend/.env`; rotate the production token
-- [ ] Update vitest (2 moderate advisories, dev-only)
+- [x] Dev and tests can't reach production: Turso is used only with `NODE_ENV=production`, and the tests blank every service key. Owner to do: rotate the production Turso token (it sat in a local `.env`)
+- [x] Update vitest to 5 (0 advisories)
 
 **Then, UI**
 - [ ] Mobile and accessibility pass over every page: keyboard access, focus states, contrast, tap targets

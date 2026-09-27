@@ -268,7 +268,7 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 |---|---|
 | `PORT`, `NODE_ENV` | basics |
 | `FRONTEND_ORIGIN` | the only origin CORS allows (comma-separated for more than one) |
-| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | production database. Unset means a local file at `backend/data/aninest.db` (or `DB_PATH`) |
+| `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | production database, used **only when `NODE_ENV=production`**. Anywhere else (dev, tests) the app uses a local file at `backend/data/aninest.db` (or `DB_PATH`) and logs a warning if the Turso URL is set, so a `.env` copied from production can't touch real data. For a remote dev database, make a separate one (`turso db create aninest-dev`) and run with `NODE_ENV=production` against it deliberately |
 | `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot (boot warns about names nobody has registered) |
 | `ADMIN_USER_IDS` | same by numeric user id; preferred, since an id can't be claimed by registering a name first |
 | `TRUST_PROXY` | proxy hops in front of Express (2 on Render: the frontend's `/api` rewrite plus the load balancer). Decides whose IP the rate limits see; the backend logs `proxy hop check` once after boot to confirm |
