@@ -172,6 +172,12 @@ the votes when a round closes: more votes wins, a tie (including 0-0) goes to th
 { round, match, seed }` needs an account, only counts in the open round, and can be changed until it closes. Counts of an open
 match are hidden from anyone who hasn't voted in it. `GET /api/tournaments/:year/:season` reads an earlier season and never builds.
 
+**Wrapped** (`routes/wrapped.js`; `lib/wrapped.js` is pure; `#/wrapped`). `GET /api/wrapped?year=&tz=` needs an account and reads only
+the caller's `episode_log`, favorites and reviews. Only small-step progress is logged (see Episode progress), so it counts what was
+watched on AniNest, not catch-ups. Hours are estimated (episode length isn't stored). `tz` is the browser's `getTimezoneOffset`,
+so a late-night episode lands on the viewer's own day. The page draws the share card in a canvas, text only, because
+cross-origin covers would taint it.
+
 **Vibe search** (`lib/vibeParser.js` is pure; `lib/vibeSearch.js`; `#/vibe?q=`). `GET /api/anime/vibe?q=` understands
 moods, genres, "no X", episode counts, "short", formats, decades and years, finished/airing, and "like <title>". Each
 vocabulary word maps to exactly one AniList genre or tag, because AniList's `genre_in` and `tag_in` are AND filters: several

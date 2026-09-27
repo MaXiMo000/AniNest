@@ -145,6 +145,17 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Page `#/tournament` (More menu): current round as head-to-heads with a shared player, bracket view, champion banner
 - [ ] Later: link from the detail page's jukebox when a song is in a bracket; a past-seasons picker (the API already serves them)
 
+## Phase 9: AniNest Wrapped
+
+- [x] `GET /api/wrapped?year=&tz=` (your own only): episodes, estimated hours (24 min an episode, 100 a movie), shows,
+      finished, days watched, longest streak, per-month counts, busiest month, biggest binge (2+ episodes of one show in a
+      day), top 5 shows, top 3 genres (weighted by episodes), highest-rated show watched this year, and a persona from the top genre
+- [x] Days and months use the viewer's time zone (`tz` = `Date#getTimezoneOffset`)
+- [x] Page `#/wrapped` (Library menu), "so far" until December
+- [x] PNG share card (1080x1350) drawn in a canvas: download, or the system share sheet where supported. Text only,
+      since other hosts' cover images would block the export
+- [ ] Later: a December nudge (notification or home banner) pointing people to their Wrapped
+
 ## Phase 7 onward
 
 Filled in when each phase starts, using the proposal's table designs: drop-point stats

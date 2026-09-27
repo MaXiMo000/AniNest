@@ -2705,3 +2705,53 @@ test('OP/ED tournament API: built once from the season, vote, hidden counts, rou
     setTournamentClock(null);
   }
 });
+
+test('Wrapped: the year from episode_log, local days, binges, streaks, finished shows', async () => {
+  const { buildWrapped } = await import('../src/lib/wrapped.js');
+  const favorites = [
+    { mal_id: 92901, title: 'Long Show', type: 'TV', genres: ['Action', 'Comedy'], episodes: 3 },
+    { mal_id: 92902, title: 'Film', type: 'Movie', genres: ['Drama'], episodes: 1 },
+  ];
+  const logs = [
+    { mal_id: 92901, episode: 1, watched_at: '2026-03-01 10:00:00' },
+    { mal_id: 92901, episode: 2, watched_at: '2026-03-01 11:00:00' },
+    { mal_id: 92901, episode: 3, watched_at: '2026-03-02 10:00:00' },
+    { mal_id: 92902, episode: 1, watched_at: '2026-03-03 10:00:00' },
+    { mal_id: 92903, episode: 5, watched_at: '2026-07-10 10:00:00' },
+    { mal_id: 92901, episode: 9, watched_at: '2025-06-01 10:00:00' },
+    // 23:30 UTC on Dec 31 is already 2027 at UTC+1.
+    { mal_id: 92902, episode: 2, watched_at: '2026-12-31 23:30:00' },
+  ];
+  const w = buildWrapped({ year: 2026, logs, favorites, reviews: [{ mal_id: 92902, rating: 9 }, { mal_id: 92999, rating: 10 }], tzOffsetMin: -60 });
+  assert.deepEqual([w.episodes, w.shows, w.finished, w.daysWatched, w.longestStreak], [5, 3, 2, 4, 3]);
+  assert.equal(w.hours, Math.round((24 * 3 + 100 + 24) / 60), 'movies count longer');
+  assert.deepEqual(w.busiestMonth, { name: 'March', episodes: 4 });
+  assert.deepEqual([w.biggestBinge.title, w.biggestBinge.episodes, w.biggestBinge.date], ['Long Show', 2, '2026-03-01']);
+  assert.equal(w.topShows[0].title, 'Long Show');
+  assert.equal(w.topShows[2].title, 'A show you removed');
+  assert.deepEqual(w.topGenres.map((g) => g.name), ['Action', 'Comedy', 'Drama']);
+  assert.deepEqual([w.favorite.title, w.favorite.rating], ['Film', 9], 'only rated shows watched this year');
+  assert.equal(w.persona, 'Adrenaline Chaser');
+  assert.deepEqual(buildWrapped({ year: 2024, logs, favorites }), { year: 2024, empty: true });
+  assert.equal(buildWrapped({ year: 2026, logs, favorites, tzOffsetMin: 0 }).episodes, 6, 'in UTC the Dec 31 episode is still 2026');
+});
+
+test('Wrapped API: your own year only, validation', async () => {
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  assert.equal((await anon.get('/api/wrapped')).status, 401);
+  const { agent } = await registeredAgent();
+  assert.equal((await agent.get('/api/wrapped')).json.empty, true, 'nothing logged yet');
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92910, title: 'Wrapped Show', status: 'watching', genres: ['Romance'], episodes: 2 } });
+  await agent.post('/api/favorites/92910/progress', { csrf: true, body: { episodes_watched: 2 } });
+  const other = await registeredAgent();
+  await db.execute({ sql: "INSERT INTO episode_log (user_id, mal_id, episode, watched_at) VALUES (?, 92911, 1, datetime('now'))", args: [other.id] });
+
+  const year = new Date().getUTCFullYear();
+  const w = (await agent.get(`/api/wrapped?year=${year}&tz=0`)).json;
+  assert.deepEqual([w.episodes, w.shows, w.finished, w.persona], [2, 1, 1, 'Hopeless Romantic'], 'someone else’s log is not mixed in');
+  assert.ok(w.username);
+  assert.equal((await agent.get(`/api/wrapped?year=${year + 1}`)).status, 400, 'no future years');
+  assert.equal((await agent.get('/api/wrapped?year=abc')).status, 400);
+  assert.equal((await agent.get(`/api/wrapped?year=${year}&tz=99999`)).status, 200, 'a silly offset falls back to UTC');
+});
