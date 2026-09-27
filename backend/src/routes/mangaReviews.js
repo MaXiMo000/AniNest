@@ -17,6 +17,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Public: anyone can read reviews for a manga. Includes the caller's own
 // review separately (if signed in) so the page can show "edit" instead of
 // a fresh "write a review" form.
+// Reviews by private profiles are left out of the list (their rating still
+// counts toward the anonymous average and count).
 mangaReviewsRouter.get('/:mangaId', asyncRoute(async (req, res) => {
   const { mangaId } = req.params;
   if (!UUID_RE.test(mangaId)) return res.status(400).json({ error: 'Invalid manga id.' });
@@ -26,7 +28,7 @@ mangaReviewsRouter.get('/:mangaId', asyncRoute(async (req, res) => {
       sql: `
         SELECT r.id, r.rating, r.body, r.created_at, r.updated_at, u.username
         FROM manga_reviews r JOIN users u ON u.id = r.user_id
-        WHERE r.manga_id = ? AND r.hidden = 0
+        WHERE r.manga_id = ? AND r.hidden = 0 AND u.is_private = 0
         ORDER BY r.updated_at DESC
         LIMIT 100
       `,
