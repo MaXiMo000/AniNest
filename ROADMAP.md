@@ -47,7 +47,7 @@ that differ from that proposal, and the **checklist** for each phase.
 **Done:** Phase 13, light novels and the header redesign (see below). Next is the security list.
 
 **Then, security**
-- [ ] Email verification on sign-up; an email when the password changes or a new device logs in
+- [x] Email verification on sign-up; an email when the password changes or a new device logs in (alerts only to confirmed addresses; the digest needs one too)
 - [ ] Optional two-factor login (authenticator app), admins first
 - [ ] Server-picked game rounds, so scores are authoritative (see HANDOFF "Known limitations")
 - [ ] A separate Turso dev database instead of production keys in `backend/.env`; rotate the production token

@@ -55,6 +55,7 @@ notificationsRouter.post('/settings', asyncRoute(async (req, res) => {
   const parsed = settingsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
   if (parsed.data.emailDigest && !isMailEnabled()) return res.status(409).json({ error: 'Email isn’t set up on this site yet.' });
+  if (parsed.data.emailDigest && !req.user.emailVerified) return res.status(409).json({ error: 'Confirm your email first: use the link we sent you, or send a new one from this page.' });
   const changes = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
   if (changes.length) {
     await db.execute({

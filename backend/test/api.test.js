@@ -1812,10 +1812,66 @@ test('light novels: catalog, reading list with volume progress, reviews, reports
   }
 });
 
+test('email verification, password-change and new-device alerts', async () => {
+  const { setMailSender } = await import('../src/lib/mailer.js');
+  const { describeDevice } = await import('../src/lib/accountMail.js');
+  assert.equal(describeDevice('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'), 'Chrome on Windows');
+  assert.equal(describeDevice('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1'), 'Safari on iOS');
+  const sent = [];
+  setMailSender(async (mail) => { sent.push(mail); });
+  const settle = () => new Promise((r) => { setTimeout(r, 150); });
+  const mailsTo = (email, re) => sent.filter((m) => m.to === email && re.test(m.subject));
+  try {
+    const { agent, user } = await registeredAgent();
+    await settle();
+    assert.equal(mailsTo(user.email, /Confirm your AniNest email/).length, 1, 'sign-up sends the link');
+    assert.equal((await agent.get('/api/auth/me')).json.user.emailVerified, false);
+
+    // Alerts wait for a confirmed address.
+    await agent.post('/api/auth/password', { csrf: true, body: { currentPassword: user.password, newPassword: 'newhorse4567' } });
+    await settle();
+    assert.equal(mailsTo(user.email, /password was changed/).length, 0);
+
+    await agent.post('/api/auth/verify-email/resend', { csrf: true });
+    await settle();
+    const links = mailsTo(user.email, /Confirm/);
+    assert.equal(links.length, 2);
+    const token = /token=([0-9a-f]{64})/.exec(links[1].text)[1];
+    const oldToken = /token=([0-9a-f]{64})/.exec(links[0].text)[1];
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    assert.equal((await anon.post('/api/auth/verify-email', { csrf: true, body: { token: oldToken } })).status, 400, 'a newer link replaces the old one');
+    assert.equal((await anon.post('/api/auth/verify-email', { csrf: true, body: { token } })).status, 204, 'works signed out');
+    assert.equal((await anon.post('/api/auth/verify-email', { csrf: true, body: { token } })).status, 400, 'once');
+    assert.equal((await agent.get('/api/auth/me')).json.user.emailVerified, true);
+    assert.equal((await agent.post('/api/auth/verify-email/resend', { csrf: true })).status, 409);
+
+    await agent.post('/api/auth/password', { csrf: true, body: { currentPassword: 'newhorse4567', newPassword: 'thirdhorse890' } });
+    await settle();
+    assert.equal(mailsTo(user.email, /password was changed/).length, 1);
+
+    // The sign-up browser is known; a fresh one alerts, once.
+    const login = (a) => a.post('/api/auth/login', { csrf: true, body: { identifier: user.username, password: 'thirdhorse890' } });
+    await login(agent);
+    await settle();
+    assert.equal(mailsTo(user.email, /New sign-in/).length, 0, 'the usual browser is quiet');
+    const laptop = makeAgent();
+    await laptop.get('/api/health');
+    assert.equal((await login(laptop)).status, 200);
+    await settle();
+    assert.equal(mailsTo(user.email, /New sign-in/).length, 1);
+    await login(laptop);
+    await settle();
+    assert.equal(mailsTo(user.email, /New sign-in/).length, 1, 'known after the first time');
+  } finally {
+    setMailSender(null);
+  }
+});
+
 test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');
   const { notifyNewEpisodes } = await import('../src/lib/notifications.js');
-  const { agent } = await registeredAgent();
+  const { agent, id } = await registeredAgent();
   const settings = (body) => agent.post('/api/notifications/settings', { csrf: true, body });
   assert.deepEqual((await agent.get('/api/notifications/settings')).json,
     { notifyEpisodes: true, notifyChapters: true, emailDigest: false, mailEnabled: false });
@@ -1832,6 +1888,8 @@ test('notification settings: alert kinds can be muted, the digest needs mail', a
 
   setMailSender(async () => {});
   try {
+    assert.equal((await settings({ emailDigest: true })).status, 409, 'an unconfirmed email can’t get the digest');
+    await db.execute({ sql: 'UPDATE users SET email_verified = 1 WHERE id = ?', args: [id] });
     assert.equal((await settings({ emailDigest: true })).json.emailDigest, true);
   } finally {
     setMailSender(null);
@@ -1854,24 +1912,27 @@ test('weekly digest: episodes, alerts and friends in one mail, once a week, unsu
     await reader.agent.post('/api/favorites', { csrf: true, body: { mal_id: 92981, title: 'Mine', status: 'watching' } });
     await friend.agent.post('/api/favorites', { csrf: true, body: { mal_id: 92982, title: 'Their Show', status: 'completed' } });
     await reader.agent.post(`/api/users/${friend.user.username}/follow`, { csrf: true });
-    for (const a of [reader.agent, quiet.agent]) {
+    for (const who of [reader, quiet]) {
       // eslint-disable-next-line no-await-in-loop
-      await a.post('/api/notifications/settings', { csrf: true, body: { emailDigest: true } });
+      await db.execute({ sql: 'UPDATE users SET email_verified = 1 WHERE id = ?', args: [who.id] });
+      // eslint-disable-next-line no-await-in-loop
+      await who.agent.post('/api/notifications/settings', { csrf: true, body: { emailDigest: true } });
     }
+    const digests = (email) => sent.filter((m) => m.to === email && m.subject.startsWith('Your AniNest week'));
 
     const t = Date.now();
     await runDigests(t);
-    const mine = sent.filter((m) => m.to === reader.user.email);
+    const mine = digests(reader.user.email);
     assert.equal(mine.length, 1);
     assert.match(mine[0].text, /Airing 92981: episodes 5, 6/);
     assert.doesNotMatch(mine[0].text, /Airing 92982/, 'only shows on your own Watching list');
     assert.match(mine[0].text, new RegExp(`${friend.user.username} added Their Show`));
-    assert.equal(sent.some((m) => m.to === quiet.user.email), false, 'nothing to say, no mail');
+    assert.equal(digests(quiet.user.email).length, 0, 'nothing to say, no mail');
 
     await runDigests(t + 60 * 60 * 1000);
-    assert.equal(sent.filter((m) => m.to === reader.user.email).length, 1, 'once a week');
+    assert.equal(digests(reader.user.email).length, 1, 'once a week');
     await runDigests(t + 8 * 24 * 60 * 60 * 1000);
-    assert.equal(sent.filter((m) => m.to === reader.user.email).length, 2, 'and again next week');
+    assert.equal(digests(reader.user.email).length, 2, 'and again next week');
 
     const token = /unsubscribe\?token=([0-9a-f]{64})/.exec(mine[0].text)[1];
     const anon = makeAgent();

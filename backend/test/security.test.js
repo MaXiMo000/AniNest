@@ -167,7 +167,8 @@ test('password reset: generic answer, single-use link, signs everything out, lif
   const sent = [];
   let release;
   const mailServer = new Promise((resolve) => { release = resolve; });
-  setMailSender(async (mail) => { await mailServer; sent.push(mail); });
+  // Only reset emails: sign-up also sends a verification email.
+  setMailSender(async (mail) => { await mailServer; if (/Reset/.test(mail.subject)) sent.push(mail); });
   try {
     const { agent, user } = await registered();
     const anon = await makeAgent().ready();

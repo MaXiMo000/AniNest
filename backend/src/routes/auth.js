@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { db } from '../lib/db.js';
 import {
   hashPassword, verifyPassword, createSession, destroySession, destroyOtherSessions, destroyAllSessionsForUser,
-  setPassword, createPasswordReset, consumePasswordReset, SESSION_COOKIE, SESSION_MAX_AGE_MS,
+  setPassword, createPasswordReset, consumePasswordReset, consumeEmailVerification, SESSION_COOKIE, SESSION_MAX_AGE_MS,
 } from '../lib/auth.js';
+import { sendVerificationEmail, sendPasswordChangedEmail, noteSignIn, DEVICE_COOKIE } from '../lib/accountMail.js';
 import { verifyTurnstile } from '../lib/turnstile.js';
 import { requireAuth } from '../middleware/session.js';
 import { exportUserData, deleteUserData } from '../lib/account.js';
@@ -24,6 +25,15 @@ const cookieOpts = () => ({
   path: '/',
   maxAge: SESSION_MAX_AGE_MS,
 });
+
+const DEVICE_MAX_AGE_MS = 400 * 24 * 60 * 60 * 1000;
+
+// Remembers this browser for the account (lib/accountMail.js emails the
+// owner about sign-ins from new ones) and keeps its device cookie fresh.
+async function rememberDevice(req, res, user) {
+  const device = await noteSignIn(user, { deviceCookie: req.cookies?.[DEVICE_COOKIE], userAgent: req.get('user-agent'), ip: req.ip });
+  res.cookie(DEVICE_COOKIE, device, { ...cookieOpts(), maxAge: DEVICE_MAX_AGE_MS });
+}
 
 const passwordField = z.string().min(8).max(200).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Must include a letter and a number.');
 
@@ -66,8 +76,10 @@ authRouter.post('/register', async (req, res, next) => {
 
     const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
+    await rememberDevice(req, res, { id: userId });
+    sendVerificationEmail({ id: userId, username, email });
     const created = await db.execute({ sql: 'SELECT created_at FROM users WHERE id = ?', args: [userId] });
-    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at, isAdmin: false, isPrivate: false } });
+    res.status(201).json({ user: { id: userId, username, email, createdAt: created.rows[0].created_at, isAdmin: false, isPrivate: false, emailVerified: false } });
   } catch (err) { next(err); }
 });
 
@@ -111,10 +123,12 @@ authRouter.post('/login', async (req, res, next) => {
     const userId = Number(user.id);
     const { token } = await createSession(userId);
     res.cookie(SESSION_COOKIE, token, cookieOpts());
+    await rememberDevice(req, res, { id: userId });
     res.json({
       user: {
         id: userId, username: user.username, email: user.email, createdAt: user.created_at,
         isAdmin: Boolean(Number(user.is_admin)), isPrivate: Boolean(Number(user.is_private)),
+        emailVerified: Boolean(Number(user.email_verified)),
       },
     });
   } catch (err) { next(err); }
@@ -130,6 +144,27 @@ authRouter.post('/logout', async (req, res, next) => {
 
 authRouter.get('/me', (req, res) => {
   res.json({ user: req.user || null });
+});
+
+// The emailed link (#/verify-email?token=) works signed in or out: the token
+// is the proof, and all it can do is mark that one address as confirmed.
+authRouter.post('/verify-email', async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === 'string' && /^[0-9a-f]{64}$/.test(req.body.token) ? req.body.token : null;
+    const userId = token && await consumeEmailVerification(token);
+    if (!userId) return res.status(400).json({ error: 'That link is invalid or has expired. Send a new one from your account page.' });
+    await db.execute({ sql: 'UPDATE users SET email_verified = 1 WHERE id = ?', args: [userId] });
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+authRouter.post('/verify-email/resend', requireAuth, async (req, res, next) => {
+  try {
+    if (!isMailEnabled()) return res.status(503).json({ error: 'Email isn’t set up on this site yet.' });
+    if (req.user.emailVerified) return res.status(409).json({ error: 'Your email is already confirmed.' });
+    sendVerificationEmail(req.user);
+    res.status(204).end();
+  } catch (err) { next(err); }
 });
 
 async function passwordMatches(userId, plain) {
@@ -153,6 +188,7 @@ authRouter.post('/password', requireAuth, async (req, res, next) => {
     }
     await setPassword(req.user.id, parsed.data.newPassword);
     await destroyOtherSessions(req.user.id, req.cookies?.[SESSION_COOKIE]);
+    sendPasswordChangedEmail(req.user.id);
     res.status(204).end();
   } catch (err) { next(err); }
 });
@@ -229,6 +265,7 @@ authRouter.post('/reset', async (req, res, next) => {
     await destroyAllSessionsForUser(userId);
     // The lockout message points people here, so a reset has to lift it.
     await clearFailures(throttleKey({ id: userId }));
+    sendPasswordChangedEmail(userId);
     res.status(204).end();
   } catch (err) { next(err); }
 });

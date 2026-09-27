@@ -52,17 +52,21 @@ export async function setPassword(userId, plain) {
   await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE id = ?', args: [await hashPassword(plain), userId] });
 }
 
-const RESET_TTL_MS = 30 * 60 * 1000;
+// Single-use tokens for emailed links: password resets (30 minutes) and
+// email verification (2 days). Only the hash is stored, and asking again
+// replaces any earlier link, so only the newest email works.
+const EMAIL_TOKENS = {
+  password_resets: 30 * 60 * 1000,
+  email_verifications: 2 * 24 * 60 * 60 * 1000,
+};
 
-// A single-use reset token for the emailed link. Asking again replaces any
-// earlier link, so only the newest email works.
-export async function createPasswordReset(userId) {
+async function createEmailToken(table, userId) {
   const token = crypto.randomBytes(32).toString('hex');
   await db.batch([
-    { sql: 'DELETE FROM password_resets WHERE user_id = ?', args: [userId] },
+    { sql: `DELETE FROM ${table} WHERE user_id = ?`, args: [userId] },
     {
-      sql: 'INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
-      args: [hashToken(token), userId, new Date(Date.now() + RESET_TTL_MS).toISOString()],
+      sql: `INSERT INTO ${table} (token_hash, user_id, expires_at) VALUES (?, ?, ?)`,
+      args: [hashToken(token), userId, new Date(Date.now() + EMAIL_TOKENS[table]).toISOString()],
     },
   ], 'write');
   return token;
@@ -70,9 +74,9 @@ export async function createPasswordReset(userId) {
 
 // Returns the user id and burns the token, or null for an unknown, used or
 // expired one.
-export async function consumePasswordReset(token) {
+async function consumeEmailToken(table, token) {
   const res = await db.execute({
-    sql: 'DELETE FROM password_resets WHERE token_hash = ? RETURNING user_id, expires_at',
+    sql: `DELETE FROM ${table} WHERE token_hash = ? RETURNING user_id, expires_at`,
     args: [hashToken(token)],
   });
   const row = res.rows[0];
@@ -80,11 +84,16 @@ export async function consumePasswordReset(token) {
   return Number(row.user_id);
 }
 
+export const createPasswordReset = (userId) => createEmailToken('password_resets', userId);
+export const consumePasswordReset = (token) => consumeEmailToken('password_resets', token);
+export const createEmailVerification = (userId) => createEmailToken('email_verifications', userId);
+export const consumeEmailVerification = (token) => consumeEmailToken('email_verifications', token);
+
 export async function getUserForToken(token) {
   if (!token) return null;
   const result = await db.execute({
     sql: `
-      SELECT s.expires_at, u.id, u.username, u.email, u.created_at, u.is_admin, u.is_private
+      SELECT s.expires_at, u.id, u.username, u.email, u.created_at, u.is_admin, u.is_private, u.email_verified
       FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ?
     `,
@@ -99,6 +108,7 @@ export async function getUserForToken(token) {
   return {
     id: Number(row.id), username: row.username, email: row.email, createdAt: row.created_at,
     isAdmin: Boolean(Number(row.is_admin)), isPrivate: Boolean(Number(row.is_private)),
+    emailVerified: Boolean(Number(row.email_verified)),
   };
 }
 

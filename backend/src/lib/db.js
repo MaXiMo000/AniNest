@@ -644,6 +644,26 @@ await db.executeMultiple(`
   CREATE INDEX IF NOT EXISTS idx_novel_reviews_novel ON novel_reviews(novel_id);
 `);
 
+// Email verification (lib/accountMail.js). Accounts from before this start
+// unverified and see a "verify your email" banner. known_devices remembers
+// which browsers have signed in to an account (by a long-lived random cookie,
+// stored hashed), so a sign-in from a new one can be emailed to the owner.
+await ensureColumn('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 0');
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS email_verifications (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS known_devices (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device_hash TEXT NOT NULL,
+    first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, device_hash)
+  );
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.

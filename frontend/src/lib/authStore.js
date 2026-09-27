@@ -39,6 +39,10 @@ export const Auth = {
     const res = await apiPost('/api/auth/privacy', { private: isPrivate });
     set({ user: { ...state.user, isPrivate: res.isPrivate } });
   },
+  // Re-reads the signed-in user, e.g. after confirming the email.
+  async refresh() {
+    return this.init();
+  },
   forget() {
     set({ user: null });
   },

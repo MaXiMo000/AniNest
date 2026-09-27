@@ -52,6 +52,8 @@ export async function deleteUserData(userId) {
     byUser('notifications'),
     byUser('it_clicked'),
     byUser('password_resets'),
+    byUser('email_verifications'),
+    byUser('known_devices'),
     byUser('push_subscriptions'),
     { sql: 'DELETE FROM follows WHERE follower_id = ? OR followee_id = ?', args: [userId, userId] },
     { sql: 'DELETE FROM review_reports WHERE reporter_id = ?', args: [userId] },

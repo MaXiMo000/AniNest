@@ -2786,3 +2786,9 @@ body.nav-open .nav-toggle-bars span:nth-child(3) { transform: translateY(-6.5px)
   .main-nav, .nav-scrim, .nav-toggle-bars span { transition: none !important; }
   .nav-dropdown.is-open .nav-dropdown-menu { animation: none; }
 }
+
+/* Email confirmation (pages/account.js, pages/verifyEmail.js) */
+.verified-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: rgba(23, 232, 160, 0.15); color: var(--text-green); font-size: 0.8rem; font-weight: 800; }
+.verify-banner { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin: 14px auto 0; max-width: 560px; padding: 12px 14px; background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink); font-weight: 700; text-align: left; overflow-wrap: anywhere; }
+.notify-settings label.is-locked { opacity: 0.7; cursor: not-allowed; }
+.notify-settings small { display: block; color: var(--muted); font-weight: 700; margin-top: 2px; }

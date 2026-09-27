@@ -88,6 +88,27 @@ const NOTIFY_OPTIONS = [
   { key: 'emailDigest', label: '✉️ Weekly email: new episodes of what I’m watching, my alerts, and what the people I follow are up to', needsMail: true },
 ];
 
+// Shown until the email is confirmed (only when the site can send email).
+function showVerifyBanner(root) {
+  const slot = root.querySelector('#verify-banner');
+  if (!slot) return;
+  slot.innerHTML = `
+    <div class="verify-banner">
+      <span>📧 Confirm your email: we sent a link to <strong>${escapeHtml(Auth.get().user.email)}</strong>. It turns on the weekly email and security alerts.</span>
+      <button type="button" class="chip" id="verify-resend">Send a new link</button>
+    </div>`;
+  slot.querySelector('#verify-resend').addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try {
+      await apiPost('/api/auth/verify-email/resend');
+      showToast('Sent! Check your inbox (and spam).');
+    } catch (err) {
+      e.target.disabled = false;
+      showToast(err.message || 'Couldn’t send it — try again.');
+    }
+  });
+}
+
 async function wireNotifySettings(root) {
   const box = root.querySelector('#notify-box');
   let settings;
@@ -97,11 +118,17 @@ async function wireNotifySettings(root) {
     return;
   }
   if (!box.isConnected) return;
-  box.innerHTML = NOTIFY_OPTIONS.filter((o) => !o.needsMail || settings.mailEnabled).map((o) => `
-    <label>
-      <input type="checkbox" data-setting="${o.key}" ${settings[o.key] ? 'checked' : ''} />
-      <span>${o.label}</span>
-    </label>`).join('');
+  const verified = Auth.get().user?.emailVerified;
+  if (settings.mailEnabled && !verified) showVerifyBanner(root);
+  box.innerHTML = NOTIFY_OPTIONS.filter((o) => !o.needsMail || settings.mailEnabled).map((o) => {
+    // The weekly email only goes to a confirmed address.
+    const locked = o.needsMail && !verified && !settings[o.key];
+    return `
+    <label${locked ? ' class="is-locked"' : ''}>
+      <input type="checkbox" data-setting="${o.key}" ${settings[o.key] ? 'checked' : ''} ${locked ? 'disabled' : ''} />
+      <span>${o.label}${locked ? '<small>Confirm your email to turn this on.</small>' : ''}</span>
+    </label>`;
+  }).join('');
   box.querySelectorAll('[data-setting]').forEach((input) => input.addEventListener('change', async () => {
     input.disabled = true;
     try {
@@ -238,7 +265,8 @@ export function renderAccount(root) {
     <div class="account-page">
       <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
       <h1 class="detail-title" style="-webkit-text-stroke:0.5px var(--ink)">${escapeHtml(user.username)}</h1>
-      <p class="sub">${escapeHtml(user.email)}</p>
+      <p class="sub">${escapeHtml(user.email)}${user.emailVerified ? ' <span class="verified-tag" title="Email confirmed">✓ confirmed</span>' : ''}</p>
+      <div id="verify-banner"></div>
       ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
       <div class="hero-actions" style="justify-content:center;margin-top:20px">
         <a href="#/favorites" class="btn-pow btn-pow--blue" id="fav-count-link">💖 My Favorites (${Favorites.count()})</a>

@@ -61,7 +61,7 @@ export function digestText({ username, token, aired, news, friends }) {
 export async function runDigests(nowMs = Date.now()) {
   const due = await db.execute({
     sql: `SELECT id, username, email, digest_token FROM users
-          WHERE email_digest = 1 AND digest_token IS NOT NULL AND (digest_sent_at IS NULL OR digest_sent_at <= ?)
+          WHERE email_digest = 1 AND email_verified = 1 AND digest_token IS NOT NULL AND (digest_sent_at IS NULL OR digest_sent_at <= ?)
           ORDER BY digest_sent_at LIMIT ?`,
     args: [new Date(nowMs - WEEK_MS).toISOString(), PER_RUN],
   });
