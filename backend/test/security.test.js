@@ -207,3 +207,27 @@ test('the database itself refuses a look-alike username', async () => {
     args: [user.username.toUpperCase(), `x${user.email}`, 'x'],
   }), /UNIQUE/);
 });
+
+test('session and CSRF cookies are SameSite=Lax and httpOnly', async () => {
+  const anon = makeAgent();
+  const user = newUser();
+  const first = await fetch(`${baseUrl}/api/health`);
+  const csrfRaw = first.headers.getSetCookie().find((c) => c.startsWith('aninest_csrf='));
+  assert.match(csrfRaw, /SameSite=Lax/i);
+  await anon.ready();
+  const reg = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: [...anon.jar].map(([k, v]) => `${k}=${v}`).join('; '), 'x-csrf-token': anon.jar.get('aninest_csrf'), 'x-forwarded-for': '198.51.100.7, 10.0.0.9' },
+    body: JSON.stringify(user),
+  });
+  const sidRaw = reg.headers.getSetCookie().find((c) => c.startsWith('aninest_sid='));
+  assert.match(sidRaw, /SameSite=Lax/i);
+  assert.match(sidRaw, /HttpOnly/i);
+});
+
+test('the deployed CSP only lets the page talk to its own origin', () => {
+  const yaml = fs.readFileSync(new URL('../../render.yaml', import.meta.url), 'utf8');
+  const csp = /name: Content-Security-Policy\s+value: "([^"]+)"/.exec(yaml)[1];
+  assert.match(csp, /connect-src 'self';/);
+  assert.doesNotMatch(csp, /onrender\.com/);
+});

@@ -15,18 +15,11 @@ export const authRouter = Router();
 const isProd = process.env.NODE_ENV === 'production';
 const cookieOpts = () => ({
   httpOnly: true,
-  // Frontend and backend are deployed on different hostnames under
-  // onrender.com — a registered public suffix, which makes them genuinely
-  // different *sites* for cookie purposes, not just different origins.
-  // SameSite=Lax cookies are never sent on cross-site fetch() calls (only
-  // same-site requests or top-level navigations), so with Lax here the
-  // session cookie silently never round-trips in production: every request
-  // looks like a fresh, logged-out client. SameSite=None (which requires
-  // Secure) is the correct setting for a legitimately cross-site
-  // frontend+API split like this one. Local dev keeps Lax since
-  // localhost:5173/localhost:8787 differ only by port, which IS same-site.
+  // First-party in production (the frontend proxies /api/*, see render.yaml),
+  // so Lax is enough and keeps the session off every cross-site request.
+  // Same reasoning as the CSRF cookie in middleware/csrf.js.
   secure: isProd,
-  sameSite: isProd ? 'none' : 'lax',
+  sameSite: 'lax',
   path: '/',
   maxAge: SESSION_MAX_AGE_MS,
 });
@@ -118,7 +111,7 @@ authRouter.post('/login', async (req, res, next) => {
 authRouter.post('/logout', async (req, res, next) => {
   try {
     await destroySession(req.cookies?.[SESSION_COOKIE]);
-    res.clearCookie(SESSION_COOKIE, { path: '/' });
+    res.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, secure: isProd, sameSite: 'lax' });
     res.status(204).end();
   } catch (err) { next(err); }
 });
@@ -177,7 +170,7 @@ authRouter.post('/delete-account', requireAuth, async (req, res, next) => {
       return res.status(401).json({ error: 'That password is wrong.' });
     }
     await deleteUserData(req.user.id);
-    res.clearCookie(SESSION_COOKIE, { path: '/' });
+    res.clearCookie(SESSION_COOKIE, { path: '/', httpOnly: true, secure: isProd, sameSite: 'lax' });
     res.status(204).end();
   } catch (err) { next(err); }
 });
