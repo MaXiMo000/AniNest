@@ -264,3 +264,34 @@ test('a successful login clears earlier failures', async () => {
   await login('wrong');
   assert.equal((await login(user.password)).status, 200, 'the count started over after the success');
 });
+
+test('the cache drops the least recently used entries past its cap and shares one load per key', async () => {
+  const { cacheSet, cacheGet, cacheSize, cached } = await import('../src/lib/cache.js');
+  for (let i = 0; i < 5100; i += 1) cacheSet(`cap-test:${i}`, i, 60_000);
+  assert.ok(cacheSize() <= 5000);
+  assert.equal(cacheGet('cap-test:0'), undefined, 'the oldest entry went first');
+  assert.equal(cacheGet('cap-test:5099'), 5099);
+
+  let calls = 0;
+  const load = () => new Promise((resolve) => { calls += 1; setTimeout(() => resolve('v'), 20); });
+  const results = await Promise.all(Array.from({ length: 5 }, () => cached('dedupe-test', 60_000, load)));
+  assert.deepEqual(results, ['v', 'v', 'v', 'v', 'v']);
+  assert.equal(calls, 1);
+});
+
+test('screenshot search has its own small per-visitor limit', async () => {
+  const agent = await makeAgent().ready();
+  const statuses = [];
+  for (let i = 0; i < 7; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await agent.post('/api/screenshot-search', { headers: { 'Content-Type': 'text/plain' } });
+    statuses.push(res.status);
+  }
+  assert.deepEqual(statuses, [400, 400, 400, 400, 400, 400, 429]);
+});
+
+test('health check reports the database as reachable', async () => {
+  const res = await makeAgent().get('/api/health');
+  assert.equal(res.status, 200);
+  assert.equal(res.json.ok, true);
+});

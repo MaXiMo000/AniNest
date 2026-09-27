@@ -9,7 +9,8 @@ import { logger } from './lib/logger.js';
 import { tidewatchMetrics } from './lib/tidewatch-metrics.js';
 import { attachUser } from './middleware/session.js';
 import { ensureCsrfCookie, verifyCsrf } from './middleware/csrf.js';
-import { generalLimiter, authLimiter } from './middleware/rateLimits.js';
+import { generalLimiter, authLimiter, screenshotLimiter } from './middleware/rateLimits.js';
+import { db } from './lib/db.js';
 import { authRouter } from './routes/auth.js';
 import { favoritesRouter } from './routes/favorites.js';
 import { animeRouter } from './routes/anime.js';
@@ -112,7 +113,23 @@ export function createApp() {
   app.use(ensureCsrfCookie);
   app.use(verifyCsrf);
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true }));
+  // Touches the database so Render's health check notices a broken Turso
+  // connection, not just a live process. 503 if it doesn't answer in 3s.
+  app.get('/api/health', async (req, res) => {
+    let timer;
+    try {
+      await Promise.race([
+        db.execute('SELECT 1'),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('database timed out')), 3000); }),
+      ]);
+      res.json({ ok: true });
+    } catch (err) {
+      req.log.error({ err }, 'health check: database unreachable');
+      res.status(503).json({ ok: false, error: 'Database unreachable.' });
+    } finally {
+      clearTimeout(timer);
+    }
+  });
 
   app.use('/api/auth/register', authLimiter);
   app.use('/api/auth/login', authLimiter);
@@ -131,7 +148,7 @@ export function createApp() {
   app.use('/api/studios', studiosRouter);
   app.use('/api/people', peopleRouter);
   app.use('/api/import', importRouter);
-  app.use('/api/screenshot-search', screenshotSearchRouter);
+  app.use('/api/screenshot-search', screenshotLimiter, screenshotSearchRouter);
   app.use('/api/manga', mangaRouter);
   app.use('/api/manga-favorites', mangaFavoritesRouter);
   app.use('/api/manga-reviews', mangaReviewsRouter);
