@@ -356,3 +356,34 @@ test('a private profile hides lists and reviews from others, not from its owner'
   await owner.agent.post('/api/auth/privacy', { body: { private: false } });
   assert.equal((await viewer.agent.get(`/api/users/${owner.user.username}`)).json.favorites.length, 1);
 });
+
+test('free in my country: only uploads that play there, titles filled in the background', async () => {
+  const { setTitleFetcher, backfillTitles } = await import('../src/lib/animeTitles.js');
+  const fetched = [];
+  setTitleFetcher(async (id) => { fetched.push(id); return { title: `Show ${id}`, score: id === 93001 ? 8.5 : 7, type: 'TV', episodes: 12, images: { jpg: { image_url: 'https://cdn.myanimelist.net/x.jpg' } } }; });
+  try {
+    const add = (mal, vid, allowed, blocked) => db.execute({
+      sql: "INSERT INTO anime_watch_sources (mal_id, youtube_video_id, status, allowed_regions, blocked_regions) VALUES (?, ?, 'approved', ?, ?)",
+      args: [mal, vid, allowed ? JSON.stringify(allowed) : null, blocked ? JSON.stringify(blocked) : null],
+    });
+    await add(93001, 'aaaaaaaaaa1', null, null);
+    await add(93001, 'aaaaaaaaaa2', ['IN', 'PH'], null);
+    await add(93002, 'aaaaaaaaaa3', null, ['IN']);
+    await db.execute({ sql: "INSERT INTO anime_watch_sources (mal_id, youtube_video_id, status) VALUES (93003, 'aaaaaaaaaa4', 'pending')", args: [] });
+
+    const anon = makeAgent();
+    const first = await anon.get('/api/free?country=in');
+    assert.equal(first.json.country, 'IN');
+    assert.ok(first.json.pending >= 1, 'titles not known yet');
+    await backfillTitles([93001, 93002]);
+    const inIndia = (await anon.get('/api/free?country=IN')).json;
+    const mine = inIndia.data.filter((d) => d.mal_id >= 93000 && d.mal_id < 93100);
+    assert.deepEqual(mine.map((d) => [d.mal_id, d.uploads]), [[93001, 2]], 'blocked in India, and the pending one never shows');
+    const inUs = (await anon.get('/api/free?country=US')).json.data.filter((d) => d.mal_id >= 93000 && d.mal_id < 93100);
+    assert.deepEqual(inUs.map((d) => [d.mal_id, d.uploads]), [[93001, 1], [93002, 1]], 'best score first; the IN/PH-only upload is out');
+    assert.equal(inUs[0].title, 'Show 93001');
+    assert.equal((await anon.get('/api/free?country=<x>')).json.country, null);
+  } finally {
+    setTitleFetcher(null);
+  }
+});

@@ -91,7 +91,8 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] Country picker: guessed from the `Intl` time zone, then the language; kept in localStorage (not on the account)
 - [x] Detail page: "📍 Free in [country]" picker, only uploads that play there, "N more are licensed only outside X",
       "checked with YouTube 2 days ago", and a clear message when nothing is licensed in your country
-- [ ] Later: Browse "Free in my country" filter and a `#/free` page (need titles/covers joined in; the table has only ids)
+- [x] `#/free` page (More menu): every show with an approved upload that plays in your country, best rated first
+      (`GET /api/free?country=`). Titles and covers come from an `anime_titles` table filled in the background
 - [ ] Skipped: "Did this play for you?" reports. YouTube's own region lists are authoritative and checked daily, so
       add these only if people report links that YouTube says should play
 

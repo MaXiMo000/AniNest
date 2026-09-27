@@ -498,6 +498,21 @@ await db.execute(`
 // (routes/users.js). Reviews still show on each title's own page.
 await ensureColumn('users', 'is_private', 'INTEGER NOT NULL DEFAULT 0');
 
+// Title and cover for anime that have free official uploads, so the
+// "Free in my country" page (routes/free.js) can list them without an
+// AniList call per show. Filled in the background by lib/animeTitles.js.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS anime_titles (
+    mal_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    image TEXT,
+    score REAL,
+    type TEXT,
+    episodes INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )
+`);
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the
