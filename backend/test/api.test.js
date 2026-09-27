@@ -2600,3 +2600,108 @@ test('episode guide: ratings only up to your progress, averages after 5 votes, "
   guide = (await first.get('/api/episode-guide/92701')).json;
   assert.deepEqual([guide.episodes.length, guide.clickVotes, guide.mine.clickedAt], [2, 4, null], 'both can be taken back');
 });
+
+test('OP/ED tournament: seasons, seeding, bracket clock and tie-breaks', async () => {
+  const t = await import('../src/lib/tournament.js');
+  assert.deepEqual(t.seasonOf(new Date(Date.UTC(2026, 8, 27))), { season: 'SUMMER', year: 2026 });
+  assert.deepEqual(t.previousSeason({ season: 'WINTER', year: 2026 }), { season: 'FALL', year: 2025 });
+  assert.deepEqual(t.headlineSeason(new Date(Date.UTC(2026, 9, 5))), { season: 'SUMMER', year: 2026 }, 'early in Fall, Summer is still the headline');
+  assert.deepEqual(t.headlineSeason(new Date(Date.UTC(2026, 10, 20))), { season: 'FALL', year: 2026 }, 'six weeks in, Fall takes over');
+  assert.deepEqual(t.bracketOrder(8), [1, 8, 4, 5, 2, 7, 3, 6]);
+  assert.deepEqual([t.bracketSize(20), t.bracketSize(12), t.bracketSize(7)], [16, 8, 0]);
+
+  const shows = [
+    { mal_id: 1, title: 'A', themes: [{ slug: 'OP2', type: 'OP', title: 'Later' }, { slug: 'OP1', type: 'OP', title: 'First' }] },
+    { mal_id: 2, title: 'B', themes: [{ slug: 'ED1', type: 'ED', title: 'Only an ending' }] },
+    { mal_id: 3, title: 'C', themes: [{ slug: 'OP1', type: 'OP', title: null }] },
+  ];
+  const ops = t.pickEntries(shows, 'OP');
+  assert.deepEqual(ops.map((e) => [e.mal_id, e.title]), [[1, 'First']], 'lowest-numbered song per show, untitled songs skipped');
+
+  const day = 24 * 60 * 60 * 1000;
+  const cfg = { size: 8, startsAt: 0, roundDays: 3 };
+  let b = t.resolveBracket(cfg, [], -1);
+  assert.equal(b.currentRound, null, 'not started');
+  b = t.resolveBracket(cfg, [{ round: 1, match: 0, seed: 8, n: 3 }, { round: 1, match: 0, seed: 1, n: 1 }], 4 * day);
+  assert.deepEqual(b.rounds[0].matches.map((m) => m.winner), [8, 4, 2, 3], 'votes decide; 0-0 goes to the better seed');
+  assert.equal(b.currentRound, 2);
+  assert.equal(t.voteProblem(b, { round: 1, match: 0, seed: 8 }), 'Voting on that round has closed.');
+  assert.equal(t.voteProblem(b, { round: 2, match: 0, seed: 1 }), 'That song isn’t in this match.');
+  assert.equal(t.voteProblem(b, { round: 2, match: 0, seed: 4 }), null);
+  assert.equal(t.voteProblem(b, { round: 3, match: 0, seed: 2 }), 'That round hasn’t started yet.');
+  b = t.resolveBracket(cfg, [], 9 * day);
+  assert.deepEqual([b.finished, b.champion, b.rounds.map((r) => r.name)], [true, 1, ['Quarterfinals', 'Semifinals', 'Final']]);
+});
+
+test('OP/ED tournament API: built once from the season, vote, hidden counts, rounds close', async () => {
+  const { setTournamentSources, setTournamentClock } = await import('../src/lib/tournamentStore.js');
+  const day = 24 * 60 * 60 * 1000;
+  let clock = Date.UTC(2026, 8, 27, 12);
+  let themeCalls = 0;
+  // 20 shows by popularity; show 92805 has no ending, 92803's lookup fails.
+  const shows = Array.from({ length: 20 }, (_, i) => ({ mal_id: 92800 + i, title: `Show ${i}`, image: null }));
+  setTournamentSources({
+    seasonShows: async (season, year) => {
+      assert.deepEqual([season, year], ['SUMMER', 2026]);
+      return shows;
+    },
+    themes: async (malId) => {
+      themeCalls += 1;
+      if (malId === 92803) throw new Error('both song sources down');
+      return {
+        data: [
+          { slug: 'OP1', type: 'OP', title: `Opening ${malId}`, artist: 'Band', videoUrl: `https://v.example/${malId}.webm` },
+          ...(malId === 92805 ? [] : [{ slug: 'ED1', type: 'ED', title: `Ending ${malId}`, artist: null, videoUrl: null }]),
+        ],
+      };
+    },
+  });
+  setTournamentClock(() => clock);
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    const op = (await anon.get('/api/tournaments/current?kind=op')).json.data;
+    assert.equal(op.kind, 'OP');
+    assert.deepEqual([op.season, op.year, op.size, op.currentRound, op.finished], ['SUMMER', 2026, 16, 1, false]);
+    assert.deepEqual(op.entries.slice(0, 4).map((e) => e.mal_id), [92800, 92801, 92802, 92804], 'seeded by popularity, failed lookups skipped');
+    assert.equal(op.rounds[0].matches[0].a, 1);
+    assert.equal(op.rounds[0].matches[0].b, 16);
+    assert.equal(op.rounds[0].matches[0].votesA, null, 'open counts are hidden until you vote');
+
+    const ed = (await anon.get('/api/tournaments/current?kind=ED')).json.data;
+    assert.equal(ed.size, 16);
+    assert.ok(!ed.entries.some((e) => e.mal_id === 92805), 'show without an ending sits out the ED bracket');
+    const calls = themeCalls;
+    await anon.get('/api/tournaments/current');
+    assert.equal(themeCalls, calls, 'built once, then read from the tables');
+
+    const vote = (body) => ({ csrf: true, body: { round: 1, match: 0, ...body } });
+    assert.equal((await anon.post(`/api/tournaments/${op.id}/vote`, vote({ seed: 16 }))).status, 401, 'voting needs an account');
+    const { agent } = await registeredAgent();
+    assert.equal((await agent.post('/api/tournaments/999999/vote', vote({ seed: 16 }))).status, 404);
+    assert.equal((await agent.post(`/api/tournaments/${op.id}/vote`, vote({ seed: 'x' }))).status, 400);
+    assert.equal((await agent.post(`/api/tournaments/${op.id}/vote`, vote({ seed: 2 }))).status, 409, 'song not in this match');
+    assert.equal((await agent.post(`/api/tournaments/${op.id}/vote`, vote({ round: 2, seed: 1 }))).status, 409, 'round not open');
+    await agent.post(`/api/tournaments/${op.id}/vote`, vote({ seed: 1 }));
+    let mine = (await agent.post(`/api/tournaments/${op.id}/vote`, vote({ seed: 16 }))).json.data;
+    assert.deepEqual([mine.rounds[0].matches[0].votesA, mine.rounds[0].matches[0].votesB], [0, 1], 'a changed vote replaces the old one');
+    assert.equal(mine.myVotes['1:0'], 16);
+    assert.equal(mine.rounds[0].matches[1].votesA, null, 'other open matches stay hidden');
+
+    clock += 3 * day + 1;
+    mine = (await agent.get('/api/tournaments/current')).json.data;
+    assert.equal(mine.currentRound, 2);
+    assert.equal(mine.rounds[0].matches[0].winner, 16, 'the upset went through');
+    assert.equal(mine.rounds[0].matches[1].winner, 8, 'a 0-0 match goes to the better seed');
+    assert.equal((await agent.post(`/api/tournaments/${op.id}/vote`, vote({ seed: 16 }))).status, 409, 'closed round');
+
+    clock += 12 * day;
+    mine = (await anon.get('/api/tournaments/2026/summer')).json.data;
+    assert.deepEqual([mine.finished, mine.currentRound, mine.champion], [true, null, 2]);
+    assert.equal((await anon.get('/api/tournaments/2025/fall')).json.data, null, 'the archive never builds');
+    assert.equal((await anon.get('/api/tournaments/2026/monsoon')).status, 400);
+  } finally {
+    setTournamentSources(null);
+    setTournamentClock(null);
+  }
+});

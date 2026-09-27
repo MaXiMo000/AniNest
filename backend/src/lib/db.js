@@ -418,6 +418,43 @@ await db.executeMultiple(`
     vote INTEGER NOT NULL,
     PRIMARY KEY (member_id, mal_id)
   );
+
+  -- Season OP/ED tournament (lib/tournament.js). One bracket per season and
+  -- kind (OP | ED), built once from that season's most popular shows. Entries
+  -- are a snapshot of the song, so the bracket never changes under voters.
+  -- Winners aren't stored: they follow from the votes and the round clock.
+  CREATE TABLE IF NOT EXISTS theme_tournaments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    starts_at TEXT NOT NULL,
+    round_days INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(season, year, kind)
+  );
+  CREATE TABLE IF NOT EXISTS theme_tournament_entries (
+    tournament_id INTEGER NOT NULL REFERENCES theme_tournaments(id) ON DELETE CASCADE,
+    seed INTEGER NOT NULL,
+    mal_id INTEGER NOT NULL,
+    anime_title TEXT NOT NULL,
+    image TEXT,
+    slug TEXT NOT NULL,
+    song_title TEXT NOT NULL,
+    artist TEXT,
+    video_url TEXT,
+    PRIMARY KEY (tournament_id, seed)
+  );
+  CREATE TABLE IF NOT EXISTS theme_tournament_votes (
+    tournament_id INTEGER NOT NULL REFERENCES theme_tournaments(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    round INTEGER NOT NULL,
+    match INTEGER NOT NULL,
+    seed INTEGER NOT NULL,
+    voted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (tournament_id, user_id, round, match)
+  );
 `);
 
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's

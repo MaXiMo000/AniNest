@@ -189,6 +189,12 @@ export async function anilistTopAnime(page = 1) {
 
 export async function anilistSeasonNow(page = 1) {
   const { season, year } = currentSeason();
+  return anilistSeason(season, year, page);
+}
+
+// One season's shows, most popular first. `season` is AniList's WINTER |
+// SPRING | SUMMER | FALL.
+export async function anilistSeason(season, year, page = 1) {
   const data = await gql(`
     query($page: Int, $season: MediaSeason, $year: Int) {
       Page(page: $page, perPage: 20) {
