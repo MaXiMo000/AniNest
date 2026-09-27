@@ -42,8 +42,11 @@ Leave any optional value blank to switch that feature off.
 your services different URLs:
 
 - **Backend -> Environment**: set `FRONTEND_ORIGIN` to the frontend's URL. It's the only origin CORS allows.
-- **Frontend -> Environment**: set `VITE_API_URL` to the backend's URL, then **redeploy the frontend**. A static site's variables
-  are baked in at build time.
+- **Frontend -> Environment**: set `VITE_API_URL` to the **frontend's own** URL (not the backend's), then **redeploy the
+  frontend**. A static site's variables are baked in at build time. API calls go to `/api/*` on the frontend and the `/api/*`
+  rewrite in `render.yaml` proxies them to the backend, so update that rewrite's destination to your backend's URL too. This
+  keeps the session and CSRF cookies first-party; calling the backend URL directly makes them third-party cookies, which many
+  browsers block, and every login then fails with `403 Invalid or missing CSRF token.`
 - In `render.yaml`, replace `https://aninest-backend.onrender.com` in the frontend's `Content-Security-Policy` header (`img-src`,
   used by the manga cover proxy) with your backend's URL. Do the same in the `<meta>` CSP in `frontend/index.html`. Browsers
   enforce both policies, so they have to agree.
@@ -80,8 +83,10 @@ To look at the database directly: `turso db shell aninest "SELECT username, is_a
 
 - **Blueprint sync fails with a plan change**: the `plan:` in `render.yaml` has to match the plan chosen in the dashboard. If you
   change the plan in the dashboard, change the file as well.
-- **Everyone looks logged out in production**: the frontend and backend are on different sites, so the cookies must be
-  `SameSite=None; Secure`. The backend sets that automatically when `NODE_ENV=production`, so don't change `NODE_ENV`.
+- **Login fails with `403 Invalid or missing CSRF token.`, or everyone looks logged out**: the frontend is calling the backend
+  URL directly, so its cookies are third-party and the browser drops them (DevTools shows the `Set-Cookie` as "blocked due to
+  user preferences"). Check that `VITE_API_URL` is the frontend's URL, the `/api/*` rewrite exists, and the frontend was
+  redeployed. `backend/test/csrf.test.js` checks `render.yaml` for this.
 - **Images or embeds blocked**: a new image, media or frame origin has to be added to both CSPs (`render.yaml` and `index.html`).
 - **Changed `VITE_API_URL` but nothing happened**: the frontend needs a rebuild (a manual deploy).
 - **Logging everyone out**: delete the rows in the `sessions` table. Sessions don't depend on any secret.

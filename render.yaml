@@ -62,10 +62,15 @@ services:
     envVars:
       - key: NODE_VERSION
         value: '24'
-      # Same story in reverse: point this at the backend's real URL once
-      # it's deployed.
+      # Deliberately the FRONTEND's own URL, not the backend's: API calls go
+      # to /api/* on this same origin and the /api/* rewrite in `routes`
+      # below proxies them to the backend. That keeps the session and CSRF
+      # cookies first-party. Pointing this at aninest-backend.onrender.com
+      # makes them third-party cookies (onrender.com is a public suffix),
+      # which Chrome/Safari/Firefox/Brave drop under third-party-cookie
+      # blocking, and every login then fails with a 403 CSRF error.
       - key: VITE_API_URL
-        value: https://aninest-backend.onrender.com
+        value: https://aninest-frontend.onrender.com
       # Public site key counterpart to the backend's TURNSTILE_SECRET_KEY —
       # leave blank to skip the bot-check widget entirely.
       - key: VITE_TURNSTILE_SITE_KEY
@@ -100,7 +105,12 @@ services:
     # #/anime/123), so the browser only ever requests / from the server and
     # everything after the # is handled client-side. Kept anyway as a safe
     # default in case that ever changes to path-based routing.
+    # Rules match in order, so the /api/* proxy must come before the SPA
+    # catch-all. See VITE_API_URL above for why the API is proxied.
     routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://aninest-backend.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html

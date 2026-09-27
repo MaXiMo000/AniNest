@@ -35,6 +35,10 @@ export function ensureCsrfCookie(req, res, next) {
       // a brand-new client, generating a fresh token each time and making
       // every mutating request fail with "Invalid or missing CSRF token."
       // regardless of what the frontend sent.
+      // Production now reaches this API through the frontend's /api/*
+      // rewrite (render.yaml), so the cookie is first-party there. None is
+      // kept only so a build still pointed at the backend URL keeps
+      // working in browsers that allow third-party cookies.
       secure: isProd,
       sameSite: isProd ? 'none' : 'lax',
       path: '/',
