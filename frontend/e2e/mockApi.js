@@ -58,6 +58,7 @@ export async function mockApi(page, { user = null } = {}) {
     if (p === '/api/auth/me') return json(route, { user: user ? { id: 1, ...user } : null });
     if (p === '/api/favorites') return json(route, { favorites: [] });
     if (p === '/api/manga-favorites') return json(route, { favorites: [] });
+    if (p.startsWith('/api/lists/')) return json(route, { lists: [] });
     if (p === '/api/notifications/unread-count') return json(route, { unread: 0 });
     if (p.startsWith('/api/notifications')) return json(route, { count: 0, notifications: [] });
     if (p === '/api/anime/top' || p === '/api/anime/season/now' || p === '/api/anime/search') {
@@ -98,6 +99,7 @@ export async function mockApi(page, { user = null } = {}) {
     if (p === '/api/games/me/stats') return json(route, { games: {}, daily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] }, mangaDaily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] } });
     // Round games are dealt by the server: a stand-in that walks POOL in
     // order. The right answer is always the round's own show / value.
+    if (/^\/api\/games\/rounds\/[^/]+\/cover$/.test(p)) return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300"><rect width="200" height="300" fill="#7b2ff7"/></svg>' });
     if (p === '/api/games/rounds/start' || /^\/api\/games\/rounds\/[^/]+\/(answer|skip|finish)$/.test(p)) {
       const body = JSON.parse(req.postData() || '{}');
       const a = (k) => POOL[k % POOL.length];
@@ -116,7 +118,7 @@ export async function mockApi(page, { user = null } = {}) {
           }
           default: return {
             view: {
-              cover: s.images.jpg.image_url,
+              cover: `/api/games/rounds/${'c'.repeat(32)}/cover?r=${k}`,
               clues: { synopsis: s.synopsis, genres: s.genres.map((g) => g.name), type: s.type, episodes: s.episodes, year: s.year, studio: s.studios[0].name, source: s.source },
               ...(rounds.input === 'typed' ? {} : { choices: titleChoices(k) }),
             },

@@ -988,6 +988,59 @@ test('round games: the server deals, judges, keeps lives and records the score',
   }
 });
 
+test('guess the anime on the server: clues, typed answers, blitz clock, cover belongs to the run', async () => {
+  const { setGamePool } = await import('../src/lib/gamePool.js');
+  setGamePool(async () => roundTestPool());
+  const round = async (runId) => JSON.parse((await db.execute({ sql: 'SELECT round FROM round_runs WHERE id = ?', args: [runId] })).rows[0].round);
+  const unlock = (runId) => db.execute({ sql: 'UPDATE round_runs SET dealt_at = dealt_at - 5000 WHERE id = ?', args: [runId] });
+  try {
+    const { agent } = await registeredAgent();
+    const start = (body) => agent.post('/api/games/rounds/start', { csrf: true, body });
+    const say = async (runId, body) => { await unlock(runId); return agent.post(`/api/games/rounds/${runId}/answer`, { csrf: true, body }); };
+
+    const normal = (await start({ game: 'guess-the-anime' })).json;
+    assert.match(normal.round.cover, new RegExp(`^/api/games/rounds/${normal.runId}/cover`));
+    assert.ok(!JSON.stringify(normal).includes('myanimelist'), 'the image address stays on the server');
+    assert.equal(normal.round.choices.length, 4);
+    assert.doesNotMatch(normal.round.clues.synopsis, /Round Show/, 'the title is blacked out of the synopsis');
+
+    // Typed: a miss costs a life and keeps the round; the title (or its head) wins.
+    const typedRun = (await start({ game: 'gta-hard', input: 'typed' })).json;
+    assert.equal(typedRun.round.choices, undefined);
+    assert.ok(typedRun.titles.length >= 10, 'suggestions for the answer box');
+    const miss = (await say(typedRun.runId, { typed: 'nope' })).json;
+    assert.deepEqual([miss.retry, miss.lives, miss.solution], [true, 2, undefined], 'no answer given away on a miss');
+    const hit = (await say(typedRun.runId, { typed: (await round(typedRun.runId)).answerAnime.title.toUpperCase() })).json;
+    assert.deepEqual([hit.correct, hit.streak, hit.lives], [true, 1, 2]);
+    const skip = (await say(hit.next.runId, { giveUp: true })).json;
+    assert.deepEqual([skip.correct, skip.lives], [false, 1]);
+
+    // Blitz: wrong answers cost 3 seconds; the run ends on the server's clock.
+    const blitz = (await start({ game: 'gta-blitz' })).json;
+    assert.ok(blitz.msLeft > 55_000 && blitz.lives === null);
+    const wrong = (await say(blitz.runId, { answer: 'wrong' })).json;
+    assert.ok(wrong.next.msLeft < blitz.msLeft - 2500);
+    assert.equal((await agent.post(`/api/games/rounds/${blitz.runId}/finish`, { csrf: true })).status, 409, 'not before time');
+    const right = (await say(wrong.next.runId, { answer: (await round(blitz.runId)).answer })).json;
+    assert.equal(right.streak, 1);
+    await db.execute({ sql: 'UPDATE round_runs SET ends_at = ? WHERE id = ?', args: [Date.now() - 1, blitz.runId] });
+    const done = (await agent.post(`/api/games/rounds/${blitz.runId}/finish`, { csrf: true })).json;
+    assert.deepEqual([done.gameOver, done.streak, done.best], [true, 1, 1], 'recorded when time is up');
+
+    // Easy is for fun: never ranked. The cover only serves the run's owner.
+    const easy = (await start({ game: 'gta-easy' })).json;
+    let out;
+    for (let i = 0; i < 3; i += 1) out = (await say(easy.runId, { answer: 'x' })).json; // eslint-disable-line no-await-in-loop
+    assert.deepEqual([out.gameOver, out.best], [true, undefined]);
+    const stranger = makeAgent();
+    await stranger.get('/api/health');
+    assert.equal((await stranger.get(normal.round.cover)).status, 404);
+    assert.equal((await agent.post('/api/games/gta-hard/score', { csrf: true, body: { streak: 9, run_id: 'a'.repeat(32) } })).status, 400, 'old route closed');
+  } finally {
+    setGamePool(null);
+  }
+});
+
 test('round games: a player’s next run deals shows they didn’t just see', async () => {
   const { setGamePool } = await import('../src/lib/gamePool.js');
   setGamePool(async () => roundTestPool());
@@ -1835,16 +1888,6 @@ test('game runs: a score needs a real run, is single-use, belongs to its player 
   assert.equal(ok.json.best, 15);
   assert.equal((await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } })).status, 400, 'replaying a used run');
 
-  // The per-game floor differs: 15 rounds of Guess the Anime needs more time than 15 of Higher/Lower.
-  const gta = await agent.post('/api/games/guess-the-anime/start', { csrf: true, body: {} });
-  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 20 * 1500, gta.json.runId] }); // 30s: fine for HL, too fast for 15 GTA rounds (37.5s)
-  assert.equal((await agent.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 15, run_id: gta.json.runId } })).status, 400);
-
-  // A run is tied to its game...
-  const hl = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
-  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 60_000, hl.json.runId] });
-  assert.equal((await agent.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 2, run_id: hl.json.runId } })).status, 400, 'a Higher/Lower run cannot score Guess the Anime');
-
   // ...and to its player.
   const thief = makeAgent();
   await thief.get('/api/health');
@@ -2448,17 +2491,6 @@ test('every ranked game has a positive per-round time floor and accepts a score'
     assert.equal(res.status, 200, `${game} should accept a plausible score`);
     assert.equal(res.json.best, 3);
   }
-});
-
-test('a game with a hard score ceiling rejects anything above it', async () => {
-  const agent = makeAgent();
-  await agent.get('/api/health');
-  await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
-  const max = GAME_RULES['gta-blitz'].maxScore;
-  const start = await agent.post('/api/games/gta-blitz/start', { csrf: true, body: {} });
-  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 10 * 60_000, start.json.runId] });
-  const res = await agent.post('/api/games/gta-blitz/score', { csrf: true, body: { streak: max + 1, run_id: start.json.runId } });
-  assert.equal(res.status, 400);
 });
 
 test('a score that arrives faster than the game allows is rejected, per game', async () => {

@@ -1,21 +1,22 @@
-import { getAnimePool } from '../../lib/animePool.js';
-import { imageOf } from '../../lib/api.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry } from '../../lib/ui.js';
-import { shuffle } from '../../lib/shuffle.js';
+import { Games } from '../../lib/gamesApi.js';
+import { API_BASE } from '../../lib/http.js';
+import { escapeHtml, loadingHTML, errorHTML, wireRetry, showToast } from '../../lib/ui.js';
+import { roundPoints } from '../../lib/guessMechanic.js';
 import {
-  synopsisSnippet, pickChoices, typedGuessMatches, poolForDifficulty, roundPoints,
-} from '../../lib/guessMechanic.js';
-import { randomFor, stableOrder } from '../../lib/rng.js';
-import {
-  startServerRun, recordLocalResult, getLocalStats, gameOverHTML, wireGameOver, challengeBannerHTML,
+  recordLocalResult, getLocalStats, gameOverHTML, wireGameOver, challengeBannerHTML,
 } from '../../lib/gameKit.js';
 import {
   sfx, celebrateCorrect, lamentWrong, soundToggleHTML, wireSoundToggle, popText, bounce,
 } from '../../lib/gameFx.js';
 import { navigate } from '../../lib/router.js';
-import { freshFirst, markSeen } from '../../lib/recentlySeen.js';
 
-const MIN_SYNOPSIS_LEN = 60;
+// Guess the Anime. The server deals and judges every round
+// (backend/src/lib/roundGames.js): it picks the show, sends the clues and
+// choices (never the answer), serves the blurred cover through our own API so
+// the image address can't give it away, checks typed answers, keeps the
+// lives and the Blitz clock, and records the score. The page draws it, and
+// keeps the points (which aren't ranked).
+
 const REVEAL_DELAY_MS = 1600;
 const BLITZ_REVEAL_MS = 650;
 const BLITZ_SECONDS = 60;
@@ -23,13 +24,13 @@ const BLITZ_WRONG_PENALTY_S = 3;
 const LIVES = 3;
 
 const DIFFICULTIES = {
-  easy: { label: 'Easy', emoji: '🌱', desc: 'Famous shows. Synopsis shown from the start. Just for fun (no leaderboard).', slug: null },
-  normal: { label: 'Normal', emoji: '⚔️', desc: 'Any anime from the pool. Cover only — buy clues if you need them.', slug: 'guess-the-anime' },
-  hard: { label: 'Hard', emoji: '🔥', desc: 'Deep cuts only: the lesser-known 60% of the pool.', slug: 'gta-hard' },
+  easy: { label: 'Easy', emoji: '🌱', desc: 'Famous shows. Synopsis shown from the start. Just for fun (no leaderboard).', game: 'gta-easy', ranked: false },
+  normal: { label: 'Normal', emoji: '⚔️', desc: 'Any anime from the pool. Cover only — buy clues if you need them.', game: 'guess-the-anime', ranked: true },
+  hard: { label: 'Hard', emoji: '🔥', desc: 'Deep cuts only: the lesser-known 60% of the pool.', game: 'gta-hard', ranked: true },
 };
 
 // The clue ladder, bought one step at a time. Each step lowers the points the
-// round is worth (see roundPoints). `blur` is the cover blur after that step.
+// round is worth (see roundPoints). BLUR_BY_CLUES is the cover blur per step.
 const CLUES = [
   { id: 'synopsis', label: '📜 Synopsis' },
   { id: 'meta', label: '🏷️ Genres & format' },
@@ -38,13 +39,9 @@ const CLUES = [
 ];
 const BLUR_BY_CLUES = [28, 26, 22, 18, 7];
 
-function legacyKeyFor(difficulty) {
-  return difficulty === 'normal' ? 'aninest_gta_best' : null;
-}
-
-function bestFor(difficulty) {
-  return getLocalStats(DIFFICULTIES[difficulty].slug || `gta-local-${difficulty}`, legacyKeyFor(difficulty)).best;
-}
+const legacyKeyFor = (difficulty) => (difficulty === 'normal' ? 'aninest_gta_best' : null);
+const localSlugFor = (difficulty) => (DIFFICULTIES[difficulty].ranked ? DIFFICULTIES[difficulty].game : `gta-local-${difficulty}`);
+const bestFor = (difficulty) => getLocalStats(localSlugFor(difficulty), legacyKeyFor(difficulty)).best;
 
 function setupHTML() {
   return `
@@ -83,34 +80,15 @@ function setupHTML() {
     </div>`;
 }
 
-export async function renderGuessTheAnime(root, params = new URLSearchParams()) {
-  root.innerHTML = loadingHTML('BLURRING A COVER');
-
-  let rawPool;
-  try {
-    rawPool = await getAnimePool();
-  } catch {
-    root.innerHTML = errorHTML('Couldn’t load anime for the game — try again shortly!');
-    wireRetry(root, () => renderGuessTheAnime(root, params));
-    return;
-  }
-
-  const basePool = rawPool.filter((a) => (a.synopsis || '').length >= MIN_SYNOPSIS_LEN && imageOf(a));
-  if (basePool.length < 8) {
-    root.innerHTML = errorHTML('Not enough anime data available right now to play. Try again shortly!');
-    wireRetry(root, () => renderGuessTheAnime(root, params));
-    return;
-  }
-
+export function renderGuessTheAnime(root, params = new URLSearchParams()) {
   document.title = 'Guess the Anime — AniNest';
-
   // A challenge link skips the setup screen and starts the same run.
   const seed = params.get('seed');
   if (seed) {
     const mode = params.get('mode') === 'blitz' ? 'blitz' : 'classic';
     const difficulty = DIFFICULTIES[params.get('diff')] ? params.get('diff') : 'normal';
     const input = params.get('input') === 'typed' ? 'typed' : 'choices';
-    play(root, basePool, { mode, difficulty, input, seed });
+    play(root, { mode, difficulty, input, seed });
     return;
   }
 
@@ -126,58 +104,56 @@ export async function renderGuessTheAnime(root, params = new URLSearchParams()) 
   };
   root.querySelectorAll('[data-diff]').forEach((b) => b.addEventListener('click', () => { difficulty = b.dataset.diff; select('diff', difficulty); sfx('click'); }));
   root.querySelectorAll('[data-input]').forEach((b) => b.addEventListener('click', () => { input = b.dataset.input; select('input', input); sfx('click'); }));
-  root.querySelector('#start-classic').addEventListener('click', () => play(root, basePool, { mode: 'classic', difficulty, input }));
-  root.querySelector('#start-blitz').addEventListener('click', () => play(root, basePool, { mode: 'blitz', difficulty: 'normal', input: 'choices' }));
+  root.querySelector('#start-classic').addEventListener('click', () => play(root, { mode: 'classic', difficulty, input }));
+  root.querySelector('#start-blitz').addEventListener('click', () => play(root, { mode: 'blitz', difficulty: 'normal', input: 'choices' }));
 }
 
-function play(root, basePool, { mode, difficulty, input, seed = null }) {
+async function play(root, { mode, difficulty, input, seed = null }) {
   const blitz = mode === 'blitz';
-  const pool = poolForDifficulty(basePool, blitz ? 'normal' : difficulty);
-  const rand = randomFor(seed);
-  const slug = blitz ? 'gta-blitz' : DIFFICULTIES[difficulty].slug;
-  const localSlug = blitz ? 'gta-blitz' : (slug || `gta-local-${difficulty}`);
-  const run = slug ? startServerRun(slug) : { submit() {} };
-  const titleList = [...new Set(basePool.flatMap((a) => [a.title, a.title_english].filter(Boolean)))].sort();
+  const game = blitz ? 'gta-blitz' : DIFFICULTIES[difficulty].game;
+  const ranked = blitz || DIFFICULTIES[difficulty].ranked;
+  const localSlug = blitz ? 'gta-blitz' : localSlugFor(difficulty);
+  root.innerHTML = loadingHTML('BLURRING A COVER');
 
-  // All modes share one "recently seen" memory; challenge runs skip it so
-  // they deal the exact same deck for everyone.
-  const SEEN_KEY = 'guess-the-anime';
-  const deal = (list) => (seed ? shuffle(list, rand) : freshFirst(shuffle(list, rand), SEEN_KEY));
-  let deck = deal(seed ? stableOrder(pool) : pool);
-  let answer = deck.pop();
-  let streak = 0;
+  let state;
+  try {
+    state = await Games.roundStart(game, { seed, input: blitz ? 'choices' : input });
+  } catch (err) {
+    if (!root.isConnected) return;
+    root.innerHTML = errorHTML(err.message || 'Couldn’t start the game — try again shortly!');
+    wireRetry(root, () => play(root, { mode, difficulty, input, seed }));
+    return;
+  }
+  if (!root.isConnected) return; // left the page while it was dealing
+
+  const typed = !blitz && input === 'typed';
+  const titles = state.titles || [];
   let points = 0;
-  let lives = LIVES;
-  let cluesUsed = difficulty === 'easy' ? 1 : 0; // Easy starts with the synopsis
+  let cluesUsed = difficulty === 'easy' && !blitz ? 1 : 0; // Easy starts with the synopsis
   let locked = false;
-  let timeLeft = BLITZ_SECONDS;
-  let timer = null;
   let over = false;
-  const recap = []; // { anime, correct }
+  let timeLeft = blitz ? Math.ceil(state.msLeft / 1000) : BLITZ_SECONDS;
+  let timer = null;
+  const recap = []; // { label, href, correct }
   const best = getLocalStats(localSlug, legacyKeyFor(difficulty)).best;
 
-  function drawAnswer() {
-    if (deck.length === 0) deck = deal(pool.filter((a) => a.mal_id !== answer.mal_id));
-    answer = deck.pop();
-    cluesUsed = difficulty === 'easy' && !blitz ? 1 : 0;
-  }
-
   function cluesHTML() {
-    if (blitz) return `<div class="speech-bubble">${escapeHtml(synopsisSnippet(answer))}</div>`;
+    const c = state.round.clues;
+    if (blitz) return `<div class="speech-bubble">${escapeHtml(c.synopsis)}</div>`;
     const parts = [];
-    if (cluesUsed >= 1) parts.push(`<div class="speech-bubble fx-pop-in">${escapeHtml(synopsisSnippet(answer))}</div>`);
+    if (cluesUsed >= 1) parts.push(`<div class="speech-bubble fx-pop-in">${escapeHtml(c.synopsis)}</div>`);
     const chips = [];
     if (cluesUsed >= 2) {
-      chips.push(...(answer.genres || []).slice(0, 4).map((g) => escapeHtml(g.name)));
-      if (answer.type) chips.push(escapeHtml(answer.type));
-      if (answer.episodes) chips.push(`${answer.episodes} ep`);
+      chips.push(...c.genres.map(escapeHtml));
+      if (c.type) chips.push(escapeHtml(c.type));
+      if (c.episodes) chips.push(`${Number(c.episodes)} ep`);
     }
     if (cluesUsed >= 3) {
-      if (answer.year) chips.push(`📅 ${answer.year}`);
-      if (answer.studios?.[0]?.name) chips.push(`🏢 ${escapeHtml(answer.studios[0].name)}`);
-      if (answer.source) chips.push(`📚 ${escapeHtml(answer.source)}`);
+      if (c.year) chips.push(`📅 ${Number(c.year)}`);
+      if (c.studio) chips.push(`🏢 ${escapeHtml(c.studio)}`);
+      if (c.source) chips.push(`📚 ${escapeHtml(c.source)}`);
     }
-    if (chips.length) parts.push(`<div class="clue-chips fx-stagger">${chips.map((c) => `<span class="stat-pill">${c}</span>`).join('')}</div>`);
+    if (chips.length) parts.push(`<div class="clue-chips fx-stagger">${chips.map((x) => `<span class="stat-pill">${x}</span>`).join('')}</div>`);
     const next = CLUES[cluesUsed];
     parts.push(next
       ? `<button type="button" class="btn-pow btn-pow--sm btn-pow--outline clue-btn" id="buy-clue">Clue: ${next.label} <span class="clue-cost">(−20 pts)</span></button>`
@@ -185,60 +161,56 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
     return parts.join('');
   }
 
-  function answerAreaHTML(choices) {
-    if (input === 'typed' && !blitz) {
+  function answerAreaHTML() {
+    if (typed) {
       return `
         <form class="typed-answer" id="typed-form" autocomplete="off">
           <input id="typed-input" list="gta-titles" placeholder="Type the anime title…" aria-label="Your answer" />
-          <datalist id="gta-titles">${titleList.map((t) => `<option value="${escapeHtml(t)}"></option>`).join('')}</datalist>
+          <datalist id="gta-titles">${titles.map((t) => `<option value="${escapeHtml(t)}"></option>`).join('')}</datalist>
           <button type="submit" class="btn-pow btn-pow--pink">GUESS</button>
           <button type="button" class="btn-pow btn-pow--outline" id="give-up">SKIP (−1 ❤️)</button>
         </form>`;
     }
     return `
       <div class="guess-choices" id="guess-choices">
-        ${choices.map((c, i) => `<button class="guess-choice" data-id="${c.mal_id}"><kbd>${i + 1}</kbd> ${escapeHtml(c.title)}</button>`).join('')}
+        ${state.round.choices.map((c, i) => `<button class="guess-choice" data-id="${escapeHtml(c.id)}"><kbd>${i + 1}</kbd> ${escapeHtml(c.label)}</button>`).join('')}
       </div>`;
   }
 
   function hudHTML() {
     const pills = blitz
-      ? [`⏱️ <span id="blitz-time">${timeLeft}</span>s`, `✅ ${streak}`, `🏆 Best ${Math.max(best, streak)}`]
-      : [`${'❤️'.repeat(lives)}${'🖤'.repeat(LIVES - lives)}`, `🔥 Streak ${streak}`, `⭐ ${points} pts`, `🏆 Best ${Math.max(best, streak)}`];
+      ? [`⏱️ <span id="blitz-time">${Math.max(0, timeLeft)}</span>s`, `✅ ${state.streak}`, `🏆 Best ${Math.max(best, state.streak)}`]
+      : [`${'❤️'.repeat(state.lives)}${'🖤'.repeat(LIVES - state.lives)}`, `🔥 Streak ${state.streak}`, `⭐ ${points} pts`, `🏆 Best ${Math.max(best, state.streak)}`];
     return pills.map((p) => `<span class="stat-pill">${p}</span>`).join('');
   }
+  const refreshHud = () => {
+    const hud = root.querySelector('.hl-stats');
+    if (hud) { hud.innerHTML = hudHTML() + soundToggleHTML(); wireSoundToggle(root); }
+  };
 
   function renderRound() {
     if (over) return;
     locked = false;
-    if (!seed) markSeen(SEEN_KEY, answer.mal_id);
-    const choices = pickChoices(pool, answer, 3, rand);
-    const img = imageOf(answer);
     const blur = blitz ? 14 : BLUR_BY_CLUES[cluesUsed];
     const diffLabel = blitz ? 'Blitz' : DIFFICULTIES[difficulty].label;
-
     root.innerHTML = `
       <div class="guess-header">
         <h1 class="section-title">🕵️ Guess the Anime <span class="mode-tag">${diffLabel}</span></h1>
         <div class="hl-stats">${hudHTML()}${soundToggleHTML()}</div>
       </div>
       ${challengeBannerHTML(seed)}
-      ${blitz ? `<div class="blitz-bar"><div class="blitz-bar-fill" id="blitz-fill" style="width:${(timeLeft / BLITZ_SECONDS) * 100}%"></div></div>` : ''}
+      ${blitz ? `<div class="blitz-bar"><div class="blitz-bar-fill" id="blitz-fill" style="width:${(Math.max(0, timeLeft) / BLITZ_SECONDS) * 100}%"></div></div>` : ''}
       <div class="guess-arena fx-slide-in" id="guess-arena">
         <div class="guess-poster-frame" id="guess-poster">
-          ${img ? `<img src="${escapeHtml(img)}" alt="Mystery anime cover" style="filter:blur(${blur}px) saturate(0.7) brightness(0.85)" />` : ''}
+          <img src="${escapeHtml(API_BASE + state.round.cover)}" alt="Mystery anime cover" style="filter:blur(${blur}px) saturate(0.7) brightness(0.85)" />
           <span class="guess-poster-mark">?</span>
         </div>
         <p class="guess-reveal-title" id="guess-reveal-title" aria-live="polite"></p>
         <div id="clue-area">${cluesHTML()}</div>
-        ${answerAreaHTML(choices)}
-      </div>
-    `;
+        ${answerAreaHTML()}
+      </div>`;
     wireSoundToggle(root);
-
-    root.querySelectorAll('.guess-choice').forEach((btn) => {
-      btn.addEventListener('click', () => resolve(Number(btn.dataset.id) === answer.mal_id, Number(btn.dataset.id)));
-    });
+    root.querySelectorAll('.guess-choice').forEach((btn) => btn.addEventListener('click', () => submit({ answer: btn.dataset.id }, btn.dataset.id)));
     root.querySelector('#buy-clue')?.addEventListener('click', buyClue);
     const form = root.querySelector('#typed-form');
     if (form) {
@@ -247,24 +219,9 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         const value = inputEl.value.trim();
-        if (!value) return;
-        if (typedGuessMatches(value, answer)) resolve(true);
-        else {
-          // A typed miss costs a life but keeps the round going, so a typo
-          // isn't the end of it - until the lives run out.
-          lives -= 1;
-          lamentWrong(form);
-          inputEl.value = '';
-          popText(`NOPE! ${lives} ❤️ left`, { anchor: form, color: 'var(--pink)' });
-          if (lives <= 0) {
-            resolve(false, null, { lifeTaken: true });
-          } else {
-            root.querySelector('.hl-stats').innerHTML = hudHTML() + soundToggleHTML();
-            wireSoundToggle(root);
-          }
-        }
+        if (value) submit({ typed: value });
       });
-      form.querySelector('#give-up').addEventListener('click', () => resolve(false));
+      form.querySelector('#give-up').addEventListener('click', () => submit({ giveUp: true }));
     }
   }
 
@@ -278,63 +235,100 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
     root.querySelector('#buy-clue')?.addEventListener('click', buyClue);
   }
 
-  function revealAnswer() {
+  async function submit(body, chosenId = null) {
+    if (locked || over) return;
+    locked = true;
+    const controls = root.querySelectorAll('.guess-choice, #typed-form input, #typed-form button, #buy-clue');
+    controls.forEach((el) => { el.disabled = true; });
+    let out;
+    try {
+      out = await Games.roundAnswer(state.runId, body);
+    } catch (err) {
+      if (!root.isConnected || over) return;
+      showToast(err.message || 'Lost connection — try that again.');
+      if (err.status === 404) { finish(state.streak); return; }
+      locked = false;
+      controls.forEach((el) => { el.disabled = false; });
+      return;
+    }
+    if (!root.isConnected || over) return;
+
+    // A typed miss costs a life but the round stays open.
+    if (out.retry) {
+      state = { ...state, lives: out.lives };
+      const form = root.querySelector('#typed-form');
+      lamentWrong(form);
+      popText(`NOPE! ${out.lives} ❤️ left`, { anchor: form, color: 'var(--pink)' });
+      refreshHud();
+      locked = false;
+      controls.forEach((el) => { el.disabled = false; });
+      const inputEl = root.querySelector('#typed-input');
+      if (inputEl) { inputEl.value = ''; inputEl.focus(); }
+      return;
+    }
+    resolve(out, chosenId);
+  }
+
+  function resolve(out, chosenId) {
+    root.querySelectorAll('.guess-choice').forEach((btn) => {
+      if (btn.dataset.id === String(out.solution)) btn.classList.add('is-correct');
+      else if (btn.dataset.id === chosenId) btn.classList.add('is-wrong');
+      else btn.classList.add('is-muted');
+    });
     const imgEl = root.querySelector('#guess-poster img');
     if (imgEl) imgEl.style.filter = 'blur(0) saturate(1) brightness(1)';
     root.querySelector('#guess-poster')?.classList.add('is-revealed');
     const titleEl = root.querySelector('#guess-reveal-title');
-    if (titleEl) titleEl.textContent = answer.title;
-  }
-
-  // `lifeTaken`: a typed miss already cost its life before resolving the round.
-  function resolve(correct, chosenId = null, { lifeTaken = false } = {}) {
-    if (locked || over) return;
-    locked = true;
-    root.querySelectorAll('.guess-choice').forEach((btn) => {
-      btn.disabled = true;
-      const id = Number(btn.dataset.id);
-      if (id === answer.mal_id) btn.classList.add('is-correct');
-      else if (id === chosenId) btn.classList.add('is-wrong');
-      else btn.classList.add('is-muted');
-    });
-    root.querySelectorAll('#typed-form input, #typed-form button, #buy-clue').forEach((el) => { el.disabled = true; });
-    revealAnswer();
-    recap.push({ anime: answer, correct });
+    if (titleEl && out.reveal?.title) titleEl.textContent = out.reveal.title;
+    if (out.recap) recap.push({ ...out.recap, correct: out.correct });
 
     const poster = root.querySelector('#guess-poster');
-    if (correct) {
-      streak += 1;
-      const gained = blitz ? 0 : roundPoints(cluesUsed, streak - 1);
+    if (out.correct) {
+      const gained = blitz ? 0 : roundPoints(cluesUsed, state.streak);
       points += gained;
-      celebrateCorrect(streak, poster);
+      celebrateCorrect(out.streak, poster);
       bounce(poster);
-      if (gained) popText(`+${gained}`, { anchor: root.querySelector('#guess-reveal-title'), color: 'var(--green)' });
+      if (gained) popText(`+${gained}`, { anchor: titleEl, color: 'var(--green)' });
     } else {
       lamentWrong(root.querySelector('#guess-arena'));
       if (blitz) {
         timeLeft = Math.max(0, timeLeft - BLITZ_WRONG_PENALTY_S);
         popText(`−${BLITZ_WRONG_PENALTY_S}s`, { anchor: poster, color: 'var(--pink)' });
-      } else if (!lifeTaken) {
-        lives -= 1;
       }
     }
+    state = { ...state, streak: out.streak, lives: out.lives };
+    refreshHud();
 
     setTimeout(() => {
-      if (over) return;
-      if (!blitz && lives <= 0) { finish(); return; }
-      drawAnswer();
+      if (over || !root.isConnected) return;
+      if (out.gameOver) { finish(out.streak); return; }
+      state = out.next;
+      if (blitz && state.msLeft != null) timeLeft = Math.ceil(state.msLeft / 1000);
+      cluesUsed = difficulty === 'easy' && !blitz ? 1 : 0;
       renderRound();
     }, blitz ? BLITZ_REVEAL_MS : REVEAL_DELAY_MS);
   }
 
-  function tick() {
+  async function tick() {
     timeLeft -= 1;
     const t = root.querySelector('#blitz-time');
     if (t) t.textContent = String(Math.max(0, timeLeft));
     const fill = root.querySelector('#blitz-fill');
     if (fill) fill.style.width = `${(Math.max(0, timeLeft) / BLITZ_SECONDS) * 100}%`;
     if (timeLeft <= 10 && timeLeft > 0) sfx('tick');
-    if (timeLeft <= 0) finish();
+    if (timeLeft <= 0 && !over) {
+      clearInterval(timer);
+      locked = true;
+      // The server has the real clock; this ends the run once it agrees.
+      let out = null;
+      for (let i = 0; i < 3 && !out; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        out = await Games.roundFinish(state.runId).catch(() => null);
+        // eslint-disable-next-line no-await-in-loop
+        if (!out) await new Promise((r) => { setTimeout(r, 800); });
+      }
+      finish(out?.streak ?? state.streak);
+    }
   }
 
   function onKey(e) {
@@ -344,17 +338,16 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
     if (n >= 1 && n <= 4) root.querySelectorAll('.guess-choice')[n - 1]?.click();
   }
 
-  function finish() {
+  function finish(streak) {
     if (over) return;
     over = true;
     clearInterval(timer);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('hashchange', stop);
-    run.submit(streak);
     const stats = recordLocalResult(localSlug, streak, legacyKeyFor(difficulty));
     const recapHTML = recap.length ? `
       <details class="recap"><summary>Round recap (${recap.filter((r) => r.correct).length}/${recap.length})</summary>
-        <ul class="recap-list">${recap.slice(-20).map((r) => `<li class="${r.correct ? 'is-right' : 'is-wrong'}">${r.correct ? '✅' : '❌'} <a href="#/anime/${r.anime.mal_id}">${escapeHtml(r.anime.title)}</a></li>`).join('')}</ul>
+        <ul class="recap-list">${recap.slice(-20).map((r) => `<li class="${r.correct ? 'is-right' : 'is-wrong'}">${r.correct ? '✅' : '❌'} ${r.href ? `<a href="${escapeHtml(r.href)}">${escapeHtml(r.label)}</a>` : escapeHtml(r.label)}</li>`).join('')}</ul>
       </details>` : '';
     root.innerHTML = gameOverHTML({
       emoji: blitz ? '⏱️' : '🔍',
@@ -362,14 +355,12 @@ function play(root, basePool, { mode, difficulty, input, seed = null }) {
       score: streak,
       scoreLabel: 'Correct answers',
       stats,
-      slug: slug || 'guess-the-anime',
-      leaderboard: Boolean(slug),
+      slug: ranked ? game : 'guess-the-anime',
+      leaderboard: ranked,
       extra: `${blitz ? '' : `<p class="section-sub">⭐ ${points} points</p>`}${recapHTML}`,
     });
     wireGameOver(root, {
       stats,
-      // From a challenge link, drop the seed (the hash change re-renders);
-      // otherwise just show the setup screen again.
       onReplay: () => (seed ? navigate('#/games/guess-the-anime') : renderGuessTheAnime(root)),
       challenge: {
         text: `I got ${streak} right in AniNest's Guess the Anime (${blitz ? 'Blitz' : DIFFICULTIES[difficulty].label}). Can you beat me?`,

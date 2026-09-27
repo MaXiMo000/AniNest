@@ -204,7 +204,7 @@ export async function loadProfileLists(root, username) {
   const slot = root.querySelector('#profile-lists');
   if (!slot) return;
   let lists = [];
-  try { ({ lists } = await apiGet(`/api/lists/user/${encodeURIComponent(username)}`)); } catch { return; }
+  try { ({ lists = [] } = await apiGet(`/api/lists/user/${encodeURIComponent(username)}`)); } catch { return; }
   if (!lists.length || !slot.isConnected) return;
   slot.innerHTML = `
     <section class="section">

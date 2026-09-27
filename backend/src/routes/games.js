@@ -14,7 +14,8 @@ import {
 
 // Games whose score the server decides itself; the old "post your own score"
 // routes refuse them.
-const SERVER_JUDGED = new Set([...Object.keys(HL_GAMES), 'studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']);
+const SERVER_JUDGED = new Set([...Object.keys(HL_GAMES), 'studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening',
+  'guess-the-anime', 'gta-hard', 'gta-blitz']);
 
 export const gamesRouter = Router();
 
