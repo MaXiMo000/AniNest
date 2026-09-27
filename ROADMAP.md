@@ -143,7 +143,8 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] 3-day rounds on a fixed clock; more votes wins, ties (and 0-0 on a quiet site) go to the better seed, so every bracket finishes
 - [x] One vote per account per match, changeable while the round is open; counts hidden until you vote in that match
 - [x] Page `#/tournament` (More menu): current round as head-to-heads with a shared player, bracket view, champion banner
-- [ ] Later: link from the detail page's jukebox when a song is in a bracket; a past-seasons picker (the API already serves them)
+- [x] The detail page's jukebox links to each bracket the show's songs are in (`GET /api/tournaments/for-anime/:malId`), and
+      the page has a past-seasons picker (`GET /api/tournaments/seasons`, `#/tournament?kind=&season=&year=`)
 
 ## Phase 9: AniNest Wrapped
 

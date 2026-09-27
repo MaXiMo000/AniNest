@@ -9,6 +9,7 @@ import { WatchSources } from '../lib/watchSourcesApi.js';
 import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 import { loadEpisodeGuide } from '../lib/episodeGuide.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
+import { apiGet } from '../lib/http.js';
 import { autoplayVideoOnView, autoplayYouTubeOnView, youtubeEmbedUrl } from '../lib/autoplayOnView.js';
 
 function fmtDate(x) {
@@ -202,6 +203,25 @@ function wireThemes(root) {
   });
 }
 
+// "OP1 is in the Summer 2026 Best Opening tournament": a link from the
+// jukebox to each bracket this show's songs are in.
+async function loadTournamentNote(root, id) {
+  const slot = root.querySelector('#tourney-note-slot');
+  if (!slot) return;
+  let entries;
+  try {
+    ({ entries } = await apiGet(`/api/tournaments/for-anime/${Number(id)}`));
+  } catch {
+    return;
+  }
+  if (!slot.isConnected || !entries.length) return;
+  const label = (e) => `${e.season[0]}${e.season.slice(1).toLowerCase()} ${e.year}`;
+  slot.innerHTML = `
+    <div class="hero-actions" style="margin:0 0 10px">
+      ${entries.map((e) => `<a class="chip" href="#/tournament?kind=${e.kind === 'ED' ? 'ED' : 'OP'}&season=${encodeURIComponent(e.season)}&year=${Number(e.year)}">🏆 ${escapeHtml(e.slug)} is in the ${escapeHtml(label(e))} Best ${e.kind === 'ED' ? 'Ending' : 'Opening'} tournament</a>`).join('')}
+    </div>`;
+}
+
 // Loaded AFTER the page renders instead of inside the page's Promise.all: a
 // dead third-party host takes seconds to fail, and the whole anime page used
 // to wait on it. Now the page shows immediately and the jukebox fills in.
@@ -316,6 +336,7 @@ export async function renderDetails(root, id) {
 
       <div id="episode-guide-slot"></div>
 
+      <div id="tourney-note-slot"></div>
       <div id="themes-slot"></div>
 
       ${animeReviews.sectionHTML(reviewsData)}
@@ -404,6 +425,7 @@ export async function renderDetails(root, id) {
     wireFreeWatch(root, watchSources);
 
     loadThemes(root, id, a.title);
+    loadTournamentNote(root, id);
     loadFranchise(root, id);
     loadEpisodeGuide(root, a);
 

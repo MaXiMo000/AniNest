@@ -2700,6 +2700,13 @@ test('OP/ED tournament API: built once from the season, vote, hidden counts, rou
     assert.deepEqual([mine.finished, mine.currentRound, mine.champion], [true, null, 2]);
     assert.equal((await anon.get('/api/tournaments/2025/fall')).json.data, null, 'the archive never builds');
     assert.equal((await anon.get('/api/tournaments/2026/monsoon')).status, 400);
+
+    const seasons = (await anon.get('/api/tournaments/seasons')).json.seasons;
+    assert.deepEqual(seasons.find((x) => x.season === 'SUMMER' && x.year === 2026).kinds, ['ED', 'OP']);
+    const inBrackets = (await anon.get('/api/tournaments/for-anime/92805')).json.entries;
+    assert.deepEqual(inBrackets.map((e) => [e.kind, e.slug, e.season, e.year]), [['OP', 'OP1', 'SUMMER', 2026]], 'no ending, so only the OP bracket');
+    assert.deepEqual((await anon.get('/api/tournaments/for-anime/92819')).json.entries, [], 'seed 20 missed the 16-song cut');
+    assert.equal((await anon.get('/api/tournaments/for-anime/abc')).status, 400);
   } finally {
     setTournamentSources(null);
     setTournamentClock(null);
