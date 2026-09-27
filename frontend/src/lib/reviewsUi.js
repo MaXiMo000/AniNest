@@ -2,6 +2,7 @@ import { escapeHtml, showToast } from './ui.js';
 import { Auth } from './authStore.js';
 import { navigate } from './router.js';
 import { powSelectHTML } from './powSelect.js';
+import { reportReview } from './reviewsApi.js';
 
 // The "Community Reviews" block (average, write/edit form, list), shared by
 // the anime detail page and the manga detail page. It only differs in which
@@ -18,6 +19,7 @@ function reviewCardHTML(r, isMine) {
         <span class="badge-score small">${r.rating}</span>
         <a href="#/u/${encodeURIComponent(r.username)}"><strong>${escapeHtml(r.username)}</strong></a>
         <span class="review-date">${escapeHtml(date)}${isMine ? ' · you' : ''}</span>
+        ${!isMine && Auth.get().user ? `<button type="button" class="chip review-report" data-review-id="${Number(r.id)}" aria-label="Report this review" title="Report this review">🚩</button>` : ''}
       </div>
       ${r.body ? `<p class="review-body">${escapeHtml(r.body)}</p>` : ''}
     </div>`;
@@ -103,6 +105,19 @@ export function createReviewsUi(api) {
         submitBtn.disabled = false;
       }
     });
+
+    root.querySelectorAll('.review-report').forEach((btn) => btn.addEventListener('click', async () => {
+      const reason = window.prompt('What’s wrong with this review? (spam, spoilers, abuse...)');
+      if (reason === null) return;
+      btn.disabled = true;
+      try {
+        await reportReview(api.kind, Number(btn.dataset.reviewId), reason.trim().slice(0, 300) || undefined);
+        showToast('Thanks, an admin will take a look.');
+      } catch (err) {
+        showToast(err.message || 'Couldn’t send the report — try again.');
+        btn.disabled = false;
+      }
+    }));
 
     root.querySelector('#review-delete')?.addEventListener('click', async () => {
       try {

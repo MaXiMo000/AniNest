@@ -38,6 +38,7 @@ export async function deleteUserData(userId) {
     byUser('notifications'),
     byUser('it_clicked'),
     byUser('password_resets'),
+    { sql: 'DELETE FROM review_reports WHERE reporter_id = ?', args: [userId] },
     byUser('sessions'),
     // Free-watch links they suggested or reviewed stay up; only the credit goes.
     { sql: 'UPDATE anime_watch_sources SET submitted_by = NULL WHERE submitted_by = ?', args: [userId] },

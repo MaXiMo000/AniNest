@@ -26,7 +26,7 @@ mangaReviewsRouter.get('/:mangaId', asyncRoute(async (req, res) => {
       sql: `
         SELECT r.id, r.rating, r.body, r.created_at, r.updated_at, u.username
         FROM manga_reviews r JOIN users u ON u.id = r.user_id
-        WHERE r.manga_id = ?
+        WHERE r.manga_id = ? AND r.hidden = 0
         ORDER BY r.updated_at DESC
         LIMIT 100
       `,

@@ -40,7 +40,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found.' });
 
   const mangaReviewsResult = await db.execute({
-    sql: 'SELECT manga_id, rating, body, created_at, updated_at FROM manga_reviews WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100',
+    sql: 'SELECT manga_id, rating, body, created_at, updated_at FROM manga_reviews WHERE user_id = ? AND hidden = 0 ORDER BY updated_at DESC LIMIT 100',
     args: [user.id],
   });
 
@@ -50,7 +50,7 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
       args: [user.id],
     }),
     db.execute({
-      sql: 'SELECT mal_id, rating, body, created_at, updated_at FROM reviews WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100',
+      sql: 'SELECT mal_id, rating, body, created_at, updated_at FROM reviews WHERE user_id = ? AND hidden = 0 ORDER BY updated_at DESC LIMIT 100',
       args: [user.id],
     }),
     // Derived, not stored - see lib/xp.js. Same computation the XP

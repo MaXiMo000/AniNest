@@ -478,6 +478,22 @@ await db.execute(`
   )
 `);
 
+// Review moderation (routes/reviewReports.js): signed-in users report a
+// review, an admin hides it or dismisses the reports. A hidden review drops
+// out of every public list; its author still sees it as their own.
+await ensureColumn('reviews', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('manga_reviews', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS review_reports (
+    kind TEXT NOT NULL,
+    review_id INTEGER NOT NULL,
+    reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (kind, review_id, reporter_id)
+  )
+`);
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the

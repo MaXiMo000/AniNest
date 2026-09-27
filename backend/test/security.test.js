@@ -295,3 +295,31 @@ test('health check reports the database as reachable', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.json.ok, true);
 });
+
+test('review reports: anyone signed in can report, an admin hides or dismisses', async () => {
+  const author = await registered();
+  const reporter = await registered();
+  const admin = await registered();
+  await db.execute({ sql: 'UPDATE users SET is_admin = 1 WHERE id = ?', args: [admin.id] });
+  const malId = 900000 + (Date.now() % 1000);
+  await author.agent.post('/api/reviews', { body: { mal_id: malId, rating: 1, body: 'spam spam spam' } });
+  const list = await reporter.agent.get(`/api/reviews/${malId}`);
+  const reviewId = Number(list.json.reviews[0].id);
+
+  assert.equal((await makeAgent().ready().then((a) => a.post('/api/review-reports', { body: { kind: 'anime', reviewId } }))).status, 401);
+  assert.equal((await author.agent.post('/api/review-reports', { body: { kind: 'anime', reviewId } })).status, 400, 'not your own');
+  assert.equal((await reporter.agent.post('/api/review-reports', { body: { kind: 'anime', reviewId, reason: 'spam' } })).status, 201);
+  assert.equal((await reporter.agent.post('/api/review-reports', { body: { kind: 'anime', reviewId } })).status, 201, 'twice is fine');
+
+  assert.equal((await reporter.agent.get('/api/admin/review-reports')).status, 404, 'queue is admin-only');
+  const queue = await admin.agent.get('/api/admin/review-reports');
+  const item = queue.json.reports.find((r) => r.reviewId === reviewId);
+  assert.equal(item.reports, 1);
+  assert.equal(item.body, 'spam spam spam');
+
+  assert.equal((await admin.agent.post(`/api/admin/review-reports/anime/${reviewId}/hide`)).status, 200);
+  assert.equal((await reporter.agent.get(`/api/reviews/${malId}`)).json.reviews.length, 0, 'gone from the public list');
+  assert.equal((await reporter.agent.get(`/api/users/${author.user.username}`)).json.reviews.length, 0, 'and from the profile');
+  assert.ok((await author.agent.get(`/api/reviews/${malId}`)).json.myReview, 'the author still sees their own');
+  assert.ok(!(await admin.agent.get('/api/admin/review-reports')).json.reports.some((r) => r.reviewId === reviewId));
+});

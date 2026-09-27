@@ -35,6 +35,7 @@ import { renderMangaDetail } from './pages/mangaDetail.js';
 import { renderMangaFavorites } from './pages/mangaFavorites.js';
 import { renderWatchSourceSubmit } from './pages/watchSourceSubmit.js';
 import { renderWatchSourcesAdmin } from './pages/admin/watchSourcesAdmin.js';
+import { renderReviewReportsAdmin } from './pages/admin/reviewReports.js';
 import { wireCardEvents, wireMangaCardEvents, updateFavCount, updateMangaFavCount, emptyHTML, escapeHtml, loadingHTML } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { MangaFavorites } from './lib/mangaStore.js';
@@ -130,6 +131,7 @@ route('/manga/:id', ({ path, root }) => renderMangaDetail(root, path.id));
 route('/manga-favorites', ({ root }) => renderMangaFavorites(root));
 route('/anime/:id/submit-watch-link', ({ path, root }) => renderWatchSourceSubmit(root, path.id));
 route('/admin/watch-sources', ({ root }) => renderWatchSourcesAdmin(root));
+route('/admin/reviews', ({ root }) => renderReviewReportsAdmin(root));
 
 notFound(() => {
   app.innerHTML = emptyHTML('This page wandered off into the filler dimension.', '🌀');

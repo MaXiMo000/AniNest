@@ -35,6 +35,7 @@ import { roomsRouter } from './routes/rooms.js';
 import { episodeGuideRouter } from './routes/episodeGuide.js';
 import { tournamentsRouter } from './routes/tournaments.js';
 import { wrappedRouter } from './routes/wrapped.js';
+import { reviewReportsRouter, adminReviewReportsRouter } from './routes/reviewReports.js';
 
 function trustProxyHops() {
   const n = Number(process.env.TRUST_PROXY);
@@ -161,6 +162,8 @@ export function createApp() {
   app.use('/api/wrapped', wrappedRouter);
   app.use('/api/anime-watch-sources', animeWatchSourcesRouter);
   app.use('/api/admin/watch-sources', adminWatchSourcesRouter);
+  app.use('/api/review-reports', reviewReportsRouter);
+  app.use('/api/admin/review-reports', adminReviewReportsRouter);
   // Not under /api/users: usersRouter's /:username would swallow /leaderboard.
   app.use('/api/leaderboard', leaderboardRouter);
 
