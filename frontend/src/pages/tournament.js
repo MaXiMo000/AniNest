@@ -1,6 +1,7 @@
 import { apiGet, apiPost } from '../lib/http.js';
 import { Auth } from '../lib/authStore.js';
 import { escapeHtml, emptyHTML, errorHTML, loadingHTML, showToast, wireRetry } from '../lib/ui.js';
+import { autoplayVideoOnView } from '../lib/autoplayOnView.js';
 
 // Season OP/ED tournament (backend/src/routes/tournaments.js): the season's
 // 16 most popular shows' openings (or endings) in a bracket, one round every
@@ -126,6 +127,7 @@ function pageHTML(data) {
 
 function wire(root, slot, state) {
   const player = slot.querySelector('#tourney-player');
+  if (player) autoplayVideoOnView(player);
   player?.addEventListener('error', () => slot.querySelector('#tourney-video-down')?.removeAttribute('hidden'));
   slot.querySelectorAll('[data-play]').forEach((btn) => btn.addEventListener('click', () => {
     const s = state.data.entries.find((e) => e.seed === Number(btn.dataset.play));
