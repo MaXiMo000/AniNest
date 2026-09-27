@@ -8,6 +8,7 @@ import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { WatchSources } from '../lib/watchSourcesApi.js';
 import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 import { loadEpisodeGuide } from '../lib/episodeGuide.js';
+import { shareButtonHTML, wireShare } from '../lib/share.js';
 import { autoplayVideoOnView, autoplayYouTubeOnView, youtubeEmbedUrl } from '../lib/autoplayOnView.js';
 
 function fmtDate(x) {
@@ -287,6 +288,7 @@ export async function renderDetails(root, id) {
           <div class="hero-actions">
             <button class="btn-pow btn-pow--pink" id="fav-toggle">${Favorites.has(a.mal_id) ? '💖 FAVORITED' : '🤍 ADD TO FAVORITES'}</button>
             ${a.url ? `<a class="btn-pow btn-pow--outline" target="_blank" rel="noopener" href="${escapeHtml(a.url)}">🔗 MyAnimeList</a>` : ''}
+            ${shareButtonHTML()}
           </div>
           ${watchStatusHTML(a.mal_id)}
           ${progressHTML(a)}
@@ -328,6 +330,7 @@ export async function renderDetails(root, id) {
     const trailer = root.querySelector('#trailer-player');
     if (trailer) autoplayYouTubeOnView(trailer);
 
+    wireShare(root, { kind: 'anime', id: a.mal_id, title: a.title });
     root.querySelector('#fav-toggle')?.addEventListener('click', async (e) => {
       const btn = e.target;
       btn.disabled = true;

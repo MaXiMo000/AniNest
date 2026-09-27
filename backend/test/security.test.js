@@ -323,3 +323,13 @@ test('review reports: anyone signed in can report, an admin hides or dismisses',
   assert.ok((await author.agent.get(`/api/reviews/${malId}`)).json.myReview, 'the author still sees their own');
   assert.ok(!(await admin.agent.get('/api/admin/review-reports')).json.reports.some((r) => r.reviewId === reviewId));
 });
+
+test('profile share links carry their own preview tags and redirect to the page', async () => {
+  const { user } = await registered();
+  const res = await makeAgent().get(`/api/share/u/${user.username.toUpperCase()}`);
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/html/);
+  assert.match(res.json, new RegExp(`<meta property="og:title" content="${user.username} on AniNest">`));
+  assert.match(res.json, new RegExp(`http-equiv="refresh" content="0; url=http://localhost:5173/#/u/${user.username}"`));
+  assert.equal((await makeAgent().get('/api/share/u/bad<name>')).status, 404);
+});

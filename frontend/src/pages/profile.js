@@ -5,6 +5,7 @@ import { mangaImg } from '../lib/mangaImage.js';
 import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
 import { profileStats, STATUS_ORDER } from '../lib/profileStats.js';
 import { Auth } from '../lib/authStore.js';
+import { shareButtonHTML, wireShare } from '../lib/share.js';
 
 // "You and alex: 82% taste match" for a signed-in visitor on someone else's
 // profile (backend/src/lib/taste.js). Loaded after the page; any failure just
@@ -185,7 +186,7 @@ export async function renderProfile(root, username) {
       </div>
       ${xpCardHTML(xp)}
       ${badgesRowHTML(badges)}
-      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
+      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a>${shareButtonHTML('📤 Share profile').replace('btn-pow btn-pow--outline', 'chip')}</div>
     </div>
 
     <div id="taste-match"></div>
@@ -210,5 +211,6 @@ export async function renderProfile(root, username) {
       ${shownMangaReviews.map((r) => mangaReviewRowHTML(r, mangaById.get(r.manga_id))).join('')}
     </section>` : ''}
   `;
+  wireShare(root, { kind: 'u', id: user.username, title: `${user.username} on AniNest` });
   loadTasteMatch(root, user.username);
 }
