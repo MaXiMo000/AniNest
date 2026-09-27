@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
-import { cached } from './cache.js';
-import * as animeSource from './animeSource.js';
+import { getGamePool, setGamePool } from './gamePool.js';
 
 // Higher or Lower, dealt and judged by the server (routes/games.js /hl/*), so
 // its four leaderboards hold real streaks: the browser only ever sees the
@@ -26,36 +25,9 @@ export const SKIPS = 1;
 // reveal animation already takes longer; this only stops scripted play.
 export const MIN_GUESS_MS = 700;
 
-// ---- The pool: the same spread as the browser's games pool (lib/animePool.js
-// in the frontend): top anime sampled across many pages, the current season,
-// and top-rated per genre, so scores aren't all bunched at 9.0. ----
-const TOP_PAGES = [1, 3, 6, 10, 15, 20, 30, 40];
-const GENRES = [1, 2, 4, 7, 8, 10, 14, 18, 19, 22, 24, 30, 36, 37, 40, 41];
-
-async function livePool() {
-  const lists = await Promise.all([
-    ...TOP_PAGES.map((p) => animeSource.topAnime(p).catch(() => ({ data: [] }))),
-    ...[1, 2].map((p) => animeSource.seasonNow(p).catch(() => ({ data: [] }))),
-    ...GENRES.map((g) => animeSource.search({ genres: String(g), order_by: 'score', sort: 'desc', page: 1 }).catch(() => ({ data: [] }))),
-  ]);
-  const seen = new Set();
-  const out = [];
-  for (const a of lists.flatMap((l) => l.data || [])) {
-    const id = Number(a?.mal_id);
-    if (!id || seen.has(id) || !a.title) continue;
-    seen.add(id);
-    out.push({
-      id, title: a.title, image: a.images?.jpg?.image_url || null,
-      score: a.score, members: a.members, episodes: a.episodes, year: a.year,
-    });
-  }
-  return out;
-}
-
-let poolSource = livePool;
-// Test hook: the suite never calls the anime APIs.
-export function setHlPool(fn) { poolSource = fn || livePool; }
-const getPool = () => cached('hl:pool', 6 * 60 * 60 * 1000, () => poolSource());
+const getPool = getGamePool;
+// Test hook, kept for the Higher or Lower tests: sets the shared game pool.
+export const setHlPool = setGamePool;
 
 // ---- Seeded dealing: "challenge a friend" links deal the same deck. The
 // generator's state is stored with the run so reshuffles stay repeatable. ----

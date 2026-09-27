@@ -708,6 +708,38 @@ await db.executeMultiple(`
   CREATE INDEX IF NOT EXISTS idx_hl_runs_user ON hl_runs(user_id, created_at);
 `);
 
+// Round-by-round games judged by the server (lib/roundGames.js). A run keeps
+// a copy of its pool, the seeded-shuffle state, which items it has used, and
+// the current round including its answer (never sent to the browser).
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS round_runs (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    game TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    pool TEXT NOT NULL,
+    used TEXT NOT NULL,
+    rng INTEGER NOT NULL,
+    round TEXT NOT NULL,
+    round_no INTEGER NOT NULL,
+    streak INTEGER NOT NULL DEFAULT 0,
+    lives INTEGER,
+    skips INTEGER NOT NULL DEFAULT 0,
+    dealt_at INTEGER NOT NULL,
+    ends_at INTEGER,
+    finished INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_round_runs_user ON round_runs(user_id, created_at);
+  -- What each signed-in player was dealt lately, per game, so a new run deals unseen shows first.
+  CREATE TABLE IF NOT EXISTS game_recent (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game TEXT NOT NULL,
+    ids TEXT NOT NULL,
+    PRIMARY KEY (user_id, game)
+  );
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.

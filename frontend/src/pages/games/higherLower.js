@@ -89,10 +89,12 @@ export async function renderHigherLower(root, params = new URLSearchParams()) {
   try {
     state = await Games.hlStart(mode.slug, seed);
   } catch (err) {
+    if (!root.isConnected) return;
     root.innerHTML = errorHTML(err.message || 'Couldn’t start the game — try again shortly!');
     wireRetry(root, () => (err.status === 503 ? navigate('#/games/higher-lower') : renderHigherLower(root, params)));
     return;
   }
+  if (!root.isConnected) return; // left the page while it was dealing
 
   let points = 0;
   let locked = false; // true while a guess is out or the reveal plays

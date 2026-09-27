@@ -57,6 +57,8 @@ export async function deleteUserData(userId) {
     byUser('totp_recovery_codes'),
     byUser('login_challenges'),
     byUser('hl_runs'),
+    byUser('round_runs'),
+    byUser('game_recent'),
     byUser('push_subscriptions'),
     { sql: 'DELETE FROM follows WHERE follower_id = ? OR followee_id = ?', args: [userId, userId] },
     { sql: 'DELETE FROM review_reports WHERE reporter_id = ?', args: [userId] },

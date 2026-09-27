@@ -157,11 +157,19 @@ async function makeAdminAgent() {
 // that fits the time elapsed since (routes/games.js). Tests can't wait real
 // minutes, so this starts a genuine run and backdates it by enough honest
 // rounds - going through the same start/score routes a real client uses.
+// Records a finished run's score for the signed-in `agent`, as the server
+// does at the end of a real run. Tests about XP, badges and boards don't
+// need to play every round to get one.
 async function playScore(agent, game, streak) {
-  const start = await agent.post(`/api/games/${game}/start`, { csrf: true, body: {} });
-  assert.equal(start.status, 201, 'starting a run should work for a signed-in player');
-  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - (streak * 5000 + 5000), start.json.runId] });
-  return agent.post(`/api/games/${game}/score`, { csrf: true, body: { streak, run_id: start.json.runId } });
+  const me = (await agent.get('/api/auth/me')).json.user;
+  await db.execute({ sql: 'INSERT INTO game_score_log (user_id, game, score, created_at) VALUES (?, ?, ?, ?)', args: [me.id, game, streak, Date.now()] });
+  await db.execute({
+    sql: `INSERT INTO game_scores (user_id, game, best_streak, updated_at) VALUES (?, ?, ?, datetime('now'))
+          ON CONFLICT(user_id, game) DO UPDATE SET best_streak = MAX(best_streak, excluded.best_streak)`,
+    args: [me.id, game, streak],
+  });
+  const best = await db.execute({ sql: 'SELECT best_streak FROM game_scores WHERE user_id = ? AND game = ?', args: [me.id, game] });
+  return { status: 200, json: { best: Number(best.rows[0].best_streak) } };
 }
 
 test('health check', async () => {
@@ -736,9 +744,9 @@ test('express-rate-limit actually returns 429 once its limit is exceeded', async
 test('game scores require auth to write, but the leaderboard is public', async () => {
   const agent = makeAgent();
   await agent.get('/api/health');
-  const post = await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 5 } });
+  const post = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 5 } });
   assert.equal(post.status, 401);
-  const board = await agent.get('/api/games/studio-match/leaderboard');
+  const board = await agent.get('/api/games/timeline/leaderboard');
   assert.equal(board.status, 200);
   assert.equal(board.json.myRank, null, 'an unauthenticated caller has no rank of their own');
 });
@@ -761,12 +769,12 @@ test('game scores reject invalid streak values', async () => {
   const user = uniqueUser();
   await agent.post('/api/auth/register', { csrf: true, body: user });
 
-  const run = (await agent.post('/api/games/studio-match/start', { csrf: true, body: {} })).json.runId;
-  const negative = await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: -1, run_id: run } });
+  const run = (await agent.post('/api/games/timeline/start', { csrf: true, body: {} })).json.runId;
+  const negative = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: -1, run_id: run } });
   assert.equal(negative.status, 400);
-  const notInt = await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 1.5, run_id: run } });
+  const notInt = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 1.5, run_id: run } });
   assert.equal(notInt.status, 400);
-  const missing = await agent.post('/api/games/studio-match/score', { csrf: true, body: { run_id: run } });
+  const missing = await agent.post('/api/games/timeline/score', { csrf: true, body: { run_id: run } });
   assert.equal(missing.status, 400);
 });
 
@@ -801,15 +809,15 @@ test('leaderboard ranks the higher streak first and stays sorted regardless of o
   await a.get('/api/health');
   const userA = uniqueUser();
   await a.post('/api/auth/register', { csrf: true, body: userA });
-  await playScore(a, 'studio-match', 3);
+  await playScore(a, 'timeline', 3);
 
   const b = makeAgent();
   await b.get('/api/health');
   const userB = uniqueUser();
   await b.post('/api/auth/register', { csrf: true, body: userB });
-  await playScore(b, 'studio-match', 20);
+  await playScore(b, 'timeline', 20);
 
-  const board = await a.get('/api/games/studio-match/leaderboard');
+  const board = await a.get('/api/games/timeline/leaderboard');
   for (let i = 1; i < board.json.leaderboard.length; i += 1) {
     assert.ok(
       board.json.leaderboard[i - 1].best_streak >= board.json.leaderboard[i].best_streak,
@@ -889,6 +897,119 @@ test('Higher or Lower is dealt and judged by the server', async () => {
     assert.equal(n1.challenger.mal_id, n2.challenger.mal_id);
   } finally {
     setHlPool(null);
+  }
+});
+
+test('round games: helpers for choices, clues, typed answers and timelines', async () => {
+  const r = await import('../src/lib/roundGames.js');
+  const { EMOJI_PUZZLES } = await import('../src/lib/emojiPuzzles.js');
+  let s = 7;
+  const rng = { next: () => { s = (s * 16807) % 2147483647; return s / 2147483647; } };
+  const c = r.valueChoices('MAPPA', ['MAPPA', 'Bones', 'Bones', 'Sunrise', 'Madhouse', 'Wit'], rng);
+  assert.equal(c.length, 4);
+  assert.equal(new Set(c.map((x) => x.id)).size, 4);
+  const list = [1, 2, 3].map((id) => ({ id }));
+  const used = new Set();
+  assert.deepEqual([0, 1, 2].map(() => r.drawUnused(list, used, rng).id).sort(), [1, 2, 3], 'everything once before repeats');
+  assert.equal(r.synopsisSnippet({ title: 'Frieren', synopsis: 'Frieren travels on. (Source: Crunchyroll)' }), '████ travels on.');
+  assert.ok(r.typedGuessMatches('frieren', { title: "Frieren: Beyond Journey's End" }));
+  assert.ok(r.typedGuessMatches('The Attack on Titan', { title: 'Attack on Titan' }));
+  assert.ok(!r.typedGuessMatches('fri', { title: "Frieren: Beyond Journey's End" }));
+  const years = Array.from({ length: 30 }, (_, i) => ({ id: i, year: 1990 + (i % 10) }));
+  assert.equal(new Set(r.drawDistinctYears(years, 5, rng).map((a) => a.year)).size, 5);
+  assert.equal(r.drawDistinctYears(years, 11, rng), null);
+  assert.deepEqual([r.isChronological([1990, 2001, 2001]), r.isChronological([2001, 1990])], [true, false]);
+  assert.ok(EMOJI_PUZZLES.length >= 40);
+  assert.equal(new Set(EMOJI_PUZZLES.map((p) => p.title)).size, EMOJI_PUZZLES.length);
+});
+
+// A pool where every field the round games read is filled in.
+function roundTestPool() {
+  const studios = ['MAPPA', 'Bones', 'Sunrise', 'Madhouse', 'Wit'];
+  return Array.from({ length: 40 }, (_, i) => ({
+    id: 92400 + i, title: `Round Show ${i}`, title_english: null, image: `https://cdn.myanimelist.net/images/anime/${i}.jpg`,
+    score: 7, members: 1000 * (40 - i), episodes: 12, year: 1990 + i, type: 'TV', studio: studios[i % 5],
+    source: ['Manga', 'Original', 'Light novel'][i % 3], genres: ['Action'],
+    synopsis: `Round Show ${i} is a long enough synopsis for the guessing game to accept it as a clue.`,
+  }));
+}
+
+test('round games: the server deals, judges, keeps lives and records the score', async () => {
+  const { setGamePool } = await import('../src/lib/gamePool.js');
+  const { setRoundSources } = await import('../src/lib/roundGames.js');
+  setGamePool(async () => roundTestPool());
+  setRoundSources({
+    characters: async () => ({ data: [{ role: 'Main', character: { name: 'A' }, voiceActors: [{ name: 'VA 1' }] }, { role: 'Main', character: { name: 'B' } }] }),
+    themes: async (id) => ({ data: id % 2 ? [] : [{ type: 'OP', title: 'Song', videoUrl: `https://v.animethemes.moe/${id}.webm` }] }),
+  });
+  const answerOf = async (runId) => JSON.parse((await db.execute({ sql: 'SELECT round FROM round_runs WHERE id = ?', args: [runId] })).rows[0].round).answer;
+  const unlock = (runId) => db.execute({ sql: 'UPDATE round_runs SET dealt_at = dealt_at - 5000 WHERE id = ?', args: [runId] });
+  try {
+    const { agent } = await registeredAgent();
+    for (const game of ['studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']) {
+      // eslint-disable-next-line no-await-in-loop
+      const run = (await agent.post('/api/games/rounds/start', { csrf: true, body: { game } })).json;
+      assert.equal(run.lives, 3, game);
+      assert.equal(run.round.choices.length, 4, game);
+      assert.ok(!JSON.stringify(run).includes('"answer"'), `${game}: the answer stays on the server`);
+      const say = async (answer) => {
+        await unlock(run.runId);
+        return (await agent.post(`/api/games/rounds/${run.runId}/answer`, { csrf: true, body: { answer } })).json;
+      };
+      // eslint-disable-next-line no-await-in-loop
+      const right = await say(await answerOf(run.runId));
+      assert.deepEqual([right.correct, right.streak, right.lives, right.gameOver], [true, 1, 3, false], game);
+      assert.ok(right.reveal && right.recap && right.next.round.choices, game);
+      let out;
+      for (let i = 0; i < 3; i += 1) out = await say('definitely wrong'); // eslint-disable-line no-await-in-loop
+      assert.deepEqual([out.correct, out.lives, out.gameOver, out.best], [false, 0, true, 1], `${game}: recorded by the server`);
+    }
+    const tooFast = (await agent.post('/api/games/rounds/start', { csrf: true, body: { game: 'emoji-plot' } })).json;
+    assert.equal((await agent.post(`/api/games/rounds/${tooFast.runId}/answer`, { csrf: true, body: { answer: 'x' } })).status, 429);
+    assert.equal((await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 50, run_id: 'a'.repeat(32) } })).status, 400, 'old route closed');
+
+    const song = (await agent.post('/api/games/rounds/start', { csrf: true, body: { game: 'name-that-opening' } })).json;
+    assert.match(song.round.videoUrl, /animethemes/);
+    const skipped = (await agent.post(`/api/games/rounds/${song.runId}/skip`, { csrf: true })).json;
+    assert.deepEqual([skipped.skipsLeft, skipped.lives, skipped.round.no], [2, 3, 2], 'a broken clip is skipped for free');
+    const cast = (await agent.post('/api/games/rounds/start', { csrf: true, body: { game: 'cast-call' } })).json;
+    assert.deepEqual(cast.round.cast[0], { name: 'A', va: 'VA 1' });
+
+    const guest = makeAgent();
+    await guest.get('/api/health');
+    const g = (await guest.post('/api/games/rounds/start', { csrf: true, body: { game: 'studio-match' } })).json;
+    assert.equal((await agent.post(`/api/games/rounds/${g.runId}/answer`, { csrf: true, body: { answer: 'x' } })).status, 404, 'only its own player answers a run');
+    const seeded = [agent, guest].map((a) => a.post('/api/games/rounds/start', { csrf: true, body: { game: 'studio-match', seed: 'friend1' } }));
+    const [s1, s2] = (await Promise.all(seeded)).map((x) => x.json.round);
+    assert.deepEqual(s1.anime, s2.anime, 'a challenge seed deals the same round');
+  } finally {
+    setGamePool(null);
+    setRoundSources(null);
+  }
+});
+
+test('round games: a player’s next run deals shows they didn’t just see', async () => {
+  const { setGamePool } = await import('../src/lib/gamePool.js');
+  setGamePool(async () => roundTestPool());
+  try {
+    const { agent } = await registeredAgent();
+    const playOut = async () => {
+      let view = (await agent.post('/api/games/rounds/start', { csrf: true, body: { game: 'source-guess' } })).json;
+      const seen = [view.round.anime.title];
+      for (let i = 0; i < 3; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await db.execute({ sql: 'UPDATE round_runs SET dealt_at = dealt_at - 5000 WHERE id = ?', args: [view.runId] });
+        // eslint-disable-next-line no-await-in-loop
+        const out = (await agent.post(`/api/games/rounds/${view.runId}/answer`, { csrf: true, body: { answer: 'nope' } })).json;
+        if (out.next) { view = out.next; seen.push(view.round.anime.title); }
+      }
+      return seen;
+    };
+    const first = await playOut();
+    const second = await playOut();
+    assert.deepEqual(second.filter((t) => first.includes(t)), []);
+  } finally {
+    setGamePool(null);
   }
 });
 
@@ -1407,7 +1528,7 @@ test('profile XP is derived from existing activity (retroactive), with an exact 
     await agent.post('/api/favorites', { csrf: true, body: { mal_id: 80000 + i, title: `XP fav ${i}` } });
   }
   await agent.post('/api/reviews', { csrf: true, body: { mal_id: 80000, rating: 8 } });
-  await playScore(agent, 'studio-match', 10);
+  await playScore(agent, 'timeline', 10);
 
   // 6 favorites 30 + 1 review 25 + streak 10 -> 100 = 155, plus three bronze
   // badges (Collector, Critic, Warming Up) at 50 each = 150.
@@ -1684,7 +1805,7 @@ test('a manga review counts as a review for badges, XP and the public profile', 
 test('game runs: a score needs a real run, is single-use, belongs to its player and game, and must fit the time played', async () => {
   const anon = makeAgent();
   await anon.get('/api/health');
-  assert.equal((await anon.post('/api/games/studio-match/start', { csrf: true, body: {} })).status, 401);
+  assert.equal((await anon.post('/api/games/timeline/start', { csrf: true, body: {} })).status, 401);
 
   const agent = makeAgent();
   await agent.get('/api/health');
@@ -1692,27 +1813,27 @@ test('game runs: a score needs a real run, is single-use, belongs to its player 
   assert.equal((await agent.post('/api/games/not-a-game/start', { csrf: true, body: {} })).status, 400);
 
   // No run at all - the old "just tell the server a number" path is closed.
-  assert.equal((await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 5 } })).status, 400);
-  assert.equal((await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 5, run_id: 'a'.repeat(32) } })).status, 400, 'an id that was never issued');
+  assert.equal((await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 5 } })).status, 400);
+  assert.equal((await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 5, run_id: 'a'.repeat(32) } })).status, 400, 'an id that was never issued');
 
   // A fake instant score: started just now, claims a 40 streak -> rejected.
-  const fresh = await agent.post('/api/games/studio-match/start', { csrf: true, body: {} });
+  const fresh = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
   assert.equal(fresh.status, 201);
-  const fake = await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 40, run_id: fresh.json.runId } });
+  const fake = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 40, run_id: fresh.json.runId } });
   assert.equal(fake.status, 400);
   assert.match(fake.json.error, /add up/);
   // ...and the run is now burned, so the threshold can't be probed by retrying lower numbers.
-  const retry = await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 1, run_id: fresh.json.runId } });
+  const retry = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 1, run_id: fresh.json.runId } });
   assert.equal(retry.status, 400);
   assert.match(retry.json.error, /already-used|Unknown/);
 
   // An honest run (time really elapsed) is accepted exactly once.
-  const honest = await agent.post('/api/games/studio-match/start', { csrf: true, body: {} });
-  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 20 * 1500, honest.json.runId] });
-  const ok = await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } });
+  const honest = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 60_000, honest.json.runId] });
+  const ok = await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } });
   assert.equal(ok.status, 200);
   assert.equal(ok.json.best, 15);
-  assert.equal((await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } })).status, 400, 'replaying a used run');
+  assert.equal((await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 15, run_id: honest.json.runId } })).status, 400, 'replaying a used run');
 
   // The per-game floor differs: 15 rounds of Guess the Anime needs more time than 15 of Higher/Lower.
   const gta = await agent.post('/api/games/guess-the-anime/start', { csrf: true, body: {} });
@@ -1720,7 +1841,7 @@ test('game runs: a score needs a real run, is single-use, belongs to its player 
   assert.equal((await agent.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 15, run_id: gta.json.runId } })).status, 400);
 
   // A run is tied to its game...
-  const hl = await agent.post('/api/games/studio-match/start', { csrf: true, body: {} });
+  const hl = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
   await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 60_000, hl.json.runId] });
   assert.equal((await agent.post('/api/games/guess-the-anime/score', { csrf: true, body: { streak: 2, run_id: hl.json.runId } })).status, 400, 'a Higher/Lower run cannot score Guess the Anime');
 
@@ -1728,15 +1849,15 @@ test('game runs: a score needs a real run, is single-use, belongs to its player 
   const thief = makeAgent();
   await thief.get('/api/health');
   await thief.post('/api/auth/register', { csrf: true, body: uniqueUser() });
-  const mine = await agent.post('/api/games/studio-match/start', { csrf: true, body: {} });
+  const mine = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
   await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 60_000, mine.json.runId] });
-  assert.equal((await thief.post('/api/games/studio-match/score', { csrf: true, body: { streak: 3, run_id: mine.json.runId } })).status, 400, 'someone else\'s run is not yours to submit');
-  assert.equal((await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 3, run_id: mine.json.runId } })).status, 200, 'the owner can still submit it');
+  assert.equal((await thief.post('/api/games/timeline/score', { csrf: true, body: { streak: 3, run_id: mine.json.runId } })).status, 400, 'someone else\'s run is not yours to submit');
+  assert.equal((await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 3, run_id: mine.json.runId } })).status, 200, 'the owner can still submit it');
 
   // Absurd values are rejected outright, whatever the elapsed time.
-  const cap = await agent.post('/api/games/studio-match/start', { csrf: true, body: {} });
+  const cap = await agent.post('/api/games/timeline/start', { csrf: true, body: {} });
   await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 10_000_000, cap.json.runId] });
-  assert.equal((await agent.post('/api/games/studio-match/score', { csrf: true, body: { streak: 301, run_id: cap.json.runId } })).status, 400);
+  assert.equal((await agent.post('/api/games/timeline/score', { csrf: true, body: { streak: 301, run_id: cap.json.runId } })).status, 400);
 });
 
 async function registeredAgent() {
@@ -2281,7 +2402,7 @@ test('public profile badges are computed from real activity, not stored', async 
   // One review -> bronze reviews badge.
   await agent.post('/api/reviews', { csrf: true, body: { mal_id: 30001, rating: 8 } });
   // A game streak of 5 -> bronze streak badge.
-  await playScore(agent, 'studio-match', 5);
+  await playScore(agent, 'timeline', 5);
 
   const after = await agent.get(`/api/users/${user.username}`);
   assert.equal(after.status, 200);
@@ -2318,8 +2439,9 @@ test('every ranked game has a positive per-round time floor and accepts a score'
   const agent = makeAgent();
   await agent.get('/api/health');
   await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
-  // Higher or Lower's modes are judged by the server (tested on their own).
-  for (const game of ALL_GAMES.filter((g) => !HL_GAMES[g])) {
+  // Games the server judges itself are tested on their own.
+  const judged = new Set([...Object.keys(HL_GAMES), 'studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']);
+  for (const game of ALL_GAMES.filter((g) => !judged.has(g))) {
     assert.ok(GAME_RULES[game].minMsPerRound > 0, `${game} needs a time floor`);
     // eslint-disable-next-line no-await-in-loop
     const res = await playScore(agent, game, 3);
@@ -2333,7 +2455,9 @@ test('a game with a hard score ceiling rejects anything above it', async () => {
   await agent.get('/api/health');
   await agent.post('/api/auth/register', { csrf: true, body: uniqueUser() });
   const max = GAME_RULES['gta-blitz'].maxScore;
-  const res = await playScore(agent, 'gta-blitz', max + 1);
+  const start = await agent.post('/api/games/gta-blitz/start', { csrf: true, body: {} });
+  await db.execute({ sql: 'UPDATE game_runs SET started_at = ? WHERE id = ?', args: [Date.now() - 10 * 60_000, start.json.runId] });
+  const res = await agent.post('/api/games/gta-blitz/score', { csrf: true, body: { streak: max + 1, run_id: start.json.runId } });
   assert.equal(res.status, 400);
 });
 
@@ -2353,18 +2477,18 @@ test('weekly leaderboard ranks scores from the last 7 days only', async () => {
   await a.get('/api/health');
   const userA = uniqueUser();
   const regA = await a.post('/api/auth/register', { csrf: true, body: userA });
-  await playScore(a, 'studio-match', 30);
+  await playScore(a, 'timeline', 30);
   // Pretend that 30 was set two weeks ago; this week A only managed 4.
   await db.execute({ sql: 'UPDATE game_score_log SET created_at = ? WHERE user_id = ?', args: [Date.now() - 14 * 86_400_000, regA.json.user.id] });
-  await playScore(a, 'studio-match', 4);
+  await playScore(a, 'timeline', 4);
 
   const b = makeAgent();
   await b.get('/api/health');
   const userB = uniqueUser();
   await b.post('/api/auth/register', { csrf: true, body: userB });
-  await playScore(b, 'studio-match', 9);
+  await playScore(b, 'timeline', 9);
 
-  const week = await a.get('/api/games/studio-match/leaderboard?period=week');
+  const week = await a.get('/api/games/timeline/leaderboard?period=week');
   assert.equal(week.status, 200);
   assert.equal(week.json.period, 'week');
   const rowA = week.json.leaderboard.find((r) => r.username === userA.username);
@@ -2374,7 +2498,7 @@ test('weekly leaderboard ranks scores from the last 7 days only', async () => {
   assert.ok(week.json.leaderboard.indexOf(rowB) < week.json.leaderboard.indexOf(rowA));
   assert.equal(week.json.myBest, 4);
 
-  const all = await a.get('/api/games/studio-match/leaderboard');
+  const all = await a.get('/api/games/timeline/leaderboard');
   assert.equal(all.json.myBest, 30, 'all-time still keeps the 30');
 });
 

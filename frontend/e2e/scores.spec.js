@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { mockApi } from './mockApi.js';
 
-test('a signed-in player starts a run and posts the score once at game over', async ({ page }) => {
+test('a signed-in player’s run is started once and scored by the server, never posted by the page', async ({ page }) => {
   await mockApi(page, { user: { username: 'tester' } });
   const calls = [];
   page.on('request', (r) => {
@@ -16,10 +16,9 @@ test('a signed-in player starts a run and posts the score once at game over', as
     await page.waitForTimeout(600);
   }
   await expect(page.getByText('GAME OVER')).toBeVisible();
-  expect(calls.filter((c) => c.path === '/api/games/emoji-plot/start')).toHaveLength(1);
-  const scores = calls.filter((c) => c.path === '/api/games/emoji-plot/score');
-  const streak = Number(await page.locator('[data-countup]').getAttribute('data-countup'));
-  expect(scores).toHaveLength(streak > 0 ? 1 : 0);
-  if (streak > 0) expect(JSON.parse(scores[0].body)).toMatchObject({ streak, run_id: 'a'.repeat(32) });
+  expect(calls.filter((c) => c.path === '/api/games/rounds/start')).toHaveLength(1);
+  expect(JSON.parse(calls[0].body)).toMatchObject({ game: 'emoji-plot' });
+  expect(calls.filter((c) => c.path.endsWith('/score'))).toHaveLength(0);
+  expect(calls.filter((c) => c.path.endsWith('/answer')).length).toBeGreaterThanOrEqual(3);
   await expect(page.getByText('Log in to save your score')).toHaveCount(0);
 });

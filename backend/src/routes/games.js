@@ -8,6 +8,13 @@ import { GAMES, GAME_RULES } from '../lib/games.js';
 import { dailyStats } from '../lib/gameStats.js';
 import { getMangaDailyChallenge } from '../lib/mangaDaily.js';
 import { HL_GAMES, MIN_GUESS_MS, startHlRun, loadHlRun, guessHl, skipHl } from '../lib/hlGame.js';
+import {
+  ROUND_GAMES, startRoundRun, loadRoundRun, answerRound, skipRound, finishTimedRun, coverUrl,
+} from '../lib/roundGames.js';
+
+// Games whose score the server decides itself; the old "post your own score"
+// routes refuse them.
+const SERVER_JUDGED = new Set([...Object.keys(HL_GAMES), 'studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening']);
 
 export const gamesRouter = Router();
 
@@ -154,13 +161,100 @@ gamesRouter.post('/hl/:runId/skip', asyncRoute(async (req, res) => {
   res.json(next);
 }));
 
+// ---- Round-by-round games judged by the server (lib/roundGames.js) ----
+
+const roundStartSchema = z.object({
+  game: z.enum(Object.keys(ROUND_GAMES)),
+  seed: z.string().regex(/^[a-z0-9]{1,16}$/).nullable().optional(),
+  input: z.enum(['choices', 'typed']).optional(),
+});
+
+gamesRouter.post('/rounds/start', asyncRoute(async (req, res) => {
+  const parsed = roundStartSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Unknown game.' });
+  if (req.user && await tooManyRuns(req.user.id)) return res.status(429).json({ error: 'Slow down a little.' });
+  const run = await startRoundRun(parsed.data.game, { userId: req.user?.id ?? null, seed: parsed.data.seed || null, input: parsed.data.input });
+  if (!run) return res.status(503).json({ error: 'Not enough anime data for this game right now. Try again shortly!' });
+  res.status(201).json(run);
+}));
+
+const roundAnswerSchema = z.object({
+  answer: z.string().max(200).optional(),
+  typed: z.string().max(200).optional(),
+  order: z.array(z.string().max(20)).max(10).optional(),
+  giveUp: z.boolean().optional(),
+});
+
+async function ownRound(req, res) {
+  const row = /^[0-9a-f]{32}$/.test(req.params.runId) ? await loadRoundRun(req.params.runId, req.user?.id) : null;
+  if (!row) res.status(404).json({ error: 'That game has ended. Start a new one!' });
+  return row;
+}
+
+gamesRouter.post('/rounds/:runId/answer', asyncRoute(async (req, res) => {
+  const parsed = roundAnswerSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid answer.' });
+  const row = await ownRound(req, res);
+  if (!row) return;
+  if (Date.now() - Number(row.dealt_at) < ROUND_GAMES[row.game].minMs) return res.status(429).json({ error: 'Too fast! Take a look first.' });
+  const out = await answerRound(row, parsed.data);
+  if (out.stale) return res.status(409).json({ error: 'That round was already answered.' });
+  if (out.gameOver && out.ranked && row.user_id != null) out.best = await recordScore(Number(row.user_id), row.game, out.streak);
+  res.json(out);
+}));
+
+gamesRouter.post('/rounds/:runId/skip', asyncRoute(async (req, res) => {
+  const row = await ownRound(req, res);
+  if (!row) return;
+  const next = await skipRound(row);
+  if (!next) return res.status(409).json({ error: 'No skips left.' });
+  res.json(next);
+}));
+
+gamesRouter.post('/rounds/:runId/finish', asyncRoute(async (req, res) => {
+  const row = await ownRound(req, res);
+  if (!row) return;
+  const out = await finishTimedRun(row);
+  if (!out) return res.status(409).json({ error: 'There’s still time on the clock.' });
+  if (out.ranked && row.user_id != null) out.best = await recordScore(Number(row.user_id), row.game, out.streak);
+  res.json(out);
+}));
+
+// Guess the Anime's cover, fetched and re-served by us so the image address
+// (which names or numbers the show) never reaches the browser. Only the
+// current round's cover, only from the two image hosts the pool uses.
+const COVER_HOSTS = new Set(['cdn.myanimelist.net', 's4.anilist.co']);
+const coverCache = new Map();
+const COVER_CACHE_MAX = 200;
+
+gamesRouter.get('/rounds/:runId/cover', asyncRoute(async (req, res) => {
+  const row = await ownRound(req, res);
+  if (!row) return;
+  let url;
+  try { url = new URL(coverUrl(row)); } catch { return res.status(404).end(); }
+  if (url.protocol !== 'https:' || !COVER_HOSTS.has(url.hostname)) return res.status(404).end();
+  let hit = coverCache.get(url.href);
+  if (!hit) {
+    const upstream = await fetch(url.href);
+    const type = upstream.headers.get('content-type') || '';
+    if (!upstream.ok || !type.startsWith('image/')) return res.status(404).end();
+    const body = Buffer.from(await upstream.arrayBuffer());
+    if (body.length > 2 * 1024 * 1024) return res.status(404).end();
+    hit = { type, body };
+    if (coverCache.size >= COVER_CACHE_MAX) coverCache.delete(coverCache.keys().next().value);
+    coverCache.set(url.href, hit);
+  }
+  res.set({ 'Content-Type': hit.type, 'Cache-Control': 'private, no-store' });
+  res.send(hit.body);
+}));
+
 // Called when a signed-in player starts a game. The returned run id is
 // single-use and is the only thing that lets a score be submitted.
 // Higher or Lower's modes don't use this: the server judges those itself.
 gamesRouter.post('/:game/start', requireAuth, asyncRoute(async (req, res) => {
   const { game } = req.params;
   if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
-  if (HL_GAMES[game]) return res.status(400).json({ error: 'This game is scored by the server.' });
+  if (SERVER_JUDGED.has(game)) return res.status(400).json({ error: 'This game is scored by the server.' });
 
   if (await tooManyRuns(req.user.id)) return res.status(429).json({ error: 'Slow down a little.' });
 
@@ -181,7 +275,7 @@ gamesRouter.post('/:game/start', requireAuth, asyncRoute(async (req, res) => {
 gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
   const { game } = req.params;
   if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
-  if (HL_GAMES[game]) return res.status(400).json({ error: 'This game is scored by the server.' });
+  if (SERVER_JUDGED.has(game)) return res.status(400).json({ error: 'This game is scored by the server.' });
   const parsed = scoreSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
   const { streak, run_id: runId } = parsed.data;

@@ -43,6 +43,7 @@ function json(route, body, status = 200) {
 export async function mockApi(page, { user = null } = {}) {
   const today = new Date().toISOString().slice(0, 10);
   const hl = { field: 'score', at: 0, streak: 0, skips: 1 };
+  const rounds = { game: null, input: 'choices', k: 0, streak: 0, lives: 3, skips: 3 };
   // Opening clips: answered here (a fast 404, so the player shows its
   // "won't load" state) instead of reaching the real AnimeThemes CDN, whose
   // speed and reachability vary between machines.
@@ -95,6 +96,60 @@ export async function mockApi(page, { user = null } = {}) {
       });
     }
     if (p === '/api/games/me/stats') return json(route, { games: {}, daily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] }, mangaDaily: { played: 0, won: 0, winRate: 0, currentStreak: 0, longestStreak: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0 }, calendar: [] } });
+    // Round games are dealt by the server: a stand-in that walks POOL in
+    // order. The right answer is always the round's own show / value.
+    if (p === '/api/games/rounds/start' || /^\/api\/games\/rounds\/[^/]+\/(answer|skip|finish)$/.test(p)) {
+      const body = JSON.parse(req.postData() || '{}');
+      const a = (k) => POOL[k % POOL.length];
+      const titleChoices = (k) => [0, 1, 2, 3].map((d) => ({ id: String(a(k + d).mal_id), label: a(k + d).title }));
+      const build = (k) => {
+        const s = a(k);
+        switch (rounds.game) {
+          case 'studio-match': return { view: { anime: { title: s.title, image: s.images.jpg.image_url }, choices: STUDIOS.slice(0, 4).map((x) => ({ id: x, label: x })) }, answer: STUDIOS[(k + 1) % 4] };
+          case 'source-guess': return { view: { anime: { title: s.title, image: s.images.jpg.image_url }, choices: SOURCES.slice(0, 4).map((x) => ({ id: x, label: x })) }, answer: SOURCES[(k + 1) % 4] };
+          case 'emoji-plot': return { view: { emoji: '🍥🦊', choices: titleChoices(k) }, answer: String(s.mal_id) };
+          case 'cast-call': return { view: { cast: [{ name: 'Character 1', va: 'VA 1' }, { name: 'Character 2', va: null }], choices: titleChoices(k) }, answer: String(s.mal_id) };
+          case 'name-that-opening': return { view: { videoUrl: 'https://v.animethemes.moe/test.webm', choices: titleChoices(k) }, answer: String(s.mal_id) };
+          case 'timeline': {
+            const cards = [0, 1, 2, 3].map((d) => a(k + d * 5));
+            return { view: { cards: cards.map((c) => ({ id: String(c.mal_id), title: c.title, image: c.images.jpg.image_url })) }, answer: Object.fromEntries(cards.map((c) => [c.mal_id, c.year])) };
+          }
+          default: return {
+            view: {
+              cover: s.images.jpg.image_url,
+              clues: { synopsis: s.synopsis, genres: s.genres.map((g) => g.name), type: s.type, episodes: s.episodes, year: s.year, studio: s.studios[0].name, source: s.source },
+              ...(rounds.input === 'typed' ? {} : { choices: titleChoices(k) }),
+            },
+            answer: String(s.mal_id),
+            anime: s,
+          };
+        }
+      };
+      const view = () => ({ runId: 'c'.repeat(32), game: rounds.game, streak: rounds.streak, lives: rounds.lives, msLeft: rounds.game === 'gta-blitz' ? 60_000 : null, skipsLeft: rounds.skips, round: { no: rounds.k + 1, ...build(rounds.k).view } });
+      if (p === '/api/games/rounds/start') {
+        Object.assign(rounds, { game: body.game, input: body.input || 'choices', k: 0, streak: 0, lives: body.game === 'gta-blitz' ? null : 3, skips: 3 });
+        return json(route, { ...view(), ...(rounds.input === 'typed' ? { titles: POOL.map((x) => x.title) } : {}) }, 201);
+      }
+      if (p.endsWith('/skip')) { rounds.skips -= 1; rounds.k += 1; return json(route, view()); }
+      if (p.endsWith('/finish')) return json(route, { gameOver: true, timeUp: true, streak: rounds.streak, reveal: {}, recap: { label: 'x', href: null } });
+      const cur = build(rounds.k);
+      let correct;
+      if (rounds.game === 'timeline') {
+        const years = (body.order || []).map((id) => cur.answer[id]);
+        correct = years.every((y, i) => i === 0 || years[i - 1] <= y);
+      } else if (body.typed != null && !body.giveUp) {
+        correct = body.typed.toLowerCase() === cur.anime.title.toLowerCase();
+        if (!correct && rounds.lives > 1) { rounds.lives -= 1; return json(route, { correct: false, retry: true, streak: rounds.streak, lives: rounds.lives, gameOver: false }); }
+      } else {
+        correct = !body.giveUp && String(body.answer) === String(cur.answer);
+      }
+      const reveal = rounds.game === 'timeline' ? { years: cur.answer } : { text: cur.anime?.title || String(cur.answer), title: POOL[rounds.k % POOL.length].title, mal_id: POOL[rounds.k % POOL.length].mal_id };
+      const done = { solution: cur.answer, reveal, recap: { label: `Round ${rounds.k + 1}`, href: null } };
+      if (correct) rounds.streak += 1; else if (rounds.lives != null) rounds.lives -= 1;
+      if (rounds.lives === 0 || (rounds.game === 'gta-blitz' && rounds.k >= 5)) return json(route, { ...done, correct, streak: rounds.streak, lives: rounds.lives, gameOver: true });
+      rounds.k += 1;
+      return json(route, { ...done, correct, streak: rounds.streak, lives: rounds.lives, gameOver: false, next: view() });
+    }
     // Higher or Lower is dealt by the server: a tiny stand-in that walks POOL
     // in order and judges with the same tie-wins rule.
     if (p === '/api/games/hl/start' || /^\/api\/games\/hl\/[^/]+\/(guess|skip)$/.test(p)) {

@@ -17,4 +17,9 @@ export const Games = {
   hlStart: (game, seed) => apiPost('/api/games/hl/start', { game, seed: seed || null }),
   hlGuess: (runId, direction) => apiPost(`/api/games/hl/${runId}/guess`, { direction }),
   hlSkip: (runId) => apiPost(`/api/games/hl/${runId}/skip`),
+  // Round-by-round games dealt and judged by the server (backend/src/lib/roundGames.js).
+  roundStart: (game, { seed, input } = {}) => apiPost('/api/games/rounds/start', { game, seed: seed || null, ...(input ? { input } : {}) }),
+  roundAnswer: (runId, body) => apiPost(`/api/games/rounds/${runId}/answer`, body),
+  roundSkip: (runId) => apiPost(`/api/games/rounds/${runId}/skip`),
+  roundFinish: (runId) => apiPost(`/api/games/rounds/${runId}/finish`),
 };
