@@ -1759,6 +1759,59 @@ test('custom lists: create, add, note, reorder, share, privacy, delete', async (
   assert.deepEqual((await owner.agent.get('/api/lists/mine')).json.lists, []);
 });
 
+test('light novels: catalog, reading list with volume progress, reviews, reports, classics', async () => {
+  const { setNovelSources } = await import('../src/routes/novels.js');
+  const searches = [];
+  const novel = { id: 929001, title: 'Test Novel', image: 'https://s4.anilist.co/n.jpg', volumes: 5, adaptations: [], links: [] };
+  setNovelSources({
+    search: async (args) => { searches.push(args); return { data: [novel], hasNext: false }; },
+    byId: async (id) => (id === 929001 ? novel : null),
+    gutendex: async (url) => ({
+      ok: true,
+      json: async () => ({ next: url.includes('page=1') ? 'x' : null, results: [{ id: 1342, title: 'Pride and Prejudice', authors: [{ name: 'Austen, Jane' }], formats: { 'image/jpeg': 'https://www.gutenberg.org/cover.jpg' }, download_count: 9 }] }),
+    }),
+  });
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    await anon.get('/api/novels/search?genre=Romance&status=ongoing&sort=score&q=%20slime%20');
+    await anon.get('/api/novels/search?genre=NotAGenre&sort=evil');
+    assert.deepEqual(searches.map((s) => [s.q, s.genre, s.status, s.sort]), [
+      ['slime', 'Romance', 'RELEASING', 'SCORE_DESC'], ['', '', '', 'POPULARITY_DESC'],
+    ], 'unknown filters are dropped, not passed on');
+    assert.equal((await anon.get('/api/novels/929001')).json.mine, null);
+    assert.equal((await anon.get('/api/novels/929404')).status, 404);
+    assert.equal((await anon.get('/api/novels/abc')).status, 400);
+    const classics = (await anon.get('/api/novels/classics?q=austen')).json;
+    assert.deepEqual([classics.data[0].title, classics.data[0].readUrl, classics.hasNext], ['Pride and Prejudice', 'https://www.gutenberg.org/ebooks/1342', true]);
+
+    const save = (who, body) => who.agent.post('/api/novels/list', { csrf: true, body: { novel_id: 929001, title: 'Test Novel', ...body } });
+    assert.equal((await anon.post('/api/novels/list', { csrf: true, body: { novel_id: 929001, title: 'x' } })).status, 401);
+    const reader = await registeredAgent();
+    assert.equal((await save(reader, { image: 'javascript:1' })).status, 400);
+    assert.deepEqual((await save(reader, { status: 'plan_to_read', volumes: 5 })).json.mine, { status: 'plan_to_read', volumes_read: 0, volumes: 5 });
+    assert.deepEqual((await save(reader, { volumes_read: 2 })).json.mine, { status: 'reading', volumes_read: 2, volumes: 5 }, 'progress starts reading');
+    assert.deepEqual((await save(reader, { volumes_read: 9 })).json.mine, { status: 'completed', volumes_read: 5, volumes: 5 }, 'clamped, and the last volume completes it');
+    assert.equal((await reader.agent.get('/api/novels/929001')).json.mine.status, 'completed');
+    assert.equal((await reader.agent.get('/api/novels/list')).json.list[0].novel_id, 929001);
+
+    const critic = await registeredAgent();
+    assert.equal((await critic.agent.post('/api/novels/929001/reviews', { csrf: true, body: { rating: 11 } })).status, 400);
+    await critic.agent.post('/api/novels/929001/reviews', { csrf: true, body: { rating: 8, body: 'Great isekai' } });
+    const reviews = (await anon.get('/api/novels/929001/reviews')).json;
+    assert.deepEqual([reviews.count, reviews.average, reviews.reviews[0].body], [1, 8, 'Great isekai']);
+    const report = await reader.agent.post('/api/review-reports', { csrf: true, body: { kind: 'novel', reviewId: Number(reviews.reviews[0].id) } });
+    assert.equal(report.status, 201, 'novel reviews can be reported');
+
+    const exported = (await reader.agent.get('/api/auth/export')).json;
+    assert.equal(exported.novel_favorites.length, 1);
+    assert.equal((await reader.agent.delete('/api/novels/list/929001', { csrf: true })).status, 204);
+    assert.deepEqual((await reader.agent.get('/api/novels/list')).json.list, []);
+  } finally {
+    setNovelSources(null);
+  }
+});
+
 test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');
   const { notifyNewEpisodes } = await import('../src/lib/notifications.js');

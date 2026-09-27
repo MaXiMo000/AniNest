@@ -645,14 +645,78 @@ export async function anilistSourceMaterial(malId) {
   const data = await gqlOrNull(`
     query($idMal: Int) {
       Media(idMal: $idMal, type: ANIME) {
-        relations { edges { relationType(version: 2) node { type format title { romaji english } siteUrl } } }
+        relations { edges { relationType(version: 2) node { id type format title { romaji english } siteUrl } } }
       }
     }
   `, { idMal: malId });
   const edge = (data?.Media?.relations?.edges || []).find((e) => e.relationType === 'SOURCE' && e.node?.type === 'MANGA');
   if (!edge) return null;
   const n = edge.node;
-  return { title: n.title?.english || n.title?.romaji || 'Untitled', format: SOURCE_FORMAT[n.format] || 'Manga', url: n.siteUrl || null };
+  return { title: n.title?.english || n.title?.romaji || 'Untitled', format: SOURCE_FORMAT[n.format] || 'Manga', url: n.siteUrl || null, novelId: n.format === 'NOVEL' ? n.id : null };
+}
+
+// ---- Light novels (routes/novels.js). AniList files them as MANGA with
+// format NOVEL, keyed by AniList's own id (many have no MAL id). ----
+
+const NOVEL_STATUS = { RELEASING: 'Ongoing', FINISHED: 'Completed', HIATUS: 'Hiatus', CANCELLED: 'Cancelled', NOT_YET_RELEASED: 'Upcoming' };
+const NOVEL_CARD_FIELDS = 'id title { romaji english native } coverImage { extraLarge large } averageScore status startDate { year } volumes';
+
+function normalizeNovelCard(m) {
+  return {
+    id: m.id,
+    title: m.title?.english || m.title?.romaji || 'Untitled',
+    title_native: m.title?.native || null,
+    image: m.coverImage?.extraLarge || m.coverImage?.large || null,
+    score: m.averageScore != null ? m.averageScore / 10 : null,
+    status: NOVEL_STATUS[m.status] || null,
+    year: m.startDate?.year || null,
+    volumes: m.volumes ?? null,
+  };
+}
+
+export async function anilistNovelSearch({ q, genre, status, sort, page = 1 }) {
+  const data = await gql(`
+    query($page: Int, $search: String, $genre: String, $status: MediaStatus, $sort: [MediaSort]) {
+      Page(page: $page, perPage: 20) {
+        pageInfo { hasNextPage }
+        media(type: MANGA, format: NOVEL, isAdult: false, search: $search, genre: $genre, status: $status, sort: $sort) { ${NOVEL_CARD_FIELDS} }
+      }
+    }
+  `, { page, search: q || undefined, genre: genre || undefined, status: status || undefined, sort: [q ? 'SEARCH_MATCH' : sort] });
+  return { data: data.Page.media.map(normalizeNovelCard), hasNext: data.Page.pageInfo.hasNextPage };
+}
+
+// One novel with its anime adaptations and official links, or null when
+// AniList has no such novel (or it's adult-rated, which the site never shows).
+export async function anilistNovelById(id) {
+  const data = await gqlOrNull(`
+    query($id: Int) {
+      Media(id: $id, type: MANGA) {
+        ${NOVEL_CARD_FIELDS} format isAdult chapters genres siteUrl description(asHtml: false)
+        staff(perPage: 4, sort: RELEVANCE) { edges { role node { name { full } } } }
+        relations { edges { relationType(version: 2) node { id idMal type format title { romaji english } coverImage { large } } } }
+        externalLinks { site url type language }
+      }
+    }
+  `, { id });
+  const m = data?.Media;
+  if (!m || m.isAdult || m.format !== 'NOVEL') return null;
+  return {
+    ...normalizeNovelCard(m),
+    chapters: m.chapters ?? null,
+    genres: m.genres || [],
+    synopsis: stripHtml(m.description) || null,
+    authors: (m.staff?.edges || []).filter((e) => /story|original|author/i.test(e.role || '')).map((e) => e.node?.name?.full).filter(Boolean),
+    anilistUrl: m.siteUrl || null,
+    adaptations: (m.relations?.edges || [])
+      .filter((e) => e.relationType === 'ADAPTATION' && e.node?.type === 'ANIME' && e.node.idMal)
+      .map((e) => ({ mal_id: e.node.idMal, title: e.node.title?.english || e.node.title?.romaji || 'Untitled', image: e.node.coverImage?.large || null })),
+    // Official pages only (publishers, stores, the author's own web novel);
+    // AniList's SOCIAL links (Twitter etc.) aren't places to read.
+    links: (m.externalLinks || [])
+      .filter((l) => l.type !== 'SOCIAL' && /^https?:\/\//.test(l.url || ''))
+      .map((l) => ({ site: l.site, url: l.url, language: l.language || null })),
+  };
 }
 
 // Well-rated, well-known anime, optionally for one genre: the candidate pool

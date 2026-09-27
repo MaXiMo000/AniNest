@@ -24,11 +24,12 @@ export async function loadXpInputs(userId = null) {
       args,
     }),
     db.execute({
-      sql: `SELECT user_id, COUNT(*) AS n, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS done FROM manga_favorites${only} GROUP BY user_id`,
+      sql: `SELECT user_id, COUNT(*) AS n, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS done FROM (SELECT user_id, status FROM manga_favorites UNION ALL SELECT user_id, status FROM novel_favorites)${only} GROUP BY user_id`,
       args,
     }),
-    // Anime and manga reviews both count as "reviews written".
-    db.execute({ sql: `SELECT user_id, COUNT(*) AS n FROM (SELECT user_id FROM reviews UNION ALL SELECT user_id FROM manga_reviews)${only} GROUP BY user_id`, args }),
+    // Anime, manga and novel reviews all count as "reviews written"; novels
+    // count with manga above.
+    db.execute({ sql: `SELECT user_id, COUNT(*) AS n FROM (SELECT user_id FROM reviews UNION ALL SELECT user_id FROM manga_reviews UNION ALL SELECT user_id FROM novel_reviews)${only} GROUP BY user_id`, args }),
     db.execute({ sql: `SELECT user_id, game, best_streak FROM game_scores${only}`, args }),
     // The anime and manga dailies both count as "daily challenges".
     db.execute({

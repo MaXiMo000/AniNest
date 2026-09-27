@@ -37,6 +37,7 @@ import { tournamentsRouter } from './routes/tournaments.js';
 import { predictionsRouter } from './routes/predictions.js';
 import { continuationsRouter } from './routes/continuations.js';
 import { listsRouter } from './routes/lists.js';
+import { novelsRouter } from './routes/novels.js';
 import { wrappedRouter } from './routes/wrapped.js';
 import { exportRouter } from './routes/export.js';
 import { reviewReportsRouter, adminReviewReportsRouter } from './routes/reviewReports.js';
@@ -166,6 +167,7 @@ export function createApp() {
   app.use('/api/predictions', predictionsRouter);
   app.use('/api/continuations', continuationsRouter);
   app.use('/api/lists', listsRouter);
+  app.use('/api/novels', novelsRouter);
   app.use('/api/wrapped', wrappedRouter);
   app.use('/api/export', exportRouter);
   app.use('/api/anime-watch-sources', animeWatchSourcesRouter);

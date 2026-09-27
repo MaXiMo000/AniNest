@@ -86,12 +86,17 @@ async function dispatch() {
   notFoundHandler();
 }
 
+// Detail pages light up their section's link too (an anime page -> Anime).
+const SECTION_OF = [['/anime/', '/browse'], ['/manga/', '/manga'], ['/novel/', '/novels'], ['/games/', '/games']];
+
 function highlightNav(path, params) {
   const full = params.toString() ? `${path}?${params.toString()}` : path;
+  const section = SECTION_OF.find(([prefix]) => path.startsWith(prefix))?.[1];
   document.querySelectorAll('.main-nav a[data-route]').forEach((a) => {
     const target = a.getAttribute('data-route');
     const isHome = target === '/' && path === '/';
-    a.classList.toggle('active', isHome || target === full || (target === '/browse' && path === '/browse' && !params.toString()));
+    a.classList.toggle('active', isHome || target === full || target === section
+      || (['/browse', '/manga', '/novels'].includes(target) && path === target));
   });
 }
 

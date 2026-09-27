@@ -50,6 +50,11 @@ const load_tournament = () => import('./pages/tournament.js');
 const renderTournament = page(load_tournament, 'renderTournament');
 const renderPredictions = page(() => import('./pages/predictions.js'), 'renderPredictions');
 const load_lists = () => import('./pages/lists.js');
+const load_novels = () => import('./pages/novels.js');
+const renderNovelBrowse = page(load_novels, 'renderNovelBrowse');
+const renderNovelFree = page(load_novels, 'renderNovelFree');
+const renderNovelDetail = page(load_novels, 'renderNovelDetail');
+const renderNovelList = page(load_novels, 'renderNovelList');
 const renderMyLists = page(load_lists, 'renderMyLists');
 const renderList = page(load_lists, 'renderList');
 const load_wrapped = () => import('./pages/wrapped.js');
@@ -115,12 +120,17 @@ wireThemeToggle(document.getElementById('theme-toggle'));
 
 const app = document.getElementById('app');
 const authArea = document.getElementById('auth-area');
+const headerBell = document.getElementById('header-bell');
 
 function renderAuthArea() {
   const { user } = Auth.get();
   authArea.innerHTML = user
-    ? `<a href="#/notifications" class="nav-bell" aria-label="Notifications" title="Notifications">🔔<span id="notif-count" class="fav-count" hidden>0</span></a><a href="#/account" class="user-chip"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span><span class="user-name">${escapeHtml(user.username)}</span></a>`
+    ? `<a href="#/account" class="user-chip" data-route="/account"><span class="user-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</span><span class="user-name">${escapeHtml(user.username)}</span><span class="user-sub">View account</span></a>`
     : `<span class="auth-links"><a href="#/login">Log In</a><a href="#/register" class="btn-pow btn-pow--sm">Sign Up</a></span>`;
+  // Outside the nav, so it stays in the top bar on phones too.
+  headerBell.innerHTML = user
+    ? '<a href="#/notifications" class="nav-bell" aria-label="Notifications" title="Notifications">🔔<span id="notif-count" class="fav-count" hidden>0</span></a>'
+    : '';
   // Drives the [data-admin-only] nav link's visibility (see index.html /
   // style.css) - CSS-gated rather than conditionally rendered HTML, so it's
   // one class toggle here instead of duplicating the auth-render logic.
@@ -164,6 +174,10 @@ route('/together', ({ root }) => renderTogether(root));
 route('/together/:code', ({ path, root }) => renderRoom(root, path.code));
 route('/tournament', ({ params, root }) => renderTournament(root, params));
 route('/predictions', ({ params, root }) => renderPredictions(root, params));
+route('/novels', ({ params, root }) => renderNovelBrowse(root, params));
+route('/novels/free', ({ params, root }) => renderNovelFree(root, params));
+route('/novel/:id', ({ path, root }) => renderNovelDetail(root, path.id));
+route('/novel-list', ({ root }) => renderNovelList(root));
 route('/lists', ({ root }) => renderMyLists(root));
 route('/list/:id', ({ path, root }) => renderList(root, path.id));
 route('/wrapped', ({ params, root }) => renderWrapped(root, params));
@@ -241,10 +255,33 @@ searchForm.addEventListener('submit', (e) => {
   navigate(q ? `#/browse?q=${encodeURIComponent(q)}` : '#/browse');
 });
 
-// Mobile nav toggle
-document.getElementById('nav-toggle').addEventListener('click', () => {
-  document.body.classList.toggle('nav-open');
+// Tablet/phone menu: the nav slides in as a drawer over a scrim. Escape, the
+// scrim, the close button and any navigation close it (router.js clears
+// nav-open on every route change), and focus returns to the menu button.
+const navToggle = document.getElementById('nav-toggle');
+function setNavOpen(open) {
+  document.body.classList.toggle('nav-open', open);
+  navToggle.setAttribute('aria-expanded', String(open));
+  navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  if (open) document.getElementById('nav-close').focus();
+}
+navToggle.addEventListener('click', () => setNavOpen(!document.body.classList.contains('nav-open')));
+document.getElementById('nav-close').addEventListener('click', () => { setNavOpen(false); navToggle.focus(); });
+document.getElementById('nav-scrim').addEventListener('click', () => setNavOpen(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('nav-open')) { setNavOpen(false); navToggle.focus(); }
 });
+window.addEventListener('hashchange', () => navToggle.setAttribute('aria-expanded', 'false'));
+
+// Phones keep the header to one row: the search box opens from a button.
+const searchToggle = document.getElementById('search-toggle');
+function setSearchOpen(open) {
+  document.body.classList.toggle('search-open', open);
+  searchToggle.setAttribute('aria-expanded', String(open));
+  if (open) document.getElementById('search-input').focus();
+}
+searchToggle.addEventListener('click', () => setSearchOpen(!document.body.classList.contains('search-open')));
+window.addEventListener('hashchange', () => setSearchOpen(false));
 
 // Header "More"/"Library" dropdowns - click-toggled (not hover-only) so it
 // works the same on touch and mouse. Opening one closes any other that's
@@ -257,6 +294,7 @@ document.querySelectorAll('.nav-dropdown-toggle').forEach((toggle) => {
     const wasOpen = dropdown.classList.contains('is-open');
     document.querySelectorAll('.nav-dropdown.is-open').forEach((d) => d.classList.remove('is-open'));
     dropdown.classList.toggle('is-open', !wasOpen);
+    document.querySelectorAll('.nav-dropdown-toggle').forEach((t) => t.setAttribute('aria-expanded', String(t.closest('.nav-dropdown').classList.contains('is-open'))));
   });
 });
 document.addEventListener('click', () => {

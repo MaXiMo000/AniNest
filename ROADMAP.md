@@ -38,8 +38,32 @@ that differ from that proposal, and the **checklist** for each phase.
 | 9 | AniNest Wrapped (PNG share card) | Needs `episode_log`; ship before December | 3-4 days |
 | 11 | Anime-to-manga continuation guide | Community-submitted | ~1 week |
 | 12 | Season prediction league | Most moving parts; best started at a season boundary | 1-1.5 weeks |
+| 13 | Light novels: browse, detail, reading list, reviews, free legal reading links; header redesign | Asked for 2026-09-28 | ~1 week |
 
 ---
+
+## Next up (planned 2026-09-28, in this order)
+
+**Done:** Phase 13, light novels and the header redesign (see below). Next is the security list.
+
+**Then, security**
+- [ ] Email verification on sign-up; an email when the password changes or a new device logs in
+- [ ] Optional two-factor login (authenticator app), admins first
+- [ ] Server-picked game rounds, so scores are authoritative (see HANDOFF "Known limitations")
+- [ ] A separate Turso dev database instead of production keys in `backend/.env`; rotate the production token
+- [ ] Update vitest (2 moderate advisories, dev-only)
+
+**Then, UI**
+- [ ] Mobile and accessibility pass over every page: keyboard access, focus states, contrast, tap targets
+- [ ] Inline `style="..."` into CSS classes (Account page first: 24 of them)
+- [ ] Layout-shaped loading placeholders and consistent empty states
+
+**Then, features**
+- [ ] Custom lists: drag-and-drop reorder, follow other people's lists
+- [ ] Prediction league: reminders before picks lock and when results are final
+- [ ] Weekly digest on a fixed day (e.g. Sunday)
+- [ ] Warm-up job that pre-fills `api_cache` for popular titles
+- [ ] Visual novels via VNDB (free, keyless), after light novels settle
 
 ## Phase 0: Episode progress
 
@@ -160,6 +184,23 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
 - [x] PNG share card (1080x1350) drawn in a canvas: download, or the system share sheet where supported. Text only,
       since other hosts' cover images would block the export
 - [x] A December nudge: a home banner for signed-in people through December and Jan 1-14, hideable per year
+
+## Phase 13: Light novels and the new header
+
+- [x] Catalog from AniList (type MANGA, format NOVEL, AniList ids): `#/novels` search with genre, status and sort;
+      `#/novel/:id` with synopsis, authors, anime adaptations and AniList's official links (publishers, stores, the
+      author's own web novel). Adult titles 404, and that answer is never cached
+- [x] `novel_favorites` (reading list with volume progress: progress starts Reading, the last volume completes it) and
+      `novel_reviews` (like manga reviews, reportable, hidden reviews and private profiles respected); both in the data
+      export, deleted with the account, and counted in XP with manga
+- [x] Reading is link-out only: official pages, J-Novel Club and BOOK☆WALKER search, and for the Japanese original the
+      author-run Syosetu and Kakuyomu. `#/novels/free` lists legal free sites and searches public-domain classics
+      (Project Gutenberg through Gutendex). No fan-translation sites
+- [x] The anime page's continuation guide links to the novel page when the source is a light novel; `/api/share/novel/:id`
+      link previews
+- [x] Header: pill links on laptops (1024px+, avatar-only account chip under 1280px); under 1024px a slide-in drawer
+      with the account card, section tiles and grouped lists (scrim, Escape, focus returns to the menu button);
+      under 640px a one-row bar with the search behind a button
 
 ## Phase 11: Anime-to-manga continuation guide
 

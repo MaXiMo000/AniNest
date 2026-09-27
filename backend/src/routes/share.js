@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 import * as animeSource from '../lib/animeSource.js';
 import { logger } from '../lib/logger.js';
+import { anilistNovelById } from '../lib/anilist.js';
 
 // Link-preview pages. The SPA uses hash routes (#/anime/123), and link
 // crawlers (WhatsApp, Discord, X...) never see anything after the #, so a
@@ -105,4 +106,19 @@ shareRouter.get('/list/:id', async (req, res) => {
     image: l.image || null,
     hash,
   }));
+});
+
+shareRouter.get('/novel/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Not found.' });
+  const hash = `#/novel/${id}`;
+  try {
+    const n = await anilistNovelById(id);
+    if (!n) return send(res, page({ title: 'AniNest', description: 'Your anime & manga home base.', hash }));
+    const score = n.score ? `★ ${n.score.toFixed(1)} · ` : '';
+    send(res, page({ title: `${n.title} (light novel) — AniNest`, description: `${score}${clip(n.synopsis, 180)}`, image: n.image, hash }));
+  } catch (err) {
+    logger.warn({ err, id }, 'share preview: novel lookup failed');
+    send(res, page({ title: 'AniNest', description: 'Your anime & manga home base.', hash }));
+  }
 });

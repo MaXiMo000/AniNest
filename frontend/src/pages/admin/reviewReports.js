@@ -5,10 +5,11 @@ import { Auth } from '../../lib/authStore.js';
 // Admin queue of reported reviews: hide one (it leaves every public list)
 // or dismiss its reports. See backend/src/routes/reviewReports.js.
 function itemHTML(r) {
-  const link = r.kind === 'anime' ? `#/anime/${encodeURIComponent(r.title_id)}` : `#/manga/${encodeURIComponent(r.title_id)}`;
+  const KIND = { anime: ['anime', 'Anime'], manga: ['manga', 'Manga'], novel: ['novel', 'Light novel'] }[r.kind] || ['manga', 'Manga'];
+  const link = `#/${KIND[0]}/${encodeURIComponent(r.title_id)}`;
   return `
     <div class="watch-box" data-kind="${escapeHtml(r.kind)}" data-id="${Number(r.reviewId)}">
-      <h3>🚩 ${Number(r.reports)} report${r.reports === 1 ? '' : 's'} · <a href="${link}">${r.kind === 'anime' ? 'Anime' : 'Manga'} review</a> by
+      <h3>🚩 ${Number(r.reports)} report${r.reports === 1 ? '' : 's'} · <a href="${link}">${KIND[1]} review</a> by
         <a href="#/u/${encodeURIComponent(r.username)}">${escapeHtml(r.username)}</a> (${Number(r.rating)}/10)</h3>
       <p class="review-body">${escapeHtml(r.body || '(no text, rating only)')}</p>
       ${r.reasons ? `<p class="section-sub">Reasons: ${escapeHtml(r.reasons)}</p>` : ''}

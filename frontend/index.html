@@ -30,7 +30,7 @@
        done via a real header in render.yaml for the deployed site instead).
        localhost:8787 is the dev backend; in production the API is same-origin
        (render.yaml proxies /api/*), so 'self' covers it. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com http://localhost:8787; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787; base-uri 'self'; form-action 'self'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com https://www.gutenberg.org http://localhost:8787; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787; base-uri 'self'; form-action 'self'; object-src 'none'" />
   <link rel="preconnect" href="https://s4.anilist.co">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,29 +43,57 @@
 
   <header class="site-header">
     <div class="header-inner">
-      <a href="#/" class="brand">
+      <a href="#/" class="brand" aria-label="AniNest home">
         <span class="brand-bolt">🪺</span><span class="brand-text">ANI<span class="brand-accent">NEST</span></span>
       </a>
 
       <form id="search-form" class="search-form" role="search">
-        <input id="search-input" type="text" aria-label="Search anime" placeholder="Search anime... (e.g. Naruto, Frieren)" autocomplete="off" />
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input id="search-input" type="search" aria-label="Search anime" placeholder="Search anime… (e.g. Frieren)" autocomplete="off" enterkeyhint="search" />
         <button type="submit" class="btn-pow btn-pow--sm">GO!</button>
       </form>
 
-      <nav class="main-nav">
-        <a href="#/" data-route="/">Home</a>
-        <a href="#/browse" data-route="/browse">Browse</a>
-        <a href="#/manga" data-route="/manga">📖 Manga</a>
-        <a href="#/games" data-route="/games">🎮 Games</a>
+      <!-- One nav for every screen: a row of links on laptops, a slide-in
+           drawer on tablets and phones (style.css "Header"). -->
+      <nav class="main-nav" id="main-nav" aria-label="Main">
+        <div class="drawer-head">
+          <span class="drawer-title">Menu</span>
+          <button type="button" class="drawer-close" id="nav-close" aria-label="Close menu">✕</button>
+        </div>
+
+        <span id="auth-area" class="auth-area"></span>
+
+        <div class="nav-primary">
+          <a href="#/" data-route="/"><span class="nav-ico" aria-hidden="true">🏠</span><span>Home</span></a>
+          <a href="#/browse" data-route="/browse"><span class="nav-ico" aria-hidden="true">📺</span><span>Anime</span></a>
+          <a href="#/manga" data-route="/manga"><span class="nav-ico" aria-hidden="true">📖</span><span>Manga</span></a>
+          <a href="#/novels" data-route="/novels"><span class="nav-ico" aria-hidden="true">📚</span><span>Novels</span></a>
+          <a href="#/games" data-route="/games"><span class="nav-ico" aria-hidden="true">🎮</span><span>Games</span></a>
+        </div>
 
         <div class="nav-dropdown">
-          <button type="button" class="nav-dropdown-toggle">More <span class="nav-caret">▾</span></button>
+          <button type="button" class="nav-dropdown-toggle" aria-expanded="false">📚 Library <span class="nav-caret">▾</span></button>
+          <span class="nav-group-label">Your library</span>
+          <div class="nav-dropdown-menu">
+            <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Anime Favorites <span id="fav-count" class="fav-count">0</span></a>
+            <a href="#/manga-favorites" data-route="/manga-favorites" class="nav-fav">📖 Manga List <span id="manga-fav-count" class="fav-count">0</span></a>
+            <a href="#/novel-list" data-route="/novel-list">📌 My Novels</a>
+            <a href="#/lists" data-route="/lists">📋 My Lists</a>
+            <a href="#/wrapped" data-route="/wrapped">🎁 Your Wrapped</a>
+            <a href="#/feed" data-route="/feed">👥 Friends’ Activity</a>
+          </div>
+        </div>
+
+        <div class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle" aria-expanded="false">More <span class="nav-caret">▾</span></button>
+          <span class="nav-group-label">Discover &amp; play</span>
           <div class="nav-dropdown-menu">
             <a href="#/vibe" data-route="/vibe">✨ Vibe Search</a>
+            <a href="#/novels/free" data-route="/novels/free">🆓 Read Novels Free</a>
+            <a href="#/free" data-route="/free">📺 Free in My Country</a>
             <a href="#/together" data-route="/together">🍿 Watch Together</a>
             <a href="#/tournament" data-route="/tournament">🏆 OP/ED Tournament</a>
             <a href="#/predictions" data-route="/predictions">🔮 Season Predictions</a>
-            <a href="#/free" data-route="/free">📺 Free in My Country</a>
             <a href="#/schedule" data-route="/schedule">📅 Schedule</a>
             <a href="#/compare" data-route="/compare">⚖️ Compare</a>
             <a href="#/leaderboard/xp" data-route="/leaderboard/xp">⭐ XP Leaderboard</a>
@@ -73,24 +101,18 @@
             <a href="#/admin/reviews" data-route="/admin/reviews" data-admin-only>🚩 Reported Reviews</a>
           </div>
         </div>
-
-        <div class="nav-dropdown">
-          <button type="button" class="nav-dropdown-toggle">📚 Library <span class="nav-caret">▾</span></button>
-          <div class="nav-dropdown-menu">
-            <a href="#/favorites" data-route="/favorites" class="nav-fav">💖 Anime Favorites <span id="fav-count" class="fav-count">0</span></a>
-            <a href="#/manga-favorites" data-route="/manga-favorites" class="nav-fav">📖 Manga List <span id="manga-fav-count" class="fav-count">0</span></a>
-            <a href="#/lists" data-route="/lists">📋 My Lists</a>
-            <a href="#/wrapped" data-route="/wrapped">🎁 Your Wrapped</a>
-            <a href="#/feed" data-route="/feed">👥 Friends’ Activity</a>
-          </div>
-        </div>
-
-        <span id="auth-area" class="auth-area"></span>
       </nav>
 
-      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light theme">☀️</button>
-      <button id="nav-toggle" class="nav-toggle" aria-label="Toggle menu">☰</button>
+      <div class="header-tools">
+        <button id="search-toggle" class="icon-btn search-toggle" type="button" aria-label="Search" aria-controls="search-form" aria-expanded="false">🔍</button>
+        <span id="header-bell"></span>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light theme">☀️</button>
+        <button id="nav-toggle" class="nav-toggle" type="button" aria-label="Open menu" aria-controls="main-nav" aria-expanded="false">
+          <span class="nav-toggle-bars" aria-hidden="true"><span></span><span></span><span></span></span>
+        </button>
+      </div>
     </div>
+    <div class="nav-scrim" id="nav-scrim" aria-hidden="true"></div>
   </header>
 
   <main id="app"></main>

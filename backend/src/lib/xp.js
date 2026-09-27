@@ -83,7 +83,7 @@ export function computeXp(i) {
 
   const rows = [
     { id: 'favorites', emoji: '💖', label: 'Anime favorites', count: n(i.favoritesCount), xp: capped(i.favoritesCount, XP_RULES.favoriteCap) * XP_RULES.favorite },
-    { id: 'manga-favorites', emoji: '📖', label: 'Manga saved', count: n(i.mangaFavoritesCount), xp: capped(i.mangaFavoritesCount, XP_RULES.favoriteCap) * XP_RULES.favorite },
+    { id: 'manga-favorites', emoji: '📖', label: 'Manga & novels saved', count: n(i.mangaFavoritesCount), xp: capped(i.mangaFavoritesCount, XP_RULES.favoriteCap) * XP_RULES.favorite },
     { id: 'reviews', emoji: '💬', label: 'Reviews written', count: n(i.reviewsCount), xp: n(i.reviewsCount) * XP_RULES.review },
     {
       id: 'completed', emoji: '✅', label: 'Completed',

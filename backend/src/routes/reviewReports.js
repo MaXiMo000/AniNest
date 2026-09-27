@@ -4,7 +4,7 @@ import { db } from '../lib/db.js';
 import { requireAuth, requireAdmin } from '../middleware/session.js';
 
 // Reporting a review (any signed-in user) and the admin queue that acts on
-// reports. `kind` picks the table: anime reviews or manga reviews.
+// reports. `kind` picks the table: anime, manga or light novel reviews.
 export const reviewReportsRouter = Router();
 export const adminReviewReportsRouter = Router();
 adminReviewReportsRouter.use(requireAdmin);
@@ -13,10 +13,11 @@ function asyncRoute(fn) {
   return (req, res, next) => fn(req, res, next).catch(next);
 }
 
-const TABLES = { anime: 'reviews', manga: 'manga_reviews' };
+const TABLES = { anime: 'reviews', manga: 'manga_reviews', novel: 'novel_reviews' };
+const TITLE_COL = { anime: 'r.mal_id', manga: 'r.manga_id', novel: 'r.novel_id' };
 
 const reportSchema = z.object({
-  kind: z.enum(['anime', 'manga']),
+  kind: z.enum(['anime', 'manga', 'novel']),
   reviewId: z.number().int().positive(),
   reason: z.string().trim().max(300).optional(),
 });
@@ -41,7 +42,7 @@ reviewReportsRouter.post('/', requireAuth, asyncRoute(async (req, res) => {
 adminReviewReportsRouter.get('/', asyncRoute(async (_req, res) => {
   const rows = [];
   for (const [kind, table] of Object.entries(TABLES)) {
-    const titleCol = kind === 'anime' ? 'r.mal_id' : 'r.manga_id';
+    const titleCol = TITLE_COL[kind];
     // eslint-disable-next-line no-await-in-loop
     const result = await db.execute({
       sql: `SELECT rr.review_id, COUNT(*) AS reports, GROUP_CONCAT(rr.reason, ' | ') AS reasons,

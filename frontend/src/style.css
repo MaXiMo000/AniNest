@@ -119,169 +119,8 @@ button { font-family: var(--font-body); cursor: pointer; }
 }
 
 /* ===================== Header ===================== */
-.site-header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: var(--header-bg);
-  backdrop-filter: blur(10px);
-  border-bottom: var(--border-w) solid var(--ink);
-  box-shadow: 0 4px 0 rgba(0,0,0,0.35);
-}
-.header-inner {
-  max-width: 1300px;
-  margin: 0 auto;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 1.6rem;
-  white-space: nowrap;
-  transform: rotate(-2deg);
-}
-.brand-bolt { color: var(--text-yellow); filter: drop-shadow(0 0 6px rgba(255,210,63,0.7)); font-size: 1.5rem; }
-.brand-text {
-  color: var(--text);
-  -webkit-text-stroke: 1.5px var(--ink);
-}
-.brand-accent { color: var(--pink); -webkit-text-stroke: 1.5px var(--ink); }
-/* Fixed line heights keep the header the same height before and after the
-   comic web font arrives (with `normal` it grew a few px and shoved the page down). */
-.brand, .site-header .btn-pow { line-height: 1.2; }
+/* See the "Header, laptop and mobile" section at the end of this file. */
 
-.search-form {
-  flex: 1;
-  display: flex;
-  gap: 8px;
-  max-width: 420px;
-}
-.search-form input {
-  flex: 1;
-  min-width: 0;
-  padding: 10px 14px;
-  border: var(--border-w) solid var(--ink);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--text);
-  font-family: var(--font-body);
-  font-weight: 600;
-  font-size: 0.95rem;
-  outline: none;
-}
-.search-form input::placeholder { color: var(--muted); }
-.search-form input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,217,255,0.25); }
-
-.main-nav {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  font-weight: 700;
-  font-size: 0.95rem;
-}
-.main-nav a {
-  position: relative;
-  padding: 4px 2px;
-  color: var(--text);
-  white-space: nowrap;
-  transition: color 0.15s;
-}
-.main-nav a:hover { color: var(--text-yellow); }
-.main-nav a.active { color: var(--text-pink2); }
-/* The Sign Up button keeps its dark ink text; plain nav links are light and turn yellow on hover. */
-.main-nav a.btn-pow, .main-nav a.btn-pow:hover { color: var(--ink); }
-.main-nav a.active::after {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; bottom: -4px;
-  height: 3px;
-  background: var(--pink2);
-  border-radius: 2px;
-}
-.nav-fav { display: flex; align-items: center; gap: 6px; }
-.fav-count {
-  background: var(--pink-deep);
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  padding: 0 7px;
-  font-size: 0.75rem;
-  font-family: var(--font-display);
-}
-.nav-toggle {
-  display: none;
-  background: var(--panel);
-  border: var(--border-w) solid var(--ink);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 1.3rem;
-  padding: 4px 10px;
-}
-
-.theme-toggle {
-  flex-shrink: 0;
-  background: var(--panel);
-  border: 2.5px solid var(--ink);
-  border-radius: 999px;
-  width: 38px;
-  height: 38px;
-  font-size: 1.05rem;
-  box-shadow: 2px 2px 0 var(--ink);
-  transition: transform 0.2s ease;
-}
-.theme-toggle:hover { transform: rotate(-20deg) scale(1.08); }
-
-/* Groups secondary nav links ("More", "Library") behind a click-to-open
-   panel so the header doesn't have to fit every route as its own top-level
-   link - the wide-viewport equivalent of the mobile hamburger menu. Click-
-   toggled (not hover-only) so it works the same on touch and mouse. */
-.nav-dropdown { position: relative; }
-.nav-dropdown-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  background: none;
-  border: none;
-  padding: 4px 2px;
-  color: var(--text);
-  font-family: var(--font-body);
-  font-weight: 700;
-  font-size: 0.95rem;
-  cursor: pointer;
-}
-.nav-dropdown-toggle:hover { color: var(--text-yellow); }
-.nav-caret { font-size: 0.75em; transition: transform 0.15s; }
-.nav-dropdown.is-open .nav-caret { transform: rotate(180deg); }
-/* Highlights the toggle itself when the current route is one of its
-   children (e.g. viewing #/schedule highlights "More"), so a collapsed
-   group doesn't hide where you actually are. */
-.nav-dropdown:has(.nav-dropdown-menu a.active) .nav-dropdown-toggle { color: var(--text-pink2); }
-
-.nav-dropdown-menu {
-  display: none;
-  position: absolute;
-  top: calc(100% + 12px);
-  right: 0;
-  min-width: 200px;
-  background: var(--panel);
-  border: var(--border-w) solid var(--ink);
-  border-radius: var(--radius);
-  box-shadow: 6px 6px 0 var(--ink);
-  padding: 10px;
-  flex-direction: column;
-  gap: 4px;
-  z-index: 55;
-}
-.nav-dropdown.is-open .nav-dropdown-menu { display: flex; }
-.nav-dropdown-menu a {
-  padding: 8px 10px;
-  border-radius: 8px;
-}
-.nav-dropdown-menu a:hover { background: var(--hairline); }
 /* Hidden for everyone except an is_admin account - main.js toggles
    body.is-admin from the same place it already renders the auth area, so
    this is a plain CSS gate rather than conditionally-built nav markup. Not
@@ -1048,51 +887,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 
 /* ===================== Auth: header area, forms, account ===================== */
-.auth-area { display: flex; align-items: center; gap: 12px; }
-.auth-links { display: flex; gap: 12px; align-items: center; font-weight: 800; }
-/* Qualified with .main-nav (not just .user-chip) so this reliably beats
-   .main-nav a's own padding rule above - a bare .user-chip class selector
-   loses that specificity fight (class+tag beats a single class), which
-   silently collapsed this pill's right-side padding down to .main-nav a's
-   2px instead of the 14px meant for it, hugging "mxximo"/the username
-   right up against the border. */
-.main-nav .user-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  /* --ink is near-black, which is the right "comic outline" color on light
-     panels but disappears against the header's own dark background — use a
-     bright accent border here instead so the chip actually reads as one.
-     Kept thin with no offset shadow (unlike the app's bold button/card
-     style elsewhere) since this sits inline among plain-text nav links —
-     a heavy bordered pill here reads as louder than everything around it. */
-  border: 1.5px solid var(--purple);
-  border-radius: 999px;
-  padding: 4px 14px 4px 4px;
-  font-weight: 800;
-  font-size: 0.92rem;
-  white-space: nowrap;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-/* Long usernames are cut off with an ellipsis so they can't widen the header. */
-.user-chip .user-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.user-chip:hover {
-  background: rgba(123, 47, 247, 0.18);
-  border-color: var(--pink2);
-}
-.user-avatar {
-  width: 32px; height: 32px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--pink), var(--purple));
-  border: 2px solid var(--ink);
-  display: flex; align-items: center; justify-content: center;
-  font-family: var(--font-display);
-  color: #fff;
-  font-size: 1rem;
-}
-
 .auth-page {
   max-width: 440px;
   margin: 30px auto;
@@ -1807,59 +1601,9 @@ a.game-card:hover .game-card-art span { transform: scale(1.18) rotate(-8deg); }
 }
 
 /* ===================== Responsive ===================== */
-/* Between the hamburger menu and a wide desktop the full nav only fits with
-   a narrower search box and tighter gaps - without this the header was wider
-   than a 1024px screen and the whole page scrolled sideways. */
-@media (max-width: 1240px) {
-  .header-inner { gap: 12px; }
-  .search-form { max-width: 240px; }
-  .main-nav { gap: 12px; }
-}
-/* A long username plus the signed-in bell also pushed the theme toggle off
-   the right edge here; the avatar alone still links to the account page. */
-@media (max-width: 1360px) and (min-width: 1101px) {
-  .user-chip .user-name { display: none; }
-  .main-nav .user-chip { padding: 4px; }
-}
 @media (max-width: 1100px) {
-  .main-nav { display: none; }
-  .nav-toggle { display: inline-flex; }
-  .theme-toggle { margin-left: auto; }
-  .header-inner { flex-wrap: wrap; }
-  .search-form { order: 3; max-width: 100%; flex-basis: 100%; }
   .tier-label { flex-basis: 60px; font-size: 1.4rem; }
   .tier-card { width: 52px; height: 74px; }
-  body.nav-open .main-nav {
-    display: flex;
-    /* Anchored to the sticky header, so it opens right under it (search row included). */
-    position: absolute;
-    top: 100%; left: 0; right: 0;
-    background: var(--bg2);
-    border-bottom: var(--border-w) solid var(--ink);
-    flex-direction: column;
-    padding: 16px;
-    gap: 14px;
-    z-index: 60;
-    max-height: calc(100vh - 140px);
-    overflow-y: auto;
-  }
-  /* Inside the full-width mobile menu there's no room for a floating
-     panel, and no separate open/close affordance is worth adding - each
-     group's links just render inline, always expanded, indented under its
-     (now inert) label. */
-  body.nav-open .nav-dropdown { display: contents; }
-  body.nav-open .nav-dropdown-toggle { display: none; }
-  body.nav-open .nav-dropdown-menu {
-    display: flex;
-    position: static;
-    flex-direction: column;
-    background: none;
-    border: none;
-    box-shadow: none;
-    padding: 0 0 0 14px;
-    gap: 14px;
-    border-left: 3px solid var(--ink);
-  }
 }
 
 /* ===================== XP / level card ===================== */
@@ -1911,7 +1655,6 @@ a.game-card:hover .game-card-art span { transform: scale(1.18) rotate(-8deg); }
 .free-group[open] summary { margin-bottom: 6px; }
 
 /* Notifications: header bell + page */
-.main-nav .nav-bell { display: inline-flex; align-items: center; gap: 4px; font-size: 1.15rem; }
 .notif-list { display: flex; flex-direction: column; gap: 8px; }
 .notif-row {
   display: flex; align-items: center; gap: 12px;
@@ -2677,4 +2420,369 @@ a.wo-title:hover { color: var(--pink2); }
   .list-item { grid-template-columns: auto 48px 1fr; }
   .list-item img { width: 48px; }
   .list-item-tools { grid-column: 1 / -1; }
+}
+
+/* Light novels (pages/novels.js) */
+.read-group { margin: 16px 0 0; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); font-family: var(--font-body); }
+.free-site-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.free-site { display: flex; flex-direction: column; gap: 4px; padding: 14px; background: var(--panel); color: var(--text); text-decoration: none; border: var(--border-w) solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink); transition: transform 0.12s; }
+.free-site:hover { transform: translate(-2px, -2px); }
+.free-site strong { color: var(--text-yellow); font-size: 1.05rem; }
+.free-site span { color: var(--muted); font-weight: 600; font-size: 0.9rem; }
+
+/* ===================== Header, laptop and mobile =====================
+   One nav for every screen (index.html):
+   - 1024px and up: brand, search, a row of pill links with the Library and
+     More dropdowns, your account chip, then bell/theme.
+   - under 1024px: brand, search and the tools in the top bar; the nav turns
+     into a drawer that slides in from the right over a scrim, with big
+     section tiles, your account at the top and grouped lists.
+   - under 640px: the search box opens from a button so the bar stays one row.
+   The blur lives on ::before: backdrop-filter on the header itself would pin
+   the fixed-position drawer to the header's box instead of the screen. */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  border-bottom: var(--border-w) solid var(--ink);
+  box-shadow: 0 4px 0 rgba(0,0,0,0.35);
+}
+.site-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--header-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.header-inner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.6rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  transform: rotate(-2deg);
+  flex-shrink: 0;
+}
+.brand-bolt { color: var(--text-yellow); filter: drop-shadow(0 0 6px rgba(255,210,63,0.7)); font-size: 1.5rem; }
+.brand-text { color: var(--text); -webkit-text-stroke: 1.5px var(--ink); }
+.brand-accent { color: var(--pink); -webkit-text-stroke: 1.5px var(--ink); }
+.site-header .btn-pow { line-height: 1.2; }
+
+.search-form {
+  position: relative;
+  flex: 1 1 240px;
+  display: flex;
+  gap: 8px;
+  max-width: 380px;
+  min-width: 0;
+}
+.search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 0.9rem; opacity: 0.7; pointer-events: none; }
+.search-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px 10px 38px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  outline: none;
+}
+.search-form input::-webkit-search-cancel-button { display: none; }
+.search-form input::placeholder { color: var(--muted); }
+.search-form input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(0,217,255,0.25); }
+
+/* Laptop nav: pill links */
+.main-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.nav-primary { display: contents; }
+.main-nav a:not(.btn-pow), .nav-dropdown-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  color: var(--text);
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.main-nav a:not(.btn-pow):hover, .nav-dropdown-toggle:hover { background: var(--hairline); color: var(--text-yellow); }
+.main-nav a:focus-visible, .nav-dropdown-toggle:focus-visible, .icon-btn:focus-visible, .theme-toggle:focus-visible, .nav-toggle:focus-visible, .drawer-close:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+.main-nav .nav-primary a.active {
+  background: linear-gradient(135deg, var(--pink-deep), var(--purple));
+  border-color: var(--ink);
+  color: #fff;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.main-nav a.btn-pow, .main-nav a.btn-pow:hover { color: var(--ink); }
+.nav-ico, .drawer-head, .nav-group-label, .user-sub { display: none; }
+
+.nav-dropdown { position: relative; }
+.nav-dropdown-toggle {
+  background: none;
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.nav-caret { font-size: 0.75em; transition: transform 0.15s; }
+.nav-dropdown.is-open .nav-caret { transform: rotate(180deg); }
+.nav-dropdown.is-open .nav-dropdown-toggle { background: var(--hairline); }
+/* The toggle shows where you are when the page is one of its links. */
+.nav-dropdown:has(.nav-dropdown-menu a.active) .nav-dropdown-toggle { color: var(--text-pink2); border-color: var(--pink2); }
+.nav-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  min-width: 230px;
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: 6px 6px 0 var(--ink);
+  padding: 8px;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 55;
+}
+.nav-dropdown.is-open .nav-dropdown-menu { display: flex; animation: nav-pop 0.14s ease-out; }
+@keyframes nav-pop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.main-nav .nav-dropdown-menu a { border-radius: 10px; padding: 9px 12px; justify-content: flex-start; }
+.main-nav .nav-dropdown-menu a.active { color: var(--text-pink2); background: var(--hairline); }
+.main-nav .nav-dropdown-menu a.nav-fav { justify-content: space-between; }
+.fav-count {
+  background: var(--pink-deep);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 0.75rem;
+  font-family: var(--font-display);
+  color: #fff;
+}
+
+/* Your account, and the log in / sign up links */
+.auth-area { display: flex; align-items: center; gap: 8px; order: 10; margin-left: 6px; }
+.auth-links { display: flex; gap: 6px; align-items: center; font-weight: 800; }
+.main-nav a.user-chip {
+  gap: 8px;
+  border: 1.5px solid var(--purple);
+  padding: 3px 14px 3px 3px;
+  font-weight: 800;
+  font-size: 0.92rem;
+}
+.main-nav a.user-chip:hover { background: rgba(123, 47, 247, 0.18); border-color: var(--pink2); color: var(--text); }
+.user-chip .user-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-avatar {
+  width: 32px; height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--pink), var(--purple));
+  border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  color: #fff;
+  font-size: 1rem;
+}
+
+/* Bell, search button, theme and menu buttons share one round shape */
+.header-tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+#header-bell:empty { display: none; }
+.icon-btn, .nav-bell, .theme-toggle, .nav-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: var(--panel);
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--ink);
+  color: var(--text);
+  font-size: 1.05rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.icon-btn:hover, .nav-bell:hover, .nav-toggle:hover { transform: translateY(-1px); }
+.theme-toggle:hover { transform: rotate(-20deg) scale(1.08); }
+.nav-bell .fav-count { position: absolute; top: -6px; right: -8px; }
+.search-toggle, .nav-toggle { display: none; }
+.nav-toggle-bars { display: flex; flex-direction: column; gap: 4px; width: 18px; }
+.nav-toggle-bars span { display: block; height: 2.5px; border-radius: 2px; background: currentColor; transition: transform 0.2s, opacity 0.2s; }
+body.nav-open .nav-toggle-bars span:nth-child(1) { transform: translateY(6.5px) rotate(45deg); }
+body.nav-open .nav-toggle-bars span:nth-child(2) { opacity: 0; }
+body.nav-open .nav-toggle-bars span:nth-child(3) { transform: translateY(-6.5px) rotate(-45deg); }
+.nav-scrim { display: none; }
+
+/* Tighter laptops: avatar-only account chip, slimmer pills and search */
+@media (max-width: 1279px) {
+  .header-inner { gap: 12px; padding: 10px 16px; }
+  .search-form { max-width: 260px; }
+  .main-nav a:not(.btn-pow), .nav-dropdown-toggle { padding: 7px 9px; }
+  .user-chip .user-name { display: none; }
+  .main-nav a.user-chip { padding: 3px; }
+}
+
+/* Tablets and phones: the nav becomes a drawer */
+@media (max-width: 1023px) {
+  .header-inner { gap: 12px; }
+  .search-form { max-width: none; }
+  .nav-toggle { display: inline-flex; }
+  .main-nav {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    width: min(88vw, 380px);
+    margin: 0;
+    padding: 14px 16px calc(28px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg2);
+    border-left: var(--border-w) solid var(--ink);
+    box-shadow: -8px 0 0 rgba(0,0,0,0.35);
+    transform: translateX(105%);
+    visibility: hidden;
+    transition: transform 0.26s ease, visibility 0s linear 0.26s;
+  }
+  body.nav-open .main-nav { transform: none; visibility: visible; transition: transform 0.26s ease; }
+  body.nav-open { overflow: hidden; }
+  .nav-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    background: var(--scrim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.26s ease;
+  }
+  body.nav-open .nav-scrim { opacity: 1; pointer-events: auto; }
+
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .drawer-title { font-family: var(--font-display); font-size: 1.6rem; letter-spacing: 1px; }
+  .drawer-close {
+    width: 40px; height: 40px;
+    border-radius: 999px;
+    background: var(--panel);
+    border: 2.5px solid var(--ink);
+    box-shadow: 2px 2px 0 var(--ink);
+    color: var(--text);
+    font-size: 1.1rem;
+    cursor: pointer;
+  }
+
+  /* Your account sits at the top as a card */
+  .auth-area { order: 0; margin: 0 0 16px; }
+  .main-nav a.user-chip {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 12px;
+    padding: 10px 12px;
+    border: 2.5px solid var(--ink);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(255,45,120,0.22), rgba(123,47,247,0.22)), var(--panel);
+    box-shadow: 3px 3px 0 var(--ink);
+  }
+  .main-nav a.user-chip .user-avatar { grid-row: 1 / 3; width: 48px; height: 48px; font-size: 1.4rem; }
+  .user-chip .user-name { display: block; max-width: none; font-size: 1.05rem; align-self: end; }
+  .user-chip .user-sub { display: block; font-size: 0.8rem; color: var(--muted); font-weight: 700; align-self: start; }
+  .auth-links { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .main-nav .auth-links a { justify-content: center; padding: 11px; border: 2.5px solid var(--ink); background: var(--panel); border-radius: 12px; box-shadow: 3px 3px 0 var(--ink); }
+  .main-nav .auth-links a.btn-pow { background: var(--yellow); }
+
+  /* Sections as big tiles */
+  .nav-primary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .main-nav .nav-primary a {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-height: 76px;
+    padding: 10px 6px;
+    border: 2.5px solid var(--ink);
+    border-radius: 16px;
+    background: var(--panel);
+    box-shadow: 3px 3px 0 var(--ink);
+    font-weight: 800;
+  }
+  .main-nav .nav-primary a:hover { background: var(--panel); transform: translate(-1px, -1px); }
+  .nav-ico { display: block; font-size: 1.6rem; line-height: 1; }
+
+  /* Library and More as always-open grouped lists */
+  .nav-dropdown-toggle { display: none; }
+  .nav-group-label {
+    display: block;
+    margin: 20px 4px 8px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .nav-dropdown-menu,
+  .nav-dropdown.is-open .nav-dropdown-menu {
+    display: flex;
+    position: static;
+    min-width: 0;
+    padding: 6px;
+    box-shadow: 3px 3px 0 var(--ink);
+    animation: none;
+  }
+  .main-nav .nav-dropdown-menu a { min-height: 44px; padding: 10px 12px; }
+}
+
+/* Phones: one-row bar, search opens from its button */
+@media (max-width: 639px) {
+  .header-inner { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+  .brand { font-size: 1.4rem; }
+  .brand-bolt { font-size: 1.3rem; }
+  .header-tools { margin-left: auto; gap: 6px; }
+  .search-toggle { display: inline-flex; }
+  .icon-btn, .nav-bell, .theme-toggle, .nav-toggle { width: 38px; height: 38px; }
+  .search-form { display: none; order: 3; flex-basis: 100%; }
+  body.search-open .search-form { display: flex; }
+  body.search-open .search-toggle { background: var(--pink-deep); color: #fff; }
+}
+@media (max-width: 359px) {
+  .brand-text { font-size: 1.2rem; }
+  .header-tools { gap: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .main-nav, .nav-scrim, .nav-toggle-bars span { transition: none !important; }
+  .nav-dropdown.is-open .nav-dropdown-menu { animation: none; }
 }

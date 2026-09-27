@@ -11,9 +11,11 @@ const fmt = (n) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 function sectionHTML(d) {
   const { source, consensus: c, mine } = d;
   const kind = source?.format || 'manga';
+  const findIt = source?.novelId
+    ? `<a href="#/novel/${Number(source.novelId)}">Open it in Light Novels →</a>`
+    : `<a href="#/manga?q=${encodeURIComponent(source?.title || '')}">Find it in Manga →</a>`;
   const sourceLine = source
-    ? `Based on the ${escapeHtml(kind.toLowerCase())} <strong>${escapeHtml(source.title)}</strong>.
-       <a href="#/manga?q=${encodeURIComponent(source.title)}">Find it in Manga →</a>`
+    ? `Based on the ${escapeHtml(kind.toLowerCase())} <strong>${escapeHtml(source.title)}</strong>. ${findIt}`
     : '';
   const answer = c
     ? `<p class="continuation-answer">The anime ends at <strong>chapter ${fmt(c.lastChapter)}</strong>${c.volume ? ` (volume ${c.volume})` : ''}, so start at <strong>chapter ${c.nextChapter}</strong>.</p>

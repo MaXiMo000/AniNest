@@ -616,6 +616,34 @@ await db.executeMultiple(`
   );
 `);
 
+// Light novels (routes/novels.js), keyed by AniList id: a reading list with
+// volume progress, and reviews that work like manga_reviews.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS novel_favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    novel_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    image TEXT,
+    status TEXT,
+    volumes_read INTEGER NOT NULL DEFAULT 0,
+    volumes INTEGER,
+    added_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, novel_id)
+  );
+  CREATE TABLE IF NOT EXISTS novel_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    novel_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL,
+    body TEXT,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, novel_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_novel_reviews_novel ON novel_reviews(novel_id);
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.
