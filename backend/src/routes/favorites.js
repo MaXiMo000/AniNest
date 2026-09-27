@@ -24,7 +24,7 @@ favoritesRouter.get('/', asyncRoute(async (req, res) => {
 // invalid characters instead of rejecting them), but that raw quote would
 // then break out of a `src="${image}"` attribute wherever we render it. The
 // http/https-only check also blocks `javascript:`/`data:` schemes outright.
-const httpUrl = z.string().trim().max(2000).transform((val, ctx) => {
+export const httpUrl = z.string().trim().max(2000).transform((val, ctx) => {
   try {
     const url = new URL(val);
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('bad protocol');

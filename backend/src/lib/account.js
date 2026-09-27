@@ -11,7 +11,7 @@ import { db } from './db.js';
 const EXPORT_TABLES = [
   'favorites', 'manga_favorites', 'reviews', 'manga_reviews', 'game_scores',
   'daily_results', 'manga_daily_results', 'episode_log', 'episode_ratings', 'theme_tournament_votes',
-  'predictions', 'manga_continuations',
+  'predictions', 'manga_continuations', 'custom_lists',
 ];
 // Also exported, but deleted separately below.
 const EXPORT_ALSO = ['game_score_log', 'it_clicked'];
@@ -29,6 +29,11 @@ export async function exportUserData(userId) {
     args: [userId],
   });
   out.following = following.rows.map((r) => ({ ...r }));
+  const listItems = await db.execute({
+    sql: 'SELECT i.* FROM custom_list_items i JOIN custom_lists l ON l.id = i.list_id WHERE l.user_id = ? ORDER BY i.list_id, i.position',
+    args: [userId],
+  });
+  out.custom_list_items = listItems.rows.map((r) => ({ ...r }));
   return out;
 }
 
@@ -40,6 +45,7 @@ export async function deleteUserData(userId) {
     { sql: `DELETE FROM watch_room_votes WHERE member_id IN (${ownSeats})`, args: [userId, userId] },
     { sql: `DELETE FROM watch_room_members WHERE user_id = ? OR room_id IN (${ownRooms})`, args: [userId, userId] },
     { sql: 'DELETE FROM watch_rooms WHERE created_by = ?', args: [userId] },
+    { sql: 'DELETE FROM custom_list_items WHERE list_id IN (SELECT id FROM custom_lists WHERE user_id = ?)', args: [userId] },
     ...EXPORT_TABLES.map(byUser),
     byUser('game_runs'),
     byUser('game_score_log'),

@@ -592,6 +592,30 @@ await db.execute(`
   )
 `);
 
+// Custom lists (routes/lists.js): named, ordered, shareable lists like
+// "Comfort shows". Visible to anyone unless the owner's profile is private.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS custom_lists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_custom_lists_user ON custom_lists(user_id);
+  CREATE TABLE IF NOT EXISTS custom_list_items (
+    list_id INTEGER NOT NULL REFERENCES custom_lists(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    image TEXT,
+    note TEXT,
+    position INTEGER NOT NULL,
+    added_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (list_id, mal_id)
+  );
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.

@@ -6,6 +6,7 @@ import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML
 import { profileStats, STATUS_ORDER } from '../lib/profileStats.js';
 import { Auth } from '../lib/authStore.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
+import { loadProfileLists } from './lists.js';
 
 // "You and alex: 82% taste match" for a signed-in visitor on someone else's
 // profile (backend/src/lib/taste.js). Loaded after the page; any failure just
@@ -250,6 +251,8 @@ export async function renderProfile(root, username) {
       ${favorites.length ? `<div class="card-grid">${favorites.map(favCard).join('')}</div>` : emptyHTML('No favorites yet.', '💔')}
     </section>
 
+    <div id="profile-lists"></div>
+
     <section class="section">
       <div class="section-head"><h2 class="section-title">💬 Reviews</h2></div>
       ${shownReviews.length
@@ -266,4 +269,5 @@ export async function renderProfile(root, username) {
   wireShare(root, { kind: 'u', id: user.username, title: `${user.username} on AniNest` });
   wireFollow(root, user.username, data.follows);
   loadTasteMatch(root, user.username);
+  loadProfileLists(root, user.username);
 }

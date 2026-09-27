@@ -1715,6 +1715,50 @@ test('manga continuation API: source works with zero users, one answer per perso
   }
 });
 
+test('custom lists: create, add, note, reorder, share, privacy, delete', async () => {
+  const owner = await registeredAgent();
+  const other = await registeredAgent();
+  const anon = makeAgent();
+  await anon.get('/api/health');
+  const post = (who, path, body) => who.agent.post(path, { csrf: true, body });
+
+  assert.equal((await anon.post('/api/lists', { csrf: true, body: { name: 'x' } })).status, 401);
+  assert.equal((await post(owner, '/api/lists', { name: '  ' })).status, 400);
+  const created = await post(owner, '/api/lists', { name: 'Comfort shows', description: 'For bad days' });
+  assert.equal(created.status, 201);
+  const id = created.json.data.id;
+  const add = (who, item) => post(who, `/api/lists/${id}/items`, item);
+  assert.equal((await add(owner, { mal_id: 92995, title: 'X', image: 'javascript:alert(1)' })).status, 400, 'http(s) images only');
+  await add(owner, { mal_id: 92995, title: 'First', image: 'https://img.example/1.jpg' });
+  await add(owner, { mal_id: 92996, title: 'Second' });
+  let list = (await add(owner, { mal_id: 92995, title: 'First', note: 'Cozy' })).json.data;
+  assert.deepEqual(list.items.map((i) => [i.mal_id, i.note]), [[92995, 'Cozy'], [92996, null]], 'a re-add updates the note, keeps the spot');
+  assert.equal((await add(other, { mal_id: 92997, title: 'Nope' })).status, 404, 'only the owner edits');
+
+  assert.equal((await post(owner, `/api/lists/${id}/order`, { mal_ids: [92996] })).status, 409, 'must name every item');
+  list = (await post(owner, `/api/lists/${id}/order`, { mal_ids: [92996, 92995] })).json.data;
+  assert.deepEqual(list.items.map((i) => i.mal_id), [92996, 92995]);
+
+  const seen = (await anon.get(`/api/lists/${id}`)).json.data;
+  assert.deepEqual([seen.name, seen.owner, seen.mine, seen.items.length], ['Comfort shows', owner.user.username, false, 2]);
+  const theirs = (await anon.get(`/api/lists/user/${owner.user.username}`)).json.lists;
+  assert.deepEqual(theirs.map((l) => [l.name, l.count, l.covers]), [['Comfort shows', 2, ['https://img.example/1.jpg']]]);
+  const preview = await fetch(`${baseUrl}/api/share/list/${id}`).then((r) => r.text());
+  assert.match(preview, /Comfort shows — a list by/);
+  assert.match(preview, /og:image" content="https:\/\/img.example\/1.jpg"/);
+
+  await post(owner, '/api/auth/privacy', { private: true });
+  assert.equal((await anon.get(`/api/lists/${id}`)).status, 404, 'a private profile hides its lists');
+  assert.deepEqual((await anon.get(`/api/lists/user/${owner.user.username}`)).json.lists, []);
+  assert.doesNotMatch(await fetch(`${baseUrl}/api/share/list/${id}`).then((r) => r.text()), /Comfort shows/);
+  assert.equal((await owner.agent.get(`/api/lists/${id}`)).json.data.mine, true, 'the owner still sees it');
+
+  list = (await owner.agent.delete(`/api/lists/${id}/items/92996`, { csrf: true })).json.data;
+  assert.equal(list.items.length, 1);
+  assert.equal((await owner.agent.delete(`/api/lists/${id}`, { csrf: true })).status, 204);
+  assert.deepEqual((await owner.agent.get('/api/lists/mine')).json.lists, []);
+});
+
 test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');
   const { notifyNewEpisodes } = await import('../src/lib/notifications.js');

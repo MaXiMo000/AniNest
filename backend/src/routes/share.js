@@ -84,3 +84,25 @@ shareRouter.get('/u/:username', async (req, res) => {
     hash: `#/u/${encodeURIComponent(u.username)}`,
   }));
 });
+
+shareRouter.get('/list/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const hash = `#/list/${Number.isInteger(id) && id > 0 ? id : 0}`;
+  const found = Number.isInteger(id) && id > 0 ? await db.execute({
+    sql: `SELECT l.name, l.description, u.username, u.is_private,
+                 (SELECT COUNT(*) FROM custom_list_items i WHERE i.list_id = l.id) AS count,
+                 (SELECT image FROM custom_list_items i WHERE i.list_id = l.id AND image IS NOT NULL ORDER BY position LIMIT 1) AS image
+          FROM custom_lists l JOIN users u ON u.id = l.user_id WHERE l.id = ?`,
+    args: [id],
+  }).catch(() => null) : null;
+  const l = found?.rows[0];
+  // A private owner's list previews as the plain site card, same as a missing one.
+  if (!l || Number(l.is_private)) return send(res, page({ title: 'AniNest', description: 'Your anime & manga home base.', hash }));
+  const count = Number(l.count);
+  send(res, page({
+    title: `${l.name} — a list by ${l.username} on AniNest`,
+    description: clip(l.description || `${count} anime, picked by ${l.username}.`, 200),
+    image: l.image || null,
+    hash,
+  }));
+});

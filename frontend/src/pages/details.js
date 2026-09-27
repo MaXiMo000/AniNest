@@ -10,6 +10,7 @@ import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 import { loadEpisodeGuide } from '../lib/episodeGuide.js';
 import { loadContinuation } from '../lib/continuation.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
+import { addToListButtonHTML, wireAddToList } from './lists.js';
 import { apiGet } from '../lib/http.js';
 import { autoplayVideoOnView, autoplayYouTubeOnView, youtubeEmbedUrl } from '../lib/autoplayOnView.js';
 
@@ -310,6 +311,7 @@ export async function renderDetails(root, id) {
             <button class="btn-pow btn-pow--pink" id="fav-toggle">${Favorites.has(a.mal_id) ? '💖 FAVORITED' : '🤍 ADD TO FAVORITES'}</button>
             ${a.url ? `<a class="btn-pow btn-pow--outline" target="_blank" rel="noopener" href="${escapeHtml(a.url)}">🔗 MyAnimeList</a>` : ''}
             ${shareButtonHTML()}
+            ${addToListButtonHTML()}
           </div>
           ${watchStatusHTML(a.mal_id)}
           ${progressHTML(a)}
@@ -355,6 +357,7 @@ export async function renderDetails(root, id) {
     if (trailer) autoplayYouTubeOnView(trailer);
 
     wireShare(root, { kind: 'anime', id: a.mal_id, title: a.title });
+    wireAddToList(root, { mal_id: a.mal_id, title: a.title, image: imageOf(a) });
     root.querySelector('#fav-toggle')?.addEventListener('click', async (e) => {
       const btn = e.target;
       btn.disabled = true;
