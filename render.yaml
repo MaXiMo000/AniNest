@@ -59,6 +59,14 @@ services:
       # for review either way - this key only affects the search shortcut.
       - key: YOUTUBE_API_KEY
         sync: false
+      # Optional "Forgot password?" emails through Resend (free tier at
+      # resend.com). Both must be set, and MAIL_FROM must be an address on a
+      # domain verified in Resend. Leave blank and the reset page says it
+      # isn't set up yet; everything else works either way.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
 
   - name: aninest-frontend
     type: web

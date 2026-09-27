@@ -457,6 +457,16 @@ await db.executeMultiple(`
   );
 `);
 
+// One-time password reset links (routes/auth.js). Only the SHA-256 of the
+// emailed token is stored, same as sessions.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL
+  )
+`);
+
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's
 // no signup flow for this, on purpose, so it's driven by an env var rather
 // than a DB row anyone could flip. Comma-separated usernames, re-applied on

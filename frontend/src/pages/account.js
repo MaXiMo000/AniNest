@@ -4,7 +4,7 @@ import { Import } from '../lib/importApi.js';
 import { Users } from '../lib/usersApi.js';
 import { navigate } from '../lib/router.js';
 import { escapeHtml, showToast, badgesRowHTML, xpCardHTML } from '../lib/ui.js';
-import { apiGet, apiPost } from '../lib/http.js';
+import { apiGet, apiPost, API_BASE } from '../lib/http.js';
 
 // Private .ics feed of airing times for everything you're Watching
 // (backend/src/lib/calendar.js). The link is only created when asked for.
@@ -66,6 +66,74 @@ function wireCalendar(root) {
   });
 }
 
+const INPUT_STYLE = 'width:100%;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600';
+
+// Change password, sign out other devices, download everything, delete.
+function securitySectionHTML() {
+  return `
+    <section class="section" style="max-width:520px;margin:24px auto 0">
+      <div class="section-head">
+        <h2 class="section-title">🔒 Account & Privacy</h2>
+        <span class="section-sub">Changing your password signs out every other device.</span>
+      </div>
+      <form id="password-form" class="hero-actions" style="justify-content:center" novalidate>
+        <input id="current-password" type="password" autocomplete="current-password" placeholder="Current password" aria-label="Current password" required style="${INPUT_STYLE}" />
+        <input id="new-password" type="password" autocomplete="new-password" placeholder="New password (8+ chars, a letter and a number)" aria-label="New password" required style="${INPUT_STYLE}" />
+        <button type="submit" class="btn-pow btn-pow--blue">CHANGE PASSWORD</button>
+      </form>
+      <div id="password-result" style="text-align:center;margin-top:8px"></div>
+      <div class="hero-actions" style="justify-content:center;margin-top:14px">
+        <button id="logout-others" class="chip">📵 Log out other devices</button>
+        <a id="export-data" class="chip" href="${API_BASE}/api/auth/export" download>💾 Download my data</a>
+        <button id="delete-account" class="chip">🗑️ Delete my account</button>
+      </div>
+    </section>`;
+}
+
+function wireSecurity(root) {
+  const form = root.querySelector('#password-form');
+  const result = root.querySelector('#password-result');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    result.innerHTML = '';
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      await apiPost('/api/auth/password', {
+        currentPassword: form.querySelector('#current-password').value,
+        newPassword: form.querySelector('#new-password').value,
+      });
+      form.reset();
+      showToast('Password changed. Other devices are signed out.');
+    } catch (err) {
+      result.innerHTML = `<p class="section-sub">💥 ${escapeHtml(err.message || 'Couldn’t change your password.')}</p>`;
+    }
+    btn.disabled = false;
+  });
+
+  root.querySelector('#logout-others').addEventListener('click', async () => {
+    try {
+      await apiPost('/api/auth/logout-others');
+      showToast('Every other device is signed out.');
+    } catch {
+      showToast('Something went wrong — try again.');
+    }
+  });
+
+  root.querySelector('#delete-account').addEventListener('click', async () => {
+    const password = window.prompt('This deletes your account, lists, reviews, XP and scores for good. Enter your password to confirm.');
+    if (!password) return;
+    try {
+      await apiPost('/api/auth/delete-account', { password });
+      Auth.forget();
+      showToast('Your account is deleted. Sayonara!');
+      navigate('#/');
+    } catch (err) {
+      showToast(err.message || 'Couldn’t delete your account.');
+    }
+  });
+}
+
 function importSectionHTML() {
   return `
     <section class="section" style="max-width:520px;margin:24px auto 0">
@@ -107,9 +175,11 @@ export function renderAccount(root) {
 
     ${calendarSectionHTML()}
     ${importSectionHTML()}
+    ${securitySectionHTML()}
   `;
 
   wireCalendar(root);
+  wireSecurity(root);
 
   // Badges reuse the public profile endpoint (same data, same computation
   // - see backend/src/lib/badges.js) rather than a second route just for

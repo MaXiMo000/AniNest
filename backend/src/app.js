@@ -116,6 +116,10 @@ export function createApp() {
 
   app.use('/api/auth/register', authLimiter);
   app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/password', authLimiter);
+  app.use('/api/auth/delete-account', authLimiter);
+  app.use('/api/auth/forgot', authLimiter);
+  app.use('/api/auth/reset', authLimiter);
   app.use('/api/auth', authRouter);
   app.use('/api/favorites', favoritesRouter);
   app.use('/api/anime', animeRouter);

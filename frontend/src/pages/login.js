@@ -22,6 +22,7 @@ export function renderLogin(root) {
         </div>
         <button type="submit" class="btn-pow btn-pow--pink" style="width:100%">LOG IN</button>
       </form>
+      <p class="auth-switch"><a href="#/forgot-password">Forgot your password?</a></p>
       <p class="auth-switch">New here? <a href="#/register">Create an account</a></p>
     </div>
   `;

@@ -40,6 +40,46 @@ export async function destroyAllSessionsForUser(userId) {
   await db.execute({ sql: 'DELETE FROM sessions WHERE user_id = ?', args: [userId] });
 }
 
+// "Log out everywhere else": every session but the one making the request.
+export async function destroyOtherSessions(userId, keepToken) {
+  await db.execute({
+    sql: 'DELETE FROM sessions WHERE user_id = ? AND token_hash != ?',
+    args: [userId, hashToken(keepToken || '')],
+  });
+}
+
+export async function setPassword(userId, plain) {
+  await db.execute({ sql: 'UPDATE users SET password_hash = ? WHERE id = ?', args: [await hashPassword(plain), userId] });
+}
+
+const RESET_TTL_MS = 30 * 60 * 1000;
+
+// A single-use reset token for the emailed link. Asking again replaces any
+// earlier link, so only the newest email works.
+export async function createPasswordReset(userId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  await db.batch([
+    { sql: 'DELETE FROM password_resets WHERE user_id = ?', args: [userId] },
+    {
+      sql: 'INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
+      args: [hashToken(token), userId, new Date(Date.now() + RESET_TTL_MS).toISOString()],
+    },
+  ], 'write');
+  return token;
+}
+
+// Returns the user id and burns the token, or null for an unknown, used or
+// expired one.
+export async function consumePasswordReset(token) {
+  const res = await db.execute({
+    sql: 'DELETE FROM password_resets WHERE token_hash = ? RETURNING user_id, expires_at',
+    args: [hashToken(token)],
+  });
+  const row = res.rows[0];
+  if (!row || new Date(row.expires_at).getTime() < Date.now()) return null;
+  return Number(row.user_id);
+}
+
 export async function getUserForToken(token) {
   if (!token) return null;
   const result = await db.execute({

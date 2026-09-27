@@ -16,6 +16,7 @@ process.env.TRUST_PROXY = '2';
 
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/lib/db.js');
+const { setMailSender } = await import('../src/lib/mailer.js');
 
 let server;
 let baseUrl;
@@ -95,4 +96,94 @@ test('rate limits key on the visitor behind two proxies, not on the proxy', asyn
   const remaining = (r) => Number(r.headers.get('ratelimit-remaining'));
   assert.equal(remaining(a2), remaining(a1) - 1, 'the same visitor spends one budget');
   assert.equal(remaining(b1), remaining(a1), 'a different visitor has a fresh budget');
+});
+
+test('change password: needs the current one, then signs out other devices only', async () => {
+  const { agent, user } = await registered();
+  const other = await makeAgent().ready();
+  assert.equal((await other.post('/api/auth/login', { body: { identifier: user.username, password: user.password } })).status, 200);
+
+  const wrong = await agent.post('/api/auth/password', { body: { currentPassword: 'nope', newPassword: 'newhorse456' } });
+  assert.equal(wrong.status, 401);
+  const weak = await agent.post('/api/auth/password', { body: { currentPassword: user.password, newPassword: 'short' } });
+  assert.equal(weak.status, 400);
+  const ok = await agent.post('/api/auth/password', { body: { currentPassword: user.password, newPassword: 'newhorse456' } });
+  assert.equal(ok.status, 204);
+
+  assert.ok((await agent.get('/api/auth/me')).json.user, 'this device stays signed in');
+  assert.equal((await other.get('/api/auth/me')).json.user, null, 'the other device is signed out');
+  const fresh = await makeAgent().ready();
+  assert.equal((await fresh.post('/api/auth/login', { body: { identifier: user.username, password: user.password } })).status, 401);
+  assert.equal((await fresh.post('/api/auth/login', { body: { identifier: user.username, password: 'newhorse456' } })).status, 200);
+});
+
+test('log out other devices keeps the current one', async () => {
+  const { agent, user } = await registered();
+  const other = await makeAgent().ready();
+  await other.post('/api/auth/login', { body: { identifier: user.email, password: user.password } });
+  assert.equal((await agent.post('/api/auth/logout-others')).status, 204);
+  assert.ok((await agent.get('/api/auth/me')).json.user);
+  assert.equal((await other.get('/api/auth/me')).json.user, null);
+});
+
+test('export returns only the caller\'s own data, without internal ids', async () => {
+  const { agent, user } = await registered();
+  const someoneElse = await registered();
+  await agent.post('/api/favorites', { body: { mal_id: 5114, title: 'FMA:B' } });
+  await someoneElse.agent.post('/api/favorites', { body: { mal_id: 1, title: 'Bebop' } });
+  const res = await agent.get('/api/auth/export');
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /attachment/);
+  assert.equal(res.json.account.username, user.username);
+  assert.deepEqual(res.json.favorites.map((f) => Number(f.mal_id)), [5114]);
+  assert.equal(res.json.favorites[0].user_id, undefined);
+  assert.equal((await makeAgent().get('/api/auth/export')).status, 401);
+});
+
+test('delete account: needs the password, removes the user and their data', async () => {
+  const { agent, user, id } = await registered();
+  await agent.post('/api/favorites', { body: { mal_id: 20, title: 'Naruto' } });
+  await agent.post('/api/rooms', { body: {} });
+  assert.equal((await agent.post('/api/auth/delete-account', { body: { password: 'wrong' } })).status, 401);
+  assert.equal((await agent.post('/api/auth/delete-account', { body: { password: user.password } })).status, 204);
+
+  assert.equal((await agent.get('/api/auth/me')).json.user, null);
+  for (const table of ['users', 'favorites', 'sessions', 'watch_rooms']) {
+    const col = table === 'users' ? 'id' : table === 'watch_rooms' ? 'created_by' : 'user_id';
+    // eslint-disable-next-line no-await-in-loop
+    const left = await db.execute({ sql: `SELECT COUNT(*) AS n FROM ${table} WHERE ${col} = ?`, args: [id] });
+    assert.equal(Number(left.rows[0].n), 0, `${table} should be empty for the deleted user`);
+  }
+  const again = await makeAgent().ready();
+  assert.equal((await again.post('/api/auth/register', { body: user })).status, 201, 'the name and email are free again');
+});
+
+test('password reset: generic answer, single-use link, signs everything out', async () => {
+  const sent = [];
+  setMailSender(async (mail) => { sent.push(mail); });
+  try {
+    const { agent, user } = await registered();
+    const anon = await makeAgent().ready();
+    const unknown = await anon.post('/api/auth/forgot', { body: { email: 'nobody-here@test.local' } });
+    assert.equal(unknown.status, 200, 'an unknown email gets the same answer');
+    assert.equal(sent.length, 0);
+
+    assert.equal((await anon.post('/api/auth/forgot', { body: { email: user.email.toUpperCase() } })).status, 200);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, user.email);
+    const token = /token=([0-9a-f]{64})/.exec(sent[0].text)[1];
+
+    assert.equal((await anon.post('/api/auth/reset', { body: { token, password: 'weak' } })).status, 400);
+    assert.equal((await anon.post('/api/auth/reset', { body: { token, password: 'resethorse789' } })).status, 204);
+    assert.equal((await anon.post('/api/auth/reset', { body: { token, password: 'resethorse789' } })).status, 400, 'the link works once');
+    assert.equal((await agent.get('/api/auth/me')).json.user, null, 'existing sessions are signed out');
+    assert.equal((await anon.post('/api/auth/login', { body: { identifier: user.username, password: 'resethorse789' } })).status, 200);
+  } finally {
+    setMailSender(null);
+  }
+});
+
+test('password reset reports itself as off when no mail service is configured', async () => {
+  const anon = await makeAgent().ready();
+  assert.equal((await anon.post('/api/auth/forgot', { body: { email: 'a@test.local' } })).status, 503);
 });

@@ -2,9 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../lib/db.js';
 import {
-  hashPassword, verifyPassword, createSession, destroySession, SESSION_COOKIE, SESSION_MAX_AGE_MS,
+  hashPassword, verifyPassword, createSession, destroySession, destroyOtherSessions, destroyAllSessionsForUser,
+  setPassword, createPasswordReset, consumePasswordReset, SESSION_COOKIE, SESSION_MAX_AGE_MS,
 } from '../lib/auth.js';
 import { verifyTurnstile } from '../lib/turnstile.js';
+import { requireAuth } from '../middleware/session.js';
+import { exportUserData, deleteUserData } from '../lib/account.js';
+import { isMailEnabled, sendMail } from '../lib/mailer.js';
 
 export const authRouter = Router();
 
@@ -27,10 +31,12 @@ const cookieOpts = () => ({
   maxAge: SESSION_MAX_AGE_MS,
 });
 
+const passwordField = z.string().min(8).max(200).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Must include a letter and a number.');
+
 const registerSchema = z.object({
   username: z.string().trim().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only.'),
   email: z.string().trim().toLowerCase().email().max(254),
-  password: z.string().min(8).max(200).regex(/^(?=.*[A-Za-z])(?=.*\d).+$/, 'Must include a letter and a number.'),
+  password: passwordField,
   turnstileToken: z.string().max(4000).optional(),
 });
 
@@ -114,4 +120,100 @@ authRouter.post('/logout', async (req, res, next) => {
 
 authRouter.get('/me', (req, res) => {
   res.json({ user: req.user || null });
+});
+
+async function passwordMatches(userId, plain) {
+  const row = await db.execute({ sql: 'SELECT password_hash FROM users WHERE id = ?', args: [userId] });
+  return Boolean(row.rows[0]) && verifyPassword(plain, row.rows[0].password_hash);
+}
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: passwordField,
+});
+
+// Signs out every other device too: a password change is usually because
+// someone else might know the old one.
+authRouter.post('/password', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = changePasswordSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
+    if (!(await passwordMatches(req.user.id, parsed.data.currentPassword))) {
+      return res.status(401).json({ error: 'Your current password is wrong.' });
+    }
+    await setPassword(req.user.id, parsed.data.newPassword);
+    await destroyOtherSessions(req.user.id, req.cookies?.[SESSION_COOKIE]);
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+authRouter.post('/logout-others', requireAuth, async (req, res, next) => {
+  try {
+    await destroyOtherSessions(req.user.id, req.cookies?.[SESSION_COOKIE]);
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+authRouter.get('/export', requireAuth, async (req, res, next) => {
+  try {
+    const data = await exportUserData(req.user.id);
+    res.set('Content-Disposition', `attachment; filename="aninest-${req.user.username}.json"`);
+    res.json(data);
+  } catch (err) { next(err); }
+});
+
+const deleteSchema = z.object({ password: z.string().min(1).max(200) });
+
+authRouter.post('/delete-account', requireAuth, async (req, res, next) => {
+  try {
+    const parsed = deleteSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter your password to confirm.' });
+    if (!(await passwordMatches(req.user.id, parsed.data.password))) {
+      return res.status(401).json({ error: 'That password is wrong.' });
+    }
+    await deleteUserData(req.user.id);
+    res.clearCookie(SESSION_COOKIE, { path: '/' });
+    res.status(204).end();
+  } catch (err) { next(err); }
+});
+
+const forgotSchema = z.object({ email: z.string().trim().toLowerCase().email().max(254) });
+
+// Same answer whether or not the email has an account, so this can't be
+// used to find out who is registered.
+authRouter.post('/forgot', async (req, res, next) => {
+  try {
+    if (!isMailEnabled()) return res.status(503).json({ error: 'Password reset by email isn’t set up on this site yet.' });
+    const parsed = forgotSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Enter the email you signed up with.' });
+    const found = await db.execute({ sql: 'SELECT id, username FROM users WHERE email = ?', args: [parsed.data.email] });
+    const user = found.rows[0];
+    if (user) {
+      const token = await createPasswordReset(Number(user.id));
+      const origin = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+      await sendMail({
+        to: parsed.data.email,
+        subject: 'Reset your AniNest password',
+        text: `Hi ${user.username},\n\nReset your AniNest password here (the link works once, for 30 minutes):\n${origin}/#/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email and nothing changes.`,
+      });
+    }
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+const resetSchema = z.object({
+  token: z.string().regex(/^[0-9a-f]{64}$/),
+  password: passwordField,
+});
+
+authRouter.post('/reset', async (req, res, next) => {
+  try {
+    const parsed = resetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.path[0] === 'password' ? parsed.error.issues[0].message : 'That reset link is invalid.' });
+    const userId = await consumePasswordReset(parsed.data.token);
+    if (!userId) return res.status(400).json({ error: 'That reset link is invalid or has expired. Ask for a new one.' });
+    await setPassword(userId, parsed.data.password);
+    await destroyAllSessionsForUser(userId);
+    res.status(204).end();
+  } catch (err) { next(err); }
 });
