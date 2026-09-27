@@ -194,24 +194,25 @@ come from AniList `airingSchedules` (MAL ids resolve to AniList ids first; finis
 Times are the Japanese broadcast, not a streaming site's release.
 
 **Games** (`pages/games/*`). Every game is listed once in `frontend/src/lib/gameCatalog.js` (hub, leaderboard picker,
-stats page) and every ranked slug once in `backend/src/lib/games.js` (`GAME_RULES`: time floor per round, optional score cap).
-Adding a game means one entry in each plus its page. Shared frontend pieces:
-- `lib/gameKit.js`: server run, local per-game stats (`aninest_game_stats_v1`), game-over screen, challenge links.
+stats page) and every ranked slug once in `backend/src/lib/games.js` (`GAME_RULES`: its leaderboard label). Adding a ranked game
+means one entry in each, its round builder on the server (below) and its page. Shared frontend pieces:
+- `lib/gameKit.js`: local per-game stats (`aninest_game_stats_v1`), game-over screen, challenge links.
 - `lib/gameFx.js`: synthesized sounds (Web Audio, no files), haptics, POW popups, confetti, shake, count-up. One sound toggle;
   everything respects `prefers-reduced-motion`. Pure decoration: no game logic may depend on it.
-- `lib/rng.js`: seeded shuffles. A `?seed=` challenge link sorts the pool by id and deals the same deck.
-- `lib/recentlySeen.js`: per-game memory (localStorage) of recently shown answers. New runs deal unseen items first; the
-  memory covers half the pool so small pools still rotate. Challenge runs ignore it. Within a run nothing repeats until
-  the pool is used up.
-- `lib/choiceGame.js`: the engine behind Studio Match, Source Material, Emoji Plot, Cast Call and Name That Opening. A game
-  only supplies `buildRound()`; returning `null` skips a round (e.g. no openings on AnimeThemes).
+- `lib/choiceGame.js`: the page side of Studio Match, Source Material, Emoji Plot, Cast Call and Name That Opening. A game
+  only says how to draw its prompt from what the server sent.
 
-Streaks feed leaderboards, badges and XP, so score submission is guarded (`routes/games.js`). The player starts a **single-use
-run** with `POST /:game/start`. `POST /:game/score` is accepted only for that run and only once; the run is claimed atomically
-*before* the checks run. The score has to fit the elapsed time (`minMsPerRound` per game, set just under each client's reveal
-delay; hard cap 300, and 80 for the 60-second Blitz). That stops instant fakes and replays. A bot that actually waits would still
-get through, because the games run in the browser. Accepted scores are also written to `game_score_log`, which powers
-`?period=week` leaderboards and `GET /api/games/me/stats`. Easy mode in Guess the Anime and the Taste Quiz post nothing.
+Streaks feed leaderboards, badges and XP, so **the server deals and judges every ranked game** and records each score itself;
+the browser never sends a score. Higher or Lower is `lib/hlGame.js` (`/api/games/hl/*`); everything else is the round engine
+`lib/roundGames.js` (`/api/games/rounds/start|:id/answer|:id/skip|:id/finish|:id/cover`), with one `build()` per game. A run
+row (`hl_runs`, `round_runs`) keeps its own copy of the pool from `lib/gamePool.js`, the seeded-shuffle state (so a `?seed=`
+challenge deals the same rounds to everyone), what it has used, and the current round with its answer, which is only sent once
+the round is decided. Lives, streak and the Blitz clock live on the server; answers faster than each game's `minMs` are refused,
+and every write is guarded on the round number so a double-sent answer can't count twice. Guess the Anime's cover is fetched
+and re-served by `/rounds/:id/cover` so the image address can't name the show; typed answers are checked on the server.
+Guests can play (unranked). A signed-in player's next run deals shows they didn't just see (`game_recent`). Known limit: Name
+That Opening plays AnimeThemes' own file, whose address names the show. Scores go to `game_scores` and `game_score_log`, which
+powers `?period=week` leaderboards and `GET /api/games/me/stats`. Easy mode and the Taste Quiz aren't ranked.
 
 The two dailies record one result per player per date, for today or yesterday only (`POST /api/games/daily/result`,
 `POST /api/games/manga-daily/result`). The manga daily stores its 12 wrong answers with the puzzle so everyone sees the same
@@ -338,7 +339,7 @@ Sessions are random 256-bit tokens in an httpOnly cookie, stored only as SHA-256
 
 `cd backend && npm test` runs 110 integration tests (`node:test` + `fetch`) against a real, temporary database, with no mocks.
 Helpers: `makeAgent()` (cookie jar + CSRF), `uniqueUser()`, `makeAdminAgent()` (sets `is_admin` directly, since the
-`ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (starts a game run and backdates it).
+`ADMIN_USERNAMES` bootstrap runs before any test user exists) and `playScore()` (records a finished run's score directly).
 
 Live upstreams (AniList, Jikan, MangaDex, trace.moe, AnimeThemes, YouTube) are deliberately **not** called. The tests cover input
 validation, auth and gating, and the pure logic around them: title parsing, series matching, XP, episode grouping, the persistent
@@ -346,7 +347,7 @@ cache, and the manga poll with an injected fake. `freeWatchGroups.js` is still t
 
 Frontend: `npm test` runs Vitest (jsdom) on the pure game logic in `frontend/test/`. `npm run test:e2e` runs Playwright in
 `frontend/e2e/`: the real app on the Vite dev server, with every API call answered by `e2e/mockApi.js` (a 60-anime fixture pool,
-dailies, themes, characters, a profile). It plays every game to game over and checks the signed-in score post. `screens.spec.js`
+dailies, themes, characters, a profile, and a stand-in for the server's game rounds). It plays every game to game over. `screens.spec.js`
 only takes screenshots when `SCREENSHOTS=1` (with `SHOTS=/path,/path`), for eyeballing layouts.
 
 ## Known limitations and possible next steps
@@ -354,10 +355,9 @@ only takes screenshots when `SCREENSHOTS=1` (with `SHOTS=/path,/path`), for eyeb
 - Ani-One's Chinese-titled shows can't be matched automatically. They land in the review queue and are labelled "Chinese subs".
   Episode numbers follow the channel, not MAL (e.g. *Attack on Titan Final Season* is one 35-episode run, and *Jujutsu Kaisen* S2
   is numbered 25-47).
-- Higher or Lower's four modes are dealt and judged by the server (`lib/hlGame.js`, `/api/games/hl/*`); their old `/:game/score` route refuses. The other game results come from the browser. They're time-checked but not authoritative. Making them authoritative means the server picks
-  each question and checks each answer, and the Daily stops sending its answer to the browser. That's a larger rewrite.
-- Not built, because each needs an outside service: email (verification, password reset, notification emails), 2FA, Redis,
-  external error tracking.
+- The two dailies still send their answer to the browser (they're one puzzle a day with no leaderboard, only XP for playing).
+- Name That Opening's clip address names the show; hiding it means streaming every clip through this server.
+- Not built, because each needs an outside service: Redis, external error tracking.
 - Ideas: a warm-up job that pre-fills `api_cache` for popular titles, notification preferences, server-picked game rounds.
 
 ## Quick start

@@ -50,7 +50,7 @@ that differ from that proposal, and the **checklist** for each phase.
 - [x] Email verification on sign-up; an email when the password changes or a new device logs in (alerts only to confirmed addresses; the digest needs one too)
 - [x] Optional two-factor login (authenticator app, recovery codes, secrets encrypted with `TOTP_KEY`); recommended on admin accounts
 - [x] Server-picked rounds for Higher or Lower (4 leaderboards): the server deals, hides the challenger's number and records the streak itself
-- [ ] The same for the other 9 ranked games (Guess the Anime x3, Name That Opening, Timeline, Studio Match, Emoji Plot, Source Material, Cast Call)
+- [x] The same for the other 9 ranked games (Guess the Anime x3, Name That Opening, Timeline, Studio Match, Emoji Plot, Source Material, Cast Call): the round engine `lib/roundGames.js`; the old score route is gone
 - [x] Dev and tests can't reach production: Turso is used only with `NODE_ENV=production`, and the tests blank every service key. Owner to do: rotate the production Turso token (it sat in a local `.env`)
 - [x] Update vitest to 5 (0 advisories)
 

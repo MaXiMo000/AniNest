@@ -2,7 +2,6 @@
 // scores), local per-game stats, the game-over screen and challenge links.
 // Games keep their own rules and rendering; this is only the common frame.
 
-import { Games } from './gamesApi.js';
 import { Auth } from './authStore.js';
 import { escapeHtml, showToast } from './ui.js';
 import { sfx, confetti, countUp } from './gameFx.js';
@@ -69,25 +68,6 @@ export function recordLocalResult(slug, score, legacyBestKey) {
 }
 
 // ------------------------------------------------------------ server runs
-
-// A signed-in player's run must be started with the server before a score
-// can be submitted (backend/src/routes/games.js checks the score against the
-// time actually played). Fire-and-forget: logged out, or if this fails, the
-// game still plays - it just can't post a score.
-export function startServerRun(slug) {
-  const handle = { runId: null, submitted: false };
-  if (Auth.get().user) {
-    Games.startRun(slug).then((r) => { handle.runId = r.runId; }).catch(() => {});
-  }
-  handle.submit = (score) => {
-    if (handle.submitted || !handle.runId || !Auth.get().user || score <= 0) return;
-    handle.submitted = true;
-    // The backend only ever raises a recorded best, so posting a non-best
-    // score is harmless; a failure isn't worth interrupting game over for.
-    Games.submitScore(slug, score, handle.runId).catch(() => {});
-  };
-  return handle;
-}
 
 // ------------------------------------------------------------ challenge links
 

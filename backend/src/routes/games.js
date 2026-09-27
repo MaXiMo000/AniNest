@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { requireAuth } from '../middleware/session.js';
 import { getDailyChallenge } from '../lib/dailyChallenge.js';
-import crypto from 'node:crypto';
-import { GAMES, GAME_RULES } from '../lib/games.js';
+import { GAMES } from '../lib/games.js';
 import { dailyStats } from '../lib/gameStats.js';
 import { getMangaDailyChallenge } from '../lib/mangaDaily.js';
 import { HL_GAMES, MIN_GUESS_MS, startHlRun, loadHlRun, guessHl, skipHl } from '../lib/hlGame.js';
@@ -12,10 +11,6 @@ import {
   ROUND_GAMES, startRoundRun, loadRoundRun, answerRound, skipRound, finishTimedRun, coverUrl,
 } from '../lib/roundGames.js';
 
-// Games whose score the server decides itself; the old "post your own score"
-// routes refuse them.
-const SERVER_JUDGED = new Set([...Object.keys(HL_GAMES), 'studio-match', 'source-guess', 'emoji-plot', 'cast-call', 'name-that-opening',
-  'guess-the-anime', 'gta-hard', 'gta-blitz']);
 
 export const gamesRouter = Router();
 
@@ -77,19 +72,8 @@ gamesRouter.post('/manga-daily/result', requireAuth, asyncRoute(async (req, res)
   res.json({ recorded: Number(result.rowsAffected) > 0 });
 }));
 
-// A hard ceiling on any streak, well beyond real play (deck sizes and human
-// endurance) - a sanity bound on top of the time check below.
-const MAX_STREAK = 300;
-
-// The least time one correct round can honestly take lives with each game's
-// entry in lib/games.js (GAME_RULES[game].minMsPerRound).
+// Server-judged runs a signed-in player can start per hour.
 const MAX_RUNS_PER_HOUR = 200;
-const RUN_RETENTION_MS = 2 * 24 * 60 * 60 * 1000;
-
-const scoreSchema = z.object({
-  streak: z.number().int().min(0).max(MAX_STREAK),
-  run_id: z.string().regex(/^[0-9a-f]{32}$/),
-});
 
 // Only ever raises a player's best for a game, never lowers it, and logs
 // every accepted score for the weekly board and stats. Returns the best.
@@ -115,8 +99,8 @@ async function recordScore(userId, game, streak) {
 async function tooManyRuns(userId) {
   const since = Date.now() - 60 * 60 * 1000;
   const recent = await db.execute({
-    sql: `SELECT (SELECT COUNT(*) FROM game_runs WHERE user_id = ? AND started_at > ?)
-               + (SELECT COUNT(*) FROM hl_runs WHERE user_id = ? AND created_at > ?) AS n`,
+    sql: `SELECT (SELECT COUNT(*) FROM hl_runs WHERE user_id = ? AND created_at > ?)
+               + (SELECT COUNT(*) FROM round_runs WHERE user_id = ? AND created_at > ?) AS n`,
     args: [userId, since, userId, since],
   });
   return Number(recent.rows[0].n) >= MAX_RUNS_PER_HOUR;
@@ -247,57 +231,6 @@ gamesRouter.get('/rounds/:runId/cover', asyncRoute(async (req, res) => {
   }
   res.set({ 'Content-Type': hit.type, 'Cache-Control': 'private, no-store' });
   res.send(hit.body);
-}));
-
-// Called when a signed-in player starts a game. The returned run id is
-// single-use and is the only thing that lets a score be submitted.
-// Higher or Lower's modes don't use this: the server judges those itself.
-gamesRouter.post('/:game/start', requireAuth, asyncRoute(async (req, res) => {
-  const { game } = req.params;
-  if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
-  if (SERVER_JUDGED.has(game)) return res.status(400).json({ error: 'This game is scored by the server.' });
-
-  if (await tooManyRuns(req.user.id)) return res.status(429).json({ error: 'Slow down a little.' });
-
-  // Housekeeping: old runs are useless (a score can't be plausible days later).
-  await db.execute({ sql: 'DELETE FROM game_runs WHERE started_at < ?', args: [Date.now() - RUN_RETENTION_MS] });
-
-  const runId = crypto.randomBytes(16).toString('hex');
-  await db.execute({
-    sql: 'INSERT INTO game_runs (id, user_id, game, started_at) VALUES (?, ?, ?, ?)',
-    args: [runId, req.user.id, game, Date.now()],
-  });
-  res.status(201).json({ runId });
-}));
-
-// Only ever raises a user's own best for a game, never lowers it - a client
-// re-posting a stale/lower streak (e.g. two tabs) can't clobber a better one
-// already on record.
-gamesRouter.post('/:game/score', requireAuth, asyncRoute(async (req, res) => {
-  const { game } = req.params;
-  if (!GAMES.includes(game)) return res.status(400).json({ error: 'Unknown game.' });
-  if (SERVER_JUDGED.has(game)) return res.status(400).json({ error: 'This game is scored by the server.' });
-  const parsed = scoreSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid input.' });
-  const { streak, run_id: runId } = parsed.data;
-
-  // Claim the run atomically FIRST: a run can be submitted exactly once, so a
-  // rejected attempt can't be retried with a different number to probe the
-  // threshold, and two concurrent requests can't both succeed.
-  const claim = await db.execute({
-    sql: 'UPDATE game_runs SET submitted = 1 WHERE id = ? AND user_id = ? AND game = ? AND submitted = 0',
-    args: [runId, req.user.id, game],
-  });
-  if (!Number(claim.rowsAffected)) return res.status(400).json({ error: 'Unknown or already-used game run.' });
-
-  const run = await db.execute({ sql: 'SELECT started_at FROM game_runs WHERE id = ?', args: [runId] });
-  const elapsedMs = Date.now() - Number(run.rows[0].started_at);
-  const rules = GAME_RULES[game];
-  if (streak * rules.minMsPerRound > elapsedMs || (rules.maxScore && streak > rules.maxScore)) {
-    return res.status(400).json({ error: "That score doesn't add up for the time played." });
-  }
-
-  res.json({ best: await recordScore(req.user.id, game, streak) });
 }));
 
 const LEADERBOARD_LIMIT = 20;

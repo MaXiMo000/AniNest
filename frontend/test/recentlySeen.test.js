@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { recentlySeen, markSeen, freshFirst } from '../src/lib/recentlySeen.js';
 import { drawQuiz, QUESTION_BANK } from '../src/lib/tasteQuiz.js';
-import { drawDistinctYears } from '../src/pages/games/timeline.js';
 import { randomFor } from '../src/lib/rng.js';
 
 const pool = Array.from({ length: 40 }, (_, i) => ({ mal_id: i + 1, year: 1980 + i }));
@@ -36,9 +35,4 @@ describe('recently seen', () => {
     expect(QUESTION_BANK.length - first.length).toBeGreaterThanOrEqual(8);
   });
 
-  it('timeline prefers anime not played yet', () => {
-    const avoid = new Set(pool.slice(0, 30).map((a) => a.mal_id));
-    const cards = drawDistinctYears(pool, 5, randomFor('t'), avoid);
-    expect(cards.every((a) => !avoid.has(a.mal_id))).toBe(true);
-  });
 });
