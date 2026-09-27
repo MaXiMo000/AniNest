@@ -266,7 +266,8 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `ADMIN_USERNAMES` | comma-separated usernames promoted to admin at boot (boot warns about names nobody has registered) |
 | `ADMIN_USER_IDS` | same by numeric user id; preferred, since an id can't be claimed by registering a name first |
 | `TRUST_PROXY` | proxy hops in front of Express (2 on Render: the frontend's `/api` rewrite plus the load balancer). Decides whose IP the rate limits see; the backend logs `proxy hop check` once after boot to confirm |
-| `RESEND_API_KEY`, `MAIL_FROM` | optional; enable "Forgot your password?" emails through Resend. Unset, the page says reset isn't set up |
+| `RESEND_API_KEY`, `MAIL_FROM` | optional; enable "Forgot your password?" emails through Resend (needs a verified domain). Unset, the page says reset isn't set up |
+| `SMTP_USER`, `SMTP_PASS` (`SMTP_HOST`, `SMTP_PORT`) | optional alternative to Resend with no domain: a Gmail address and app password (host and port default to Gmail). Resend wins if both are set |
 | `LOGIN_MAX_FAILURES` | wrong passwords per account before a 15-minute lock (default 10) |
 | `SCREENSHOT_RATE_LIMIT`, `CACHE_MAX_ENTRIES` | screenshot searches per minute per visitor (default 6); in-memory cache cap (default 5000) |
 | `YOUTUBE_API_KEY` | optional; enables admin import and search. Without it, admins can still paste links and users can still submit them |

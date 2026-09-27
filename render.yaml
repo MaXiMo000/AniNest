@@ -71,6 +71,12 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      # Or send through Gmail (no domain needed): SMTP_USER is the Gmail
+      # address, SMTP_PASS a Google app password. Resend wins if both are set.
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
       # Optional browser push alerts. Generate once with
       # `npx web-push generate-vapid-keys`; blank = the in-app bell only.
       - key: VAPID_PUBLIC_KEY
