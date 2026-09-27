@@ -2766,6 +2766,80 @@ test('OP/ED tournament API: built once from the season, vote, hidden counts, rou
   }
 });
 
+test('prediction league: points and the season clock', async () => {
+  const p = await import('../src/lib/predictions.js');
+  assert.deepEqual([p.points(7.5, 7.5), p.points(7.2, 7.5), p.points(8.1, 7.5), p.points(3, 9), p.points(7, null)], [10, 7, 4, 0, null]);
+  assert.deepEqual(p.leagueSeason(Date.UTC(2026, 8, 27)), { season: 'FALL', year: 2026 }, 'Fall opens two weeks early');
+  assert.deepEqual(p.leagueSeason(Date.UTC(2026, 8, 10)), { season: 'SUMMER', year: 2026 });
+  assert.deepEqual(p.leagueSeason(Date.UTC(2026, 11, 20)), { season: 'WINTER', year: 2027 });
+  const c = p.leagueClock({ season: 'FALL', year: 2026 });
+  assert.deepEqual([c.locksAt, c.finalAt].map((t) => new Date(t).toISOString().slice(0, 10)), ['2026-10-15', '2027-01-15']);
+});
+
+test('prediction league API: snapshot once, picks until the lock, live then final standings', async () => {
+  const { setPredictionSources, setPredictionClock } = await import('../src/lib/predictions.js');
+  const day = 24 * 60 * 60 * 1000;
+  let clock = Date.UTC(2026, 8, 27, 12);
+  let listCalls = 0;
+  let scoreCalls = 0;
+  let live = new Map([[92940, 8.0], [92941, 6.5]]);
+  const shows = Array.from({ length: 25 }, (_, i) => ({ mal_id: 92940 + i, title: `Show ${i}`, image: null }));
+  setPredictionSources({
+    seasonShows: async (season, year) => {
+      listCalls += 1;
+      assert.deepEqual([season, year], ['FALL', 2026]);
+      return shows;
+    },
+    scores: async () => { scoreCalls += 1; return live; },
+  });
+  setPredictionClock(() => clock);
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    const league = (await anon.get('/api/predictions/current')).json.data;
+    assert.deepEqual([league.season, league.year, league.open, league.shows.length], ['FALL', 2026, true, 20]);
+    await anon.get('/api/predictions/current');
+    assert.equal(listCalls, 1, 'snapshotted once');
+
+    const pick = (a, picks) => a.post(`/api/predictions/${league.id}/picks`, { csrf: true, body: { picks } });
+    assert.equal((await pick(anon, [{ mal_id: 92940, score: 8 }])).status, 401);
+    const alice = await registeredAgent();
+    const bob = await registeredAgent();
+    assert.equal((await pick(alice.agent, [{ mal_id: 92940, score: 11 }])).status, 400);
+    assert.equal((await pick(alice.agent, [{ mal_id: 92999, score: 8 }])).status, 409, 'not in the league');
+    let view = (await pick(alice.agent, [{ mal_id: 92940, score: 7.84 }, { mal_id: 92941, score: 6.5 }])).json.data;
+    assert.deepEqual(view.shows.slice(0, 2).map((s) => [s.mine, s.score, s.crowd]), [[7.8, null, null], [6.5, null, null]], 'rounded; no answers while open');
+    await pick(bob.agent, [{ mal_id: 92940, score: 9 }, { mal_id: 92942, score: 5 }]);
+    view = (await pick(bob.agent, [{ mal_id: 92942, score: null }])).json.data;
+    assert.equal(view.me.picks, 1, 'null removes a pick');
+    assert.equal(scoreCalls, 0, 'no score lookups before the lock');
+
+    clock = Date.UTC(2026, 9, 20);
+    assert.equal((await pick(alice.agent, [{ mal_id: 92940, score: 8 }])).status, 409, 'locked');
+    view = (await alice.agent.get('/api/predictions/2026/fall')).json.data;
+    assert.equal(view.open, false);
+    assert.deepEqual(view.standings.map((s) => [s.username, s.points]), [[alice.user.username, 18], [bob.user.username, 0]]);
+    assert.deepEqual([view.me.rank, view.shows[0].score, view.shows[0].crowd, view.shows[0].points], [1, 8, 8.4, 8]);
+    await anon.get('/api/predictions/current');
+    assert.equal(scoreCalls, 1, 'scores cached between refreshes');
+
+    clock = Date.UTC(2027, 0, 16);
+    live = new Map([[92940, 9.0], [92941, 6.5]]);
+    view = (await anon.get('/api/predictions/2026/fall')).json.data;
+    assert.equal(view.final, true);
+    assert.deepEqual(view.standings.map((s) => s.points), [10, 10]);
+    clock += 30 * day;
+    await anon.get('/api/predictions/2026/fall');
+    assert.equal(scoreCalls, 2, 'a final league never refreshes');
+    assert.equal((await anon.get('/api/predictions/2025/fall')).json.data, null, 'the archive never snapshots');
+    assert.equal((await anon.get('/api/predictions/2026/monsoon')).status, 400);
+    assert.ok((await anon.get('/api/predictions/seasons')).json.seasons.some((s) => s.season === 'FALL' && s.year === 2026));
+  } finally {
+    setPredictionSources(null);
+    setPredictionClock(null);
+  }
+});
+
 test('Wrapped: the year from episode_log, local days, binges, streaks, finished shows', async () => {
   const { buildWrapped } = await import('../src/lib/wrapped.js');
   const favorites = [

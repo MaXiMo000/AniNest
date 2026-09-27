@@ -161,6 +161,16 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
       since other hosts' cover images would block the export
 - [x] A December nudge: a home banner for signed-in people through December and Jan 1-14, hideable per year
 
+## Phase 12: Season prediction league
+
+- [x] `prediction_leagues(season, year, scores_at, final)`, `prediction_shows` (a snapshot of the season's 20 most popular
+      shows, with the live AniList score), `predictions(league_id, user_id, mal_id, score)`
+- [x] Opens 14 days before a season starts, picks lock 14 days in, final 14 days after the season ends
+- [x] Guess each show's final AniList score (1.0-10.0): 10 points for spot on, one less per 0.1 off
+- [x] After the lock, scores refresh on read at most every 6 hours; standings, the crowd's average guess and your points
+      follow them live until the last refresh makes the league final. Scores stay hidden while picks are open
+- [x] Page `#/predictions` (More menu) with a past-seasons picker; picks are in the data export and deleted with the account
+
 ## Phase 7 onward
 
 Filled in when each phase starts, using the proposal's table designs: drop-point stats

@@ -2635,3 +2635,13 @@ a.wo-title:hover { color: var(--pink2); }
 .feed-quote { font-style: italic; margin-top: 4px; overflow-wrap: anywhere; }
 .follow-btn.is-following { background: var(--bg2); }
 .push-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; font-weight: 700; }
+
+/* Season prediction league (pages/predictions.js) */
+.predict-grid { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.predict-show { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: start; background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; padding: 10px; min-width: 0; }
+.predict-show img { width: 64px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; border: 2px solid var(--ink); background: var(--bg2); }
+.predict-input { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.predict-input input { width: 100%; max-width: 120px; padding: 6px 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--bg2); color: var(--text); font: inherit; font-size: 1rem; }
+.predict-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+.predict-stats strong { color: var(--text); }
+.predict-points { font-weight: 800; color: var(--pink2); }

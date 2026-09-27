@@ -542,6 +542,37 @@ await db.executeMultiple(`
   CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
 `);
 
+// Season prediction league (lib/predictions.js): a snapshot of a season's
+// most popular shows, everyone's guess at each one's final AniList score, and
+// the live score, refreshed a few times a day until the league is final.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS prediction_leagues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    scores_at INTEGER NOT NULL DEFAULT 0,
+    final INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (season, year)
+  );
+  CREATE TABLE IF NOT EXISTS prediction_shows (
+    league_id INTEGER NOT NULL REFERENCES prediction_leagues(id) ON DELETE CASCADE,
+    rank INTEGER NOT NULL,
+    mal_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    image TEXT,
+    score REAL,
+    PRIMARY KEY (league_id, mal_id)
+  );
+  CREATE TABLE IF NOT EXISTS predictions (
+    league_id INTEGER NOT NULL REFERENCES prediction_leagues(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mal_id INTEGER NOT NULL,
+    score REAL NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (league_id, user_id, mal_id)
+  );
+`);
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the

@@ -612,6 +612,19 @@ export async function anilistGenresForMalIds(malIds) {
   return out;
 }
 
+// AniList average score (0-10, one decimal) for up to 50 MAL ids per request,
+// as Map(malId -> score or null). For the prediction league (lib/predictions.js).
+export async function anilistScoresForMalIds(malIds) {
+  const out = new Map();
+  for (let i = 0; i < malIds.length; i += 50) {
+    const data = await gql(`
+      query($malIds: [Int]) { Page(perPage: 50) { media(idMal_in: $malIds, type: ANIME) { idMal averageScore } } }
+    `, { malIds: malIds.slice(i, i + 50) });
+    for (const m of data.Page?.media || []) out.set(m.idMal, m.averageScore != null ? m.averageScore / 10 : null);
+  }
+  return out;
+}
+
 // Well-rated, well-known anime, optionally for one genre: the candidate pool
 // for Watch Together rooms (routes/rooms.js). `genres` stays as plain names.
 export async function anilistTopForGroup(genre) {

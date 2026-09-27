@@ -34,6 +34,7 @@ import { calendarRouter } from './routes/calendar.js';
 import { roomsRouter } from './routes/rooms.js';
 import { episodeGuideRouter } from './routes/episodeGuide.js';
 import { tournamentsRouter } from './routes/tournaments.js';
+import { predictionsRouter } from './routes/predictions.js';
 import { wrappedRouter } from './routes/wrapped.js';
 import { exportRouter } from './routes/export.js';
 import { reviewReportsRouter, adminReviewReportsRouter } from './routes/reviewReports.js';
@@ -160,6 +161,7 @@ export function createApp() {
   app.use('/api/rooms', roomsRouter);
   app.use('/api/episode-guide', episodeGuideRouter);
   app.use('/api/tournaments', tournamentsRouter);
+  app.use('/api/predictions', predictionsRouter);
   app.use('/api/wrapped', wrappedRouter);
   app.use('/api/export', exportRouter);
   app.use('/api/anime-watch-sources', animeWatchSourcesRouter);
