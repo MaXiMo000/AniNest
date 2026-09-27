@@ -69,6 +69,52 @@ function wireCalendar(root) {
 const INPUT_STYLE = 'width:100%;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600';
 
 // Change password, sign out other devices, download everything, delete.
+// What reaches the bell (and push), plus the weekly email digest
+// (backend/src/routes/notifications.js). Filled in once the settings load.
+function notifySectionHTML() {
+  return `
+    <section class="section" style="max-width:520px;margin:24px auto 0">
+      <div class="section-head">
+        <h2 class="section-title">🔔 Notifications</h2>
+        <span class="section-sub">Choose what you hear about.</span>
+      </div>
+      <div id="notify-box" class="notify-settings"></div>
+    </section>`;
+}
+
+const NOTIFY_OPTIONS = [
+  { key: 'notifyEpisodes', label: '📺 New free episodes of shows on my list' },
+  { key: 'notifyChapters', label: '📖 New chapters of manga I’m reading' },
+  { key: 'emailDigest', label: '✉️ Weekly email: new episodes of what I’m watching, my alerts, and what the people I follow are up to', needsMail: true },
+];
+
+async function wireNotifySettings(root) {
+  const box = root.querySelector('#notify-box');
+  let settings;
+  try {
+    settings = await apiGet('/api/notifications/settings');
+  } catch {
+    return;
+  }
+  if (!box.isConnected) return;
+  box.innerHTML = NOTIFY_OPTIONS.filter((o) => !o.needsMail || settings.mailEnabled).map((o) => `
+    <label>
+      <input type="checkbox" data-setting="${o.key}" ${settings[o.key] ? 'checked' : ''} />
+      <span>${o.label}</span>
+    </label>`).join('');
+  box.querySelectorAll('[data-setting]').forEach((input) => input.addEventListener('change', async () => {
+    input.disabled = true;
+    try {
+      await apiPost('/api/notifications/settings', { [input.dataset.setting]: input.checked });
+      showToast('Saved.');
+    } catch (err) {
+      input.checked = !input.checked;
+      showToast(err.message || 'Couldn’t save — try again.');
+    }
+    input.disabled = false;
+  }));
+}
+
 function securitySectionHTML() {
   return `
     <section class="section" style="max-width:520px;margin:24px auto 0">
@@ -206,11 +252,13 @@ export function renderAccount(root) {
 
     ${calendarSectionHTML()}
     ${importSectionHTML()}
+    ${notifySectionHTML()}
     ${securitySectionHTML()}
   `;
 
   wireCalendar(root);
   wireSecurity(root);
+  wireNotifySettings(root);
 
   // Badges reuse the public profile endpoint (same data, same computation
   // - see backend/src/lib/badges.js) rather than a second route just for

@@ -573,6 +573,15 @@ await db.executeMultiple(`
   );
 `);
 
+// Notification settings (routes/notifications.js): which alerts reach the
+// bell and push, and the opt-in weekly email digest (lib/digest.js).
+// digest_token is the secret in the digest's unsubscribe link.
+await ensureColumn('users', 'notify_episodes', 'INTEGER NOT NULL DEFAULT 1');
+await ensureColumn('users', 'notify_chapters', 'INTEGER NOT NULL DEFAULT 1');
+await ensureColumn('users', 'email_digest', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('users', 'digest_sent_at', 'TEXT');
+await ensureColumn('users', 'digest_token', 'TEXT');
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the

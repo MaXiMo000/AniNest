@@ -1,17 +1,75 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { requireAuth } from '../middleware/session.js';
 import { describe } from '../lib/notifications.js';
 import { pushEnabled, pushPublicKey, isPushEndpoint } from '../lib/push.js';
+import { isMailEnabled } from '../lib/mailer.js';
 
 // A user's own notifications only - one file, one auth boundary.
 export const notificationsRouter = Router();
-notificationsRouter.use(requireAuth);
 
 function asyncRoute(fn) {
   return (req, res, next) => fn(req, res, next).catch(next);
 }
+
+// The weekly digest's unsubscribe link (#/unsubscribe?token=) works signed
+// out, so it sits before the auth check. The token is the only credential,
+// and all it can do is turn that one email off.
+notificationsRouter.post('/unsubscribe', asyncRoute(async (req, res) => {
+  const token = typeof req.body?.token === 'string' && /^[0-9a-f]{64}$/.test(req.body.token) ? req.body.token : null;
+  const result = token
+    ? await db.execute({ sql: 'UPDATE users SET email_digest = 0 WHERE digest_token = ?', args: [token] })
+    : { rowsAffected: 0 };
+  if (!result.rowsAffected) return res.status(404).json({ error: 'That unsubscribe link isn’t valid.' });
+  res.json({ ok: true });
+}));
+
+notificationsRouter.use(requireAuth);
+
+async function settingsOf(userId) {
+  const row = (await db.execute({
+    sql: 'SELECT notify_episodes, notify_chapters, email_digest FROM users WHERE id = ?', args: [userId],
+  })).rows[0];
+  return {
+    notifyEpisodes: Boolean(Number(row.notify_episodes)),
+    notifyChapters: Boolean(Number(row.notify_chapters)),
+    emailDigest: Boolean(Number(row.email_digest)),
+    mailEnabled: isMailEnabled(),
+  };
+}
+
+notificationsRouter.get('/settings', asyncRoute(async (req, res) => {
+  res.json(await settingsOf(req.user.id));
+}));
+
+const settingsSchema = z.object({
+  notifyEpisodes: z.boolean().optional(),
+  notifyChapters: z.boolean().optional(),
+  emailDigest: z.boolean().optional(),
+});
+const SETTING_COLUMNS = { notifyEpisodes: 'notify_episodes', notifyChapters: 'notify_chapters', emailDigest: 'email_digest' };
+
+notificationsRouter.post('/settings', asyncRoute(async (req, res) => {
+  const parsed = settingsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid input.' });
+  if (parsed.data.emailDigest && !isMailEnabled()) return res.status(409).json({ error: 'Email isn’t set up on this site yet.' });
+  const changes = Object.entries(parsed.data).filter(([, v]) => v !== undefined);
+  if (changes.length) {
+    await db.execute({
+      sql: `UPDATE users SET ${changes.map(([k]) => `${SETTING_COLUMNS[k]} = ?`).join(', ')} WHERE id = ?`,
+      args: [...changes.map(([, v]) => (v ? 1 : 0)), req.user.id],
+    });
+  }
+  if (parsed.data.emailDigest) {
+    await db.execute({
+      sql: 'UPDATE users SET digest_token = ? WHERE id = ? AND digest_token IS NULL',
+      args: [crypto.randomBytes(32).toString('hex'), req.user.id],
+    });
+  }
+  res.json(await settingsOf(req.user.id));
+}));
 
 const LIST_LIMIT = 50;
 

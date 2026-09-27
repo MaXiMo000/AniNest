@@ -2645,3 +2645,8 @@ a.wo-title:hover { color: var(--pink2); }
 .predict-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
 .predict-stats strong { color: var(--text); }
 .predict-points { font-weight: 800; color: var(--pink2); }
+
+/* Notification settings (pages/account.js) */
+.notify-settings { display: flex; flex-direction: column; gap: 10px; }
+.notify-settings label { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; cursor: pointer; }
+.notify-settings input { width: 20px; height: 20px; flex: none; accent-color: var(--pink); }

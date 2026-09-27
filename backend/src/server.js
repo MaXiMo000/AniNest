@@ -5,6 +5,7 @@ import { db } from './lib/db.js';
 import { logger } from './lib/logger.js';
 import { startMangaUpdatePolling } from './lib/mangaUpdates.js';
 import { startWatchSourceChecks } from './lib/watchSourceHealth.js';
+import { startDigests } from './lib/digest.js';
 
 const PORT = process.env.PORT || 8787;
 const app = createApp();
@@ -16,6 +17,7 @@ runPruneExpiredSessions();
 
 startMangaUpdatePolling();
 startWatchSourceChecks();
+startDigests();
 
 const server = app.listen(PORT, () => {
   logger.info(`AniNest backend listening on http://localhost:${PORT}`);

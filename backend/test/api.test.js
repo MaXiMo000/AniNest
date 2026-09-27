@@ -1673,6 +1673,79 @@ async function registeredAgent() {
   return { agent, user, id: reg.json.user.id };
 }
 
+test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
+  const { setMailSender } = await import('../src/lib/mailer.js');
+  const { notifyNewEpisodes } = await import('../src/lib/notifications.js');
+  const { agent } = await registeredAgent();
+  const settings = (body) => agent.post('/api/notifications/settings', { csrf: true, body });
+  assert.deepEqual((await agent.get('/api/notifications/settings')).json,
+    { notifyEpisodes: true, notifyChapters: true, emailDigest: false, mailEnabled: false });
+  assert.equal((await settings({ emailDigest: true })).status, 409, 'no mail service, no digest');
+  assert.equal((await settings({ notifyEpisodes: 'yes' })).status, 400);
+
+  await agent.post('/api/favorites', { csrf: true, body: { mal_id: 92970, title: 'Muted', status: 'watching' } });
+  assert.equal((await settings({ notifyEpisodes: false })).json.notifyEpisodes, false);
+  await notifyNewEpisodes(92970, 2);
+  assert.equal((await agent.get('/api/notifications')).json.unread, 0, 'muted kind stays quiet');
+  await settings({ notifyEpisodes: true });
+  await notifyNewEpisodes(92970, 2);
+  assert.equal((await agent.get('/api/notifications')).json.unread, 1);
+
+  setMailSender(async () => {});
+  try {
+    assert.equal((await settings({ emailDigest: true })).json.emailDigest, true);
+  } finally {
+    setMailSender(null);
+  }
+});
+
+test('weekly digest: episodes, alerts and friends in one mail, once a week, unsubscribe link works', async () => {
+  const { setMailSender } = await import('../src/lib/mailer.js');
+  const { runDigests, setDigestAiring } = await import('../src/lib/digest.js');
+  const sent = [];
+  setMailSender(async (mail) => { sent.push(mail); });
+  setDigestAiring(async (malIds) => [92981, 92982].filter((id) => malIds.includes(id)).flatMap((id) => [
+    { mal_id: id, title: `Airing ${id}`, episode: 5, airingAt: 0 },
+    { mal_id: id, title: `Airing ${id}`, episode: 6, airingAt: 0 },
+  ]));
+  try {
+    const reader = await registeredAgent();
+    const friend = await registeredAgent();
+    const quiet = await registeredAgent();
+    await reader.agent.post('/api/favorites', { csrf: true, body: { mal_id: 92981, title: 'Mine', status: 'watching' } });
+    await friend.agent.post('/api/favorites', { csrf: true, body: { mal_id: 92982, title: 'Their Show', status: 'completed' } });
+    await reader.agent.post(`/api/users/${friend.user.username}/follow`, { csrf: true });
+    for (const a of [reader.agent, quiet.agent]) {
+      // eslint-disable-next-line no-await-in-loop
+      await a.post('/api/notifications/settings', { csrf: true, body: { emailDigest: true } });
+    }
+
+    const t = Date.now();
+    await runDigests(t);
+    const mine = sent.filter((m) => m.to === reader.user.email);
+    assert.equal(mine.length, 1);
+    assert.match(mine[0].text, /Airing 92981: episodes 5, 6/);
+    assert.doesNotMatch(mine[0].text, /Airing 92982/, 'only shows on your own Watching list');
+    assert.match(mine[0].text, new RegExp(`${friend.user.username} added Their Show`));
+    assert.equal(sent.some((m) => m.to === quiet.user.email), false, 'nothing to say, no mail');
+
+    await runDigests(t + 60 * 60 * 1000);
+    assert.equal(sent.filter((m) => m.to === reader.user.email).length, 1, 'once a week');
+    await runDigests(t + 8 * 24 * 60 * 60 * 1000);
+    assert.equal(sent.filter((m) => m.to === reader.user.email).length, 2, 'and again next week');
+
+    const token = /unsubscribe\?token=([0-9a-f]{64})/.exec(mine[0].text)[1];
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    assert.equal((await anon.post('/api/notifications/unsubscribe', { csrf: true, body: { token: 'f'.repeat(64) } })).status, 404);
+    assert.equal((await anon.post('/api/notifications/unsubscribe', { csrf: true, body: { token } })).status, 200, 'works signed out');
+    assert.equal((await reader.agent.get('/api/notifications/settings')).json.emailDigest, false);
+  } finally {
+    setMailSender(null);
+    setDigestAiring(null);
+  }
+});
+
 test('new free episodes notify followers only, and aggregate into one unread notification', async () => {
   const admin = await makeAdminAgent();
   const malId = 90000 + Math.floor(Math.random() * 900);

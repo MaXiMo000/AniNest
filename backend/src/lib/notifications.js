@@ -10,7 +10,8 @@ import { sendPush } from './push.js';
 //
 // A user is "following" a title if it's in their favorites and they haven't
 // finished with it: no status yet, or watching/plan-to-watch (anime) or
-// reading/plan-to-read (manga). Completed and dropped titles stay quiet.
+// reading/plan-to-read (manga). Completed and dropped titles stay quiet, and
+// so does a kind the user turned off (users.notify_episodes / notify_chapters).
 //
 // Everything here is best-effort: a notification failing must never break
 // the admin action or background job that triggered it, so errors are logged
@@ -43,7 +44,8 @@ export async function notifyNewEpisodes(malId, count) {
   if (!count || count < 1) return 0;
   try {
     const followers = await db.execute({
-      sql: "SELECT user_id, title FROM favorites WHERE mal_id = ? AND (status IS NULL OR status IN ('watching', 'plan_to_watch'))",
+      sql: `SELECT f.user_id, f.title FROM favorites f JOIN users u ON u.id = f.user_id
+            WHERE f.mal_id = ? AND (f.status IS NULL OR f.status IN ('watching', 'plan_to_watch')) AND u.notify_episodes = 1`,
       args: [malId],
     });
     for (const f of followers.rows) {
@@ -60,7 +62,8 @@ export async function notifyNewEpisodes(malId, count) {
 export async function notifyNewChapter(mangaId) {
   try {
     const followers = await db.execute({
-      sql: "SELECT user_id, title FROM manga_favorites WHERE manga_id = ? AND (status IS NULL OR status IN ('reading', 'plan_to_read'))",
+      sql: `SELECT f.user_id, f.title FROM manga_favorites f JOIN users u ON u.id = f.user_id
+            WHERE f.manga_id = ? AND (f.status IS NULL OR f.status IN ('reading', 'plan_to_read')) AND u.notify_chapters = 1`,
       args: [mangaId],
     });
     for (const f of followers.rows) {
