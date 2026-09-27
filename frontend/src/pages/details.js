@@ -8,6 +8,7 @@ import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { WatchSources } from '../lib/watchSourcesApi.js';
 import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 import { loadEpisodeGuide } from '../lib/episodeGuide.js';
+import { autoplayVideoOnView, autoplayYouTubeOnView, youtubeEmbedUrl } from '../lib/autoplayOnView.js';
 
 function fmtDate(x) {
   return x?.string || '?';
@@ -27,12 +28,13 @@ function statPills(a) {
 function trailerHTML(a) {
   const raw = a.trailer?.embed_url;
   if (!raw) return '';
-  // Jikan's embed_url defaults to autoplay=1 — don't blast video+sound at
-  // someone who just opened a details page.
-  const embed = escapeHtml(raw.includes('autoplay=') ? raw.replace(/autoplay=1/, 'autoplay=0') : raw);
+  // Jikan's embed_url defaults to autoplay=1, which would start it the moment
+  // the page opens. Instead it starts once it scrolls into view and pauses
+  // when it leaves (autoplayOnView), which needs the embed's JS API.
+  const embed = escapeHtml(youtubeEmbedUrl(raw));
   return `
     <div class="tv-frame">
-      <div class="tv-screen"><iframe src="${embed}" title="Trailer" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>
+      <div class="tv-screen"><iframe id="trailer-player" src="${embed}" title="Trailer" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>
       <div class="tv-label">📼 OFFICIAL TRAILER</div>
     </div>`;
 }
@@ -169,7 +171,7 @@ function themesSectionHTML(themes, animeTitle, { unavailable = false } = {}) {
       ${head}
       <div class="tv-frame">
         <div class="tv-screen"><video id="theme-player" style="width:100%;height:100%" controls preload="none" src="${escapeHtml(first.videoUrl)}"></video></div>
-        <div class="tv-label" id="theme-now-playing">▶ ${escapeHtml(trackLabel(first))} — press play</div>
+        <div class="tv-label" id="theme-now-playing">▶ ${escapeHtml(trackLabel(first))}</div>
       </div>
       <p class="muted-note" id="theme-video-down" hidden>The video host isn't responding right now. You can still listen:</p>
       <div class="song-links" id="theme-listen">${listenLinksHTML(listenQuery(first, animeTitle))}</div>
@@ -182,6 +184,7 @@ function themesSectionHTML(themes, animeTitle, { unavailable = false } = {}) {
 function wireThemes(root) {
   const player = root.querySelector('#theme-player');
   if (!player) return;
+  autoplayVideoOnView(player);
   // A cached list can outlive AnimeThemes' video host; say so instead of a dead player.
   player.addEventListener('error', () => { root.querySelector('#theme-video-down')?.removeAttribute('hidden'); });
   root.querySelectorAll('#theme-track-list .guess-choice').forEach((btn) => {
@@ -321,6 +324,9 @@ export async function renderDetails(root, id) {
         ${cardRail(recs)}
       </section>` : ''}
     `;
+
+    const trailer = root.querySelector('#trailer-player');
+    if (trailer) autoplayYouTubeOnView(trailer);
 
     root.querySelector('#fav-toggle')?.addEventListener('click', async (e) => {
       const btn = e.target;
