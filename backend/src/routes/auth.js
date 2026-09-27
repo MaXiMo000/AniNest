@@ -51,6 +51,9 @@ authRouter.post('/register', async (req, res, next) => {
     const humanCheck = await verifyTurnstile(turnstileToken, req.ip);
     if (!humanCheck) return res.status(400).json({ error: 'Bot check failed — please try again.' });
 
+    const taken = await db.execute({ sql: 'SELECT 1 FROM users WHERE username = ? COLLATE NOCASE', args: [username] });
+    if (taken.rows.length) return res.status(409).json({ error: 'That username or email is already registered.' });
+
     const passwordHash = await hashPassword(password);
 
     let userId;
@@ -86,8 +89,10 @@ authRouter.post('/login', async (req, res, next) => {
     const { identifier, password } = parsed.data;
 
     const result = await db.execute({
-      sql: 'SELECT * FROM users WHERE email = ? OR username = ?',
-      args: [identifier.toLowerCase(), identifier],
+      // Usernames log in with any capitalisation; the exact spelling wins if
+      // two look-alike accounts predate case-insensitive usernames.
+      sql: 'SELECT * FROM users WHERE email = ? OR username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
+      args: [identifier.toLowerCase(), identifier, identifier],
     });
     const user = result.rows[0];
 

@@ -31,8 +31,10 @@ usersRouter.get('/:username', asyncRoute(async (req, res) => {
   if (!USERNAME_RE.test(username)) return res.status(404).json({ error: 'User not found.' });
 
   const userResult = await db.execute({
-    sql: 'SELECT id, username, created_at FROM users WHERE username = ?',
-    args: [username],
+    // Any capitalisation finds the profile; the exact spelling wins if two
+    // look-alike accounts predate case-insensitive usernames.
+    sql: 'SELECT id, username, created_at FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
+    args: [username, username],
   });
   const user = userResult.rows[0];
   if (!user) return res.status(404).json({ error: 'User not found.' });
@@ -85,7 +87,10 @@ async function tasteInput(userId) {
 usersRouter.get('/:username/taste-match', requireAuth, asyncRoute(async (req, res) => {
   const { username } = req.params;
   if (!USERNAME_RE.test(username)) return res.status(404).json({ error: 'User not found.' });
-  const found = await db.execute({ sql: 'SELECT id FROM users WHERE username = ?', args: [username] });
+  const found = await db.execute({
+    sql: 'SELECT id FROM users WHERE username = ? COLLATE NOCASE ORDER BY username = ? DESC LIMIT 1',
+    args: [username, username],
+  });
   const other = found.rows[0];
   if (!other) return res.status(404).json({ error: 'User not found.' });
   if (Number(other.id) === req.user.id) return res.status(400).json({ error: 'That’s you!' });

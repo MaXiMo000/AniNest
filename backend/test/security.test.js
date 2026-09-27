@@ -187,3 +187,23 @@ test('password reset reports itself as off when no mail service is configured', 
   const anon = await makeAgent().ready();
   assert.equal((await anon.post('/api/auth/forgot', { body: { email: 'a@test.local' } })).status, 503);
 });
+
+test('usernames are unique regardless of case, and case doesn\'t matter to find or log in', async () => {
+  const { user } = await registered();
+  const lookAlike = { ...newUser(), username: user.username.toUpperCase() };
+  const anon = await makeAgent().ready();
+  assert.equal((await anon.post('/api/auth/register', { body: lookAlike })).status, 409);
+
+  const profile = await anon.get(`/api/users/${user.username.toUpperCase()}`);
+  assert.equal(profile.status, 200);
+  assert.equal(profile.json.user.username, user.username, 'shows the real spelling');
+  assert.equal((await anon.post('/api/auth/login', { body: { identifier: user.username.toUpperCase(), password: user.password } })).status, 200);
+});
+
+test('the database itself refuses a look-alike username', async () => {
+  const { user } = await registered();
+  await assert.rejects(db.execute({
+    sql: 'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+    args: [user.username.toUpperCase(), `x${user.email}`, 'x'],
+  }), /UNIQUE/);
+});

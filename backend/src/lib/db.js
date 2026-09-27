@@ -1,5 +1,6 @@
 import { createClient } from '@libsql/client';
 import { track } from './tidewatch-metrics.js';
+import { logger } from './logger.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -466,6 +467,16 @@ await db.execute(`
     expires_at TEXT NOT NULL
   )
 `);
+
+// Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
+// can't be two different people. Registration checks this too (routes/auth.js);
+// the index is the backstop. If older look-alike accounts already exist the
+// index can't be built, so boot carries on with the route check alone.
+try {
+  await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_nocase ON users(username COLLATE NOCASE)');
+} catch (err) {
+  logger.warn({ err }, 'case-insensitive username index not created: look-alike usernames already exist');
+}
 
 // Bootstraps the site owner (or any trusted moderator) into is_admin - there's
 // no signup flow for this, on purpose, so it's driven by an env var rather
