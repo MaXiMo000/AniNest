@@ -8,6 +8,7 @@ import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { WatchSources } from '../lib/watchSourcesApi.js';
 import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 import { loadEpisodeGuide } from '../lib/episodeGuide.js';
+import { loadContinuation } from '../lib/continuation.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
 import { apiGet } from '../lib/http.js';
 import { autoplayVideoOnView, autoplayYouTubeOnView, youtubeEmbedUrl } from '../lib/autoplayOnView.js';
@@ -332,6 +333,8 @@ export async function renderDetails(root, id) {
         <div class="info-box"><div class="k">Members</div><div class="v">${a.members ? a.members.toLocaleString() : '—'}</div></div>
       </div>
 
+      <div id="continuation-slot"></div>
+
       ${charactersSectionHTML(characters)}
 
       <div id="episode-guide-slot"></div>
@@ -427,6 +430,7 @@ export async function renderDetails(root, id) {
     loadThemes(root, id, a.title);
     loadTournamentNote(root, id);
     loadFranchise(root, id);
+    loadContinuation(root, a.mal_id);
     loadEpisodeGuide(root, a);
 
     animeReviews.wire(root, a.mal_id);

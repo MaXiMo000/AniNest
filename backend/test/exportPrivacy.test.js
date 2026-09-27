@@ -9,6 +9,10 @@ import path from 'node:path';
 import os from 'node:os';
 
 process.env.NODE_ENV = 'test';
+// Blank the production database and optional services a local .env may configure:
+// dotenv never overrides a variable that is already set, so tests always use their own
+// temp database and can't hit Turnstile or send real mail or push.
+for (const key of ['TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'TURNSTILE_SECRET_KEY', 'RESEND_API_KEY', 'SMTP_USER', 'SMTP_PASS', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'YOUTUBE_API_KEY']) process.env[key] = '';
 process.env.DB_PATH = path.join(os.tmpdir(), `aninest-export-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 process.env.AUTH_RATE_LIMIT = '1000';
 process.env.RATE_LIMIT = '1000';

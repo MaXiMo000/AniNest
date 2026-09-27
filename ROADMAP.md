@@ -161,6 +161,15 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
       since other hosts' cover images would block the export
 - [x] A December nudge: a home banner for signed-in people through December and Jan 1-14, hideable per year
 
+## Phase 11: Anime-to-manga continuation guide
+
+- [x] Zero-user fallback: the anime's SOURCE relation on AniList names the manga or light novel (cached a day), with a
+      link to search it in Manga. Anime originals with no answers show nothing
+- [x] `manga_continuations(mal_id, user_id, last_chapter, volume)`: one answer per person, changeable or removable
+- [x] The page shows the most common answer ("ends at chapter 87 (volume 10), so start at 88"), ties going to the later
+      chapter, with how many people agree
+- [x] In the data export and deleted with the account
+
 ## Phase 12: Season prediction league
 
 - [x] `prediction_leagues(season, year, scores_at, final)`, `prediction_shows` (a snapshot of the season's 20 most popular

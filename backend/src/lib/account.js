@@ -11,7 +11,7 @@ import { db } from './db.js';
 const EXPORT_TABLES = [
   'favorites', 'manga_favorites', 'reviews', 'manga_reviews', 'game_scores',
   'daily_results', 'manga_daily_results', 'episode_log', 'episode_ratings', 'theme_tournament_votes',
-  'predictions',
+  'predictions', 'manga_continuations',
 ];
 // Also exported, but deleted separately below.
 const EXPORT_ALSO = ['game_score_log', 'it_clicked'];

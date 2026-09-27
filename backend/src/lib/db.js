@@ -12,7 +12,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //  - Remote Turso (recommended for hosts with no persistent disk, e.g. a
 //    free-tier Render web service, which can't attach one at all): set
 //    TURSO_DATABASE_URL + TURSO_AUTH_TOKEN and this ignores DB_PATH entirely.
-const isRemote = Boolean(process.env.TURSO_DATABASE_URL);
+// Turso is only used with NODE_ENV=production, so a local .env that carries
+// the production keys can't point dev servers or the test suite at real data.
+const isRemote = Boolean(process.env.TURSO_DATABASE_URL) && process.env.NODE_ENV === 'production';
+if (process.env.TURSO_DATABASE_URL && !isRemote) {
+  logger.warn('TURSO_DATABASE_URL is set but NODE_ENV is not production: using the local database file instead');
+}
 const localPath = process.env.DB_PATH || path.join(__dirname, '..', '..', 'data', 'aninest.db');
 // Windows paths (C:\...) need forward slashes in a file: URL — backslashes
 // and the drive-letter colon otherwise confuse the URL parser.
@@ -571,6 +576,20 @@ await db.executeMultiple(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (league_id, user_id, mal_id)
   );
+`);
+
+// Manga continuation guide (routes/continuations.js): where each person says
+// the anime stops in its source ("ends at chapter 87"). The page shows the
+// most common answer.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS manga_continuations (
+    mal_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_chapter REAL NOT NULL,
+    volume INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (mal_id, user_id)
+  )
 `);
 
 // Notification settings (routes/notifications.js): which alerts reach the

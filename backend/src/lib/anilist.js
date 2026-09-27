@@ -637,6 +637,24 @@ export async function anilistBasicsForMalIds(malIds) {
   return out;
 }
 
+const SOURCE_FORMAT = { MANGA: 'Manga', NOVEL: 'Light novel', ONE_SHOT: 'One-shot' };
+
+// The manga or novel an anime adapts (its SOURCE relation), as
+// { title, format, url }, or null for anime originals and unknown ids.
+export async function anilistSourceMaterial(malId) {
+  const data = await gqlOrNull(`
+    query($idMal: Int) {
+      Media(idMal: $idMal, type: ANIME) {
+        relations { edges { relationType(version: 2) node { type format title { romaji english } siteUrl } } }
+      }
+    }
+  `, { idMal: malId });
+  const edge = (data?.Media?.relations?.edges || []).find((e) => e.relationType === 'SOURCE' && e.node?.type === 'MANGA');
+  if (!edge) return null;
+  const n = edge.node;
+  return { title: n.title?.english || n.title?.romaji || 'Untitled', format: SOURCE_FORMAT[n.format] || 'Manga', url: n.siteUrl || null };
+}
+
 // Well-rated, well-known anime, optionally for one genre: the candidate pool
 // for Watch Together rooms (routes/rooms.js). `genres` stays as plain names.
 export async function anilistTopForGroup(genre) {

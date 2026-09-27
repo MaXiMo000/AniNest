@@ -31,6 +31,10 @@ import path from 'node:path';
 import os from 'node:os';
 
 process.env.NODE_ENV = 'test';
+// Blank the production database and optional services a local .env may configure:
+// dotenv never overrides a variable that is already set, so tests always use their own
+// temp database and can't hit Turnstile or send real mail or push.
+for (const key of ['TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'TURNSTILE_SECRET_KEY', 'RESEND_API_KEY', 'SMTP_USER', 'SMTP_PASS', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'YOUTUBE_API_KEY']) process.env[key] = '';
 process.env.DB_PATH = path.join(os.tmpdir(), `aninest-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 // Many tests below legitimately call /api/auth/* in the same process, all
 // sharing one IP-keyed rate-limit bucket (127.0.0.1) — raise the ceiling so
@@ -1086,7 +1090,7 @@ test('an admin adding a link directly lands as already-approved, and only accept
 
 test('admin YouTube search reports "not configured" without a live call when YOUTUBE_API_KEY is unset', async () => {
   const admin = await makeAdminAgent();
-  assert.equal(process.env.YOUTUBE_API_KEY, undefined, 'test env should not have a real key set');
+  assert.ok(!process.env.YOUTUBE_API_KEY, 'test env should not have a real key set');
 
   const missingParams = await admin.get('/api/admin/watch-sources/search');
   assert.equal(missingParams.status, 400);
@@ -1672,6 +1676,44 @@ async function registeredAgent() {
   const reg = await agent.post('/api/auth/register', { csrf: true, body: user });
   return { agent, user, id: reg.json.user.id };
 }
+
+test('manga continuation: consensus picks the most common chapter', async () => {
+  const { consensus } = await import('../src/routes/continuations.js');
+  assert.equal(consensus([]), null);
+  assert.deepEqual(consensus([
+    { last_chapter: 87, volume: 10 }, { last_chapter: 87, volume: null }, { last_chapter: 87, volume: 10 }, { last_chapter: 60, volume: 7 },
+  ]), { lastChapter: 87, nextChapter: 88, volume: 10, agree: 3, total: 4 });
+  assert.equal(consensus([{ last_chapter: 40 }, { last_chapter: 41.5 }]).lastChapter, 41.5, 'a tie goes to the later chapter');
+  assert.equal(consensus([{ last_chapter: 41.5 }]).nextChapter, 42);
+});
+
+test('manga continuation API: source works with zero users, one answer per person', async () => {
+  const { setContinuationSource } = await import('../src/routes/continuations.js');
+  setContinuationSource(async (malId) => (malId === 92990 ? { title: 'Source Manga', format: 'Manga', url: null } : null));
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    assert.deepEqual((await anon.get('/api/continuations/92990')).json, { source: { title: 'Source Manga', format: 'Manga', url: null }, consensus: null, mine: null });
+    assert.equal((await anon.get('/api/continuations/92991')).json.source, null, 'anime original');
+    assert.equal((await anon.get('/api/continuations/abc')).status, 400);
+    assert.equal((await anon.post('/api/continuations/92990', { csrf: true, body: { last_chapter: 87 } })).status, 401);
+
+    const a = await registeredAgent();
+    const b = await registeredAgent();
+    const say = (who, body) => who.agent.post('/api/continuations/92990', { csrf: true, body });
+    assert.equal((await say(a, { last_chapter: 0 })).status, 400);
+    assert.equal((await say(a, { last_chapter: 'lots' })).status, 400);
+    await say(a, { last_chapter: 50, volume: 6 });
+    let v = (await say(a, { last_chapter: 87, volume: 10 })).json;
+    assert.deepEqual([v.consensus.total, v.mine], [1, { lastChapter: 87, volume: 10 }], 'a second answer replaces the first');
+    v = (await say(b, { last_chapter: 87 })).json;
+    assert.deepEqual(v.consensus, { lastChapter: 87, nextChapter: 88, volume: 10, agree: 2, total: 2 });
+    v = (await b.agent.delete('/api/continuations/92990', { csrf: true })).json;
+    assert.deepEqual([v.consensus.total, v.mine], [1, null]);
+  } finally {
+    setContinuationSource(null);
+  }
+});
 
 test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');

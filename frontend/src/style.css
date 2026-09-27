@@ -2650,3 +2650,9 @@ a.wo-title:hover { color: var(--pink2); }
 .notify-settings { display: flex; flex-direction: column; gap: 10px; }
 .notify-settings label { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; cursor: pointer; }
 .notify-settings input { width: 20px; height: 20px; flex: none; accent-color: var(--pink); }
+
+/* Manga continuation guide (lib/continuation.js) */
+.continuation-answer { font-size: 1.1rem; margin: 6px 0 2px; }
+.continuation-form { margin-top: 10px; }
+.continuation-form summary { cursor: pointer; font-weight: 800; color: var(--pink2); }
+.continuation-form form { margin-top: 8px; }
