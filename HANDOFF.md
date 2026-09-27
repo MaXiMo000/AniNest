@@ -161,6 +161,17 @@ group score = 60% least-happy member + 40% mean + 0.1 per 👍; one 👎 vetoes;
 watching or dropped is excluded. Candidates are AniList's top-rated shows overall plus the group's top 4 genres (cached 6h).
 The room page polls every 8s.
 
+**OP/ED tournament** (`routes/tournaments.js`; `lib/tournament.js` is pure; `lib/tournamentStore.js` builds and loads; `#/tournament`,
+`#/tournament?kind=ED`). Two 16-song single-elimination brackets per season, Best Opening and Best Ending, one song per show
+seeded by the show's AniList popularity. `GET /api/tournaments/current?kind=OP|ED` serves the headline season: the current one
+from 6 weeks in, the previous one before that. The first request builds both brackets in one walk: the season's most popular shows
+(two AniList pages), up to 30 of them, through the jukebox lookup (`animeSource.themes`, so AnimeThemes then MAL's song list), answering
+`{ pending: true }` after 15s while it carries on; fewer than 8 songs means no bracket, retried after 15 minutes. Entries are a
+snapshot, so the bracket never changes. Rounds are 3 days on a clock from the start; winners are not stored but computed from
+the votes when a round closes: more votes wins, a tie (including 0-0) goes to the better seed. `POST /api/tournaments/:id/vote
+{ round, match, seed }` needs an account, only counts in the open round, and can be changed until it closes. Counts of an open
+match are hidden from anyone who hasn't voted in it. `GET /api/tournaments/:year/:season` reads an earlier season and never builds.
+
 **Vibe search** (`lib/vibeParser.js` is pure; `lib/vibeSearch.js`; `#/vibe?q=`). `GET /api/anime/vibe?q=` understands
 moods, genres, "no X", episode counts, "short", formats, decades and years, finished/airing, and "like <title>". Each
 vocabulary word maps to exactly one AniList genre or tag, because AniList's `genre_in` and `tag_in` are AND filters: several

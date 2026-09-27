@@ -33,9 +33,9 @@ that differ from that proposal, and the **checklist** for each phase.
 | 5 | Vibe search v1 (rule parser to AniList tags), then v2 (Claude Haiku parser) | Headline feature, no users needed | ~1 week + 2 days |
 | 6 | Taste compatibility, then Watch-together rooms | Uses favorites, reviews, quiz | 3 days + 1 week |
 | ~~7~~ | ~~Franchise community orders~~ | Dropped (owner decision, 2026-09-27) | - |
-| 8 | Drop-point stats + spoiler protection | Needs weeks of Phase 0 data first | 3-4 days |
+| ~~8~~ | ~~Drop-point stats + spoiler protection~~ | Dropped for now (owner decision, 2026-09-27) | - |
+| 10 | Season OP/ED tournament | Reuses the jukebox; done before 9 (owner decision, 2026-09-27) | 3-4 days |
 | 9 | AniNest Wrapped (PNG share card) | Needs `episode_log`; ship before December | 3-4 days |
-| 10 | Season OP/ED tournament | Reuses the jukebox | 3-4 days |
 | 11 | Anime-to-manga continuation guide | Community-submitted | ~1 week |
 | 12 | Season prediction league | Most moving parts; best started at a season boundary | 1-1.5 weeks |
 
@@ -132,6 +132,18 @@ fallback while AnimeThemes was down (see HANDOFF.md). Checked live against FMA, 
       joining doesn't. Score = 60% least-happy member + 40% mean, 👍 nudges, one 👎 vetoes; anything a member completed,
       is watching or dropped is excluded. Candidate pool: AniList top-rated overall + the group's top 4 genres, cached 6h
 - [x] Pages `#/together` and `#/together/:code` (share link, members, swipe card, top 3 picks, 8s polling)
+
+## Phase 10: Season OP/ED tournament
+
+- [x] `theme_tournaments(season, year, kind, size, starts_at, round_days)`, `theme_tournament_entries` (a snapshot of each
+      song), `theme_tournament_votes(tournament_id, user_id, round, match, seed)`; winners are computed, not stored
+- [x] Best Opening and Best Ending per season: 16 songs, one per show, seeded by AniList popularity (8 if the season has
+      fewer), songs from the jukebox lookup so the MAL song-list fallback works too
+- [x] Opens 6 weeks into a season; until then the previous season's bracket is the headline
+- [x] 3-day rounds on a fixed clock; more votes wins, ties (and 0-0 on a quiet site) go to the better seed, so every bracket finishes
+- [x] One vote per account per match, changeable while the round is open; counts hidden until you vote in that match
+- [x] Page `#/tournament` (More menu): current round as head-to-heads with a shared player, bracket view, champion banner
+- [ ] Later: link from the detail page's jukebox when a song is in a bracket; a past-seasons picker (the API already serves them)
 
 ## Phase 7 onward
 

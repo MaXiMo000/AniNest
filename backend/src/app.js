@@ -32,6 +32,7 @@ import { franchisesRouter } from './routes/franchises.js';
 import { calendarRouter } from './routes/calendar.js';
 import { roomsRouter } from './routes/rooms.js';
 import { episodeGuideRouter } from './routes/episodeGuide.js';
+import { tournamentsRouter } from './routes/tournaments.js';
 
 // Express app assembly lives here, separate from server.js's listen()/signal
 // handling, so tests can import and exercise `app` directly (e.g. with
@@ -106,6 +107,7 @@ export function createApp() {
   app.use('/api/calendar', calendarRouter);
   app.use('/api/rooms', roomsRouter);
   app.use('/api/episode-guide', episodeGuideRouter);
+  app.use('/api/tournaments', tournamentsRouter);
   app.use('/api/anime-watch-sources', animeWatchSourcesRouter);
   app.use('/api/admin/watch-sources', adminWatchSourcesRouter);
   // Not under /api/users: usersRouter's /:username would swallow /leaderboard.
