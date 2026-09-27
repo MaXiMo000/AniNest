@@ -9,6 +9,7 @@ import { verifyTurnstile } from '../lib/turnstile.js';
 import { requireAuth } from '../middleware/session.js';
 import { exportUserData, deleteUserData } from '../lib/account.js';
 import { isMailEnabled, sendMail } from '../lib/mailer.js';
+import { throttleKey, lockedFor, recordFailure, clearFailures } from '../lib/loginThrottle.js';
 
 export const authRouter = Router();
 
@@ -89,12 +90,23 @@ authRouter.post('/login', async (req, res, next) => {
     });
     const user = result.rows[0];
 
+    const key = throttleKey(user, identifier);
+    const wait = await lockedFor(key);
+    if (wait) {
+      const minutes = Math.ceil(wait / 60000);
+      return res.status(429).json({ error: `Too many wrong passwords for this account. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password.` });
+    }
+
     // Same generic message whether the account doesn't exist or the password
     // is wrong, and we always run bcrypt.compare (against a dummy hash if no
     // user was found) so response timing doesn't reveal which case it was.
     const dummyHash = '$2a$12$C6UzMDM.H6dfI/f/IKcEeOoRTvVCjMxNzO7RCUEuHpB7Zr8/2ZLBW';
     const ok = await verifyPassword(password, user?.password_hash || dummyHash);
-    if (!user || !ok) return res.status(401).json({ error: 'Invalid username/email or password.' });
+    if (!user || !ok) {
+      await recordFailure(key);
+      return res.status(401).json({ error: 'Invalid username/email or password.' });
+    }
+    await clearFailures(key);
 
     const userId = Number(user.id);
     const { token } = await createSession(userId);

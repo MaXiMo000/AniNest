@@ -13,6 +13,7 @@ process.env.AUTH_RATE_LIMIT = '1000';
 process.env.RATE_LIMIT = '1000';
 // Production shape: the frontend's /api rewrite plus Render's load balancer.
 process.env.TRUST_PROXY = '2';
+process.env.LOGIN_MAX_FAILURES = '3';
 
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/lib/db.js');
@@ -230,4 +231,36 @@ test('the deployed CSP only lets the page talk to its own origin', () => {
   const csp = /name: Content-Security-Policy\s+value: "([^"]+)"/.exec(yaml)[1];
   assert.match(csp, /connect-src 'self';/);
   assert.doesNotMatch(csp, /onrender\.com/);
+});
+
+test('an account locks after repeated wrong passwords, from any IP, and unknown names behave the same', async () => {
+  const { user } = await registered();
+  const tryLogin = (password) => makeAgent().ready().then((a) => a.post('/api/auth/login', { body: { identifier: user.username, password } }));
+  for (let i = 0; i < 3; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal((await tryLogin('wrong')).status, 401);
+  }
+  const locked = await tryLogin(user.password);
+  assert.equal(locked.status, 429, 'even the right password waits out the lock');
+  assert.match(locked.json.error, /Try again in 15 minutes/);
+
+  const ghost = `ghost${Date.now()}`;
+  const tryGhost = () => makeAgent().ready().then((a) => a.post('/api/auth/login', { body: { identifier: ghost, password: 'x' } }));
+  for (let i = 0; i < 3; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal((await tryGhost()).status, 401);
+  }
+  assert.equal((await tryGhost()).status, 429, 'a name with no account locks the same way');
+});
+
+test('a successful login clears earlier failures', async () => {
+  const { user } = await registered();
+  const agent = await makeAgent().ready();
+  const login = (password) => agent.post('/api/auth/login', { body: { identifier: user.email, password } });
+  await login('wrong');
+  await login('wrong');
+  assert.equal((await login(user.password)).status, 200);
+  await login('wrong');
+  await login('wrong');
+  assert.equal((await login(user.password)).status, 200, 'the count started over after the success');
 });

@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { pruneExpiredSessions } from './lib/auth.js';
+import { pruneLoginFailures } from './lib/loginThrottle.js';
 import { db } from './lib/db.js';
 import { logger } from './lib/logger.js';
 import { startMangaUpdatePolling } from './lib/mangaUpdates.js';
@@ -8,7 +9,8 @@ import { startWatchSourceChecks } from './lib/watchSourceHealth.js';
 const PORT = process.env.PORT || 8787;
 const app = createApp();
 
-const runPruneExpiredSessions = () => pruneExpiredSessions().catch((err) => logger.error({ err }, 'pruneExpiredSessions failed'));
+const runPruneExpiredSessions = () => Promise.all([pruneExpiredSessions(), pruneLoginFailures()])
+  .catch((err) => logger.error({ err }, 'pruning expired sessions or login failures failed'));
 setInterval(runPruneExpiredSessions, 60 * 60 * 1000).unref();
 runPruneExpiredSessions();
 

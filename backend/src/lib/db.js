@@ -468,6 +468,16 @@ await db.execute(`
   )
 `);
 
+// Failed logins per account, for lib/loginThrottle.js. Times are epoch ms.
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS login_failures (
+    key TEXT PRIMARY KEY,
+    failures INTEGER NOT NULL,
+    first_failed_at INTEGER NOT NULL,
+    locked_until INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
 // Usernames are unique regardless of case, so "MaXiMo000" and "maximo000"
 // can't be two different people. Registration checks this too (routes/auth.js);
 // the index is the backstop. If older look-alike accounts already exist the
