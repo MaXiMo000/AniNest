@@ -96,7 +96,7 @@ function joinHTML() {
 function deckCardHTML(c) {
   return `
     <div class="swipe-card">
-      <img src="${escapeHtml(imageOf(c))}" alt="" />
+      <img src="${escapeHtml(imageOf(c))}" alt="" loading="lazy" />
       <div class="swipe-body">
         <a class="wo-title" href="#/anime/${Number(c.mal_id)}">${escapeHtml(c.title)}</a>
         <div class="wo-meta">${escapeHtml([c.type, c.episodes && c.type !== 'Movie' ? `${c.episodes} eps` : null, c.year, c.score ? `★ ${c.score}` : null].filter(Boolean).join(' · '))}</div>

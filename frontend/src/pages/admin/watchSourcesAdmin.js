@@ -180,7 +180,7 @@ function ytResultsHTML(results) {
   if (!results.length) return '<div class="compare-results-empty">No results on that channel for this search.</div>';
   return results.map((r) => `
     <div class="admin-yt-result">
-      ${r.thumbnail ? `<img src="${escapeHtml(r.thumbnail)}" alt="" />` : ''}
+      ${r.thumbnail ? `<img src="${escapeHtml(r.thumbnail)}" alt="" loading="lazy" />` : ''}
       <div class="admin-yt-result-title">${escapeHtml(r.title)}</div>
       <button class="btn-pow btn-pow--sm" data-use-video="${escapeHtml(r.videoId)}" data-use-channel="${escapeHtml(r.channelName)}" data-use-title="${escapeHtml(r.title)}">✅ Use this</button>
     </div>`).join('');
@@ -300,7 +300,7 @@ function wireCandidateRow(root, row) {
       resultsEl.innerHTML = list.length
         ? `<ul class="compare-results-list">${list.map((a) => `
             <li><button type="button" class="compare-result" data-pick="${a.mal_id}">
-              ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" />` : ''}
+              ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" loading="lazy" />` : ''}
               <span>${escapeHtml(a.title)}</span>
             </button></li>`).join('')}</ul>`
         : '<div class="compare-results-empty">No matches — try another spelling.</div>';
@@ -444,7 +444,7 @@ function wireEvents(root) {
       resultsEl.innerHTML = list.length
         ? `<ul class="compare-results-list">${list.map((a) => `
             <li><button class="compare-result" data-pick-id="${a.mal_id}">
-              ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" />` : ''}
+              ${imageOf(a) ? `<img src="${escapeHtml(imageOf(a))}" alt="" loading="lazy" />` : ''}
               <span>${escapeHtml(a.title)}</span>
             </button></li>`).join('')}</ul>`
         : '<div class="compare-results-empty">No matches.</div>';

@@ -107,7 +107,7 @@ function reviewRowHTML(r, anime) {
   const img = anime ? imageOf(anime) : '';
   return `
     <a class="review-card" href="#/anime/${r.mal_id}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
-      ${img ? `<img src="${escapeHtml(img)}" alt="" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
+      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
       <div style="flex:1;min-width:0">
         <div class="review-head">
           <span class="badge-score small">${r.rating}</span>
@@ -124,7 +124,7 @@ function mangaReviewRowHTML(r, manga) {
   const img = mangaImg(manga?.coverImage);
   return `
     <a class="review-card" href="#/manga/${encodeURIComponent(r.manga_id)}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
-      ${img ? `<img src="${escapeHtml(img)}" alt="" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
+      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
       <div style="flex:1;min-width:0">
         <div class="review-head">
           <span class="badge-score small">${r.rating}</span>

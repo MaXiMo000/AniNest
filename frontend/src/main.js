@@ -1,41 +1,8 @@
 import { route, notFound, startRouter, navigate, currentPath } from './lib/router.js';
 import { renderHome } from './pages/home.js';
-import { renderBrowse } from './pages/browse.js';
-import { renderDetails } from './pages/details.js';
-import { renderFranchise } from './pages/franchise.js';
-import { renderVibe } from './pages/vibe.js';
-import { renderTogether, renderRoom } from './pages/together.js';
-import { renderTournament } from './pages/tournament.js';
-import { renderWrapped } from './pages/wrapped.js';
 import { renderFavorites } from './pages/favorites.js';
-import { renderSchedule } from './pages/schedule.js';
-import { renderLogin } from './pages/login.js';
-import { renderRegister } from './pages/register.js';
 import { renderAccount } from './pages/account.js';
-import { renderForgotPassword, renderResetPassword } from './pages/passwordReset.js';
-import { renderProfile } from './pages/profile.js';
-import { renderStudio } from './pages/studio.js';
-import { renderPerson } from './pages/person.js';
-import { renderScreenshotSearch } from './pages/screenshotSearch.js';
-import { renderTierList } from './pages/tierList.js';
-import { renderGamesHub } from './pages/games/hub.js';
-import { renderHigherLower } from './pages/games/higherLower.js';
-import { renderGuessTheAnime } from './pages/games/guessTheAnime.js';
-import { renderQuiz } from './pages/games/quiz.js';
-import { renderDailyChallenge, renderMangaDailyChallenge } from './pages/games/dailyChallenge.js';
-import { renderLeaderboard } from './pages/games/leaderboard.js';
-import { renderChoiceGame } from './pages/games/choiceGames.js';
-import { renderTimeline } from './pages/games/timeline.js';
-import { renderGameStats } from './pages/games/stats.js';
-import { renderCompare } from './pages/compare.js';
-import { renderXpLeaderboard } from './pages/xpLeaderboard.js';
-import { renderNotifications } from './pages/notifications.js';
-import { renderMangaBrowse } from './pages/mangaBrowse.js';
-import { renderMangaDetail } from './pages/mangaDetail.js';
 import { renderMangaFavorites } from './pages/mangaFavorites.js';
-import { renderWatchSourceSubmit } from './pages/watchSourceSubmit.js';
-import { renderWatchSourcesAdmin } from './pages/admin/watchSourcesAdmin.js';
-import { renderReviewReportsAdmin } from './pages/admin/reviewReports.js';
 import { wireCardEvents, wireMangaCardEvents, updateFavCount, updateMangaFavCount, emptyHTML, escapeHtml, loadingHTML } from './lib/ui.js';
 import { Favorites } from './lib/store.js';
 import { MangaFavorites } from './lib/mangaStore.js';
@@ -44,6 +11,95 @@ import { Notifications } from './lib/notificationsApi.js';
 import { installGlobalErrorReporting } from './lib/errorReporter.js';
 import { wirePowSelects } from './lib/powSelect.js';
 import { wireThemeToggle } from './lib/theme.js';
+
+// Pages load on first visit (each becomes its own chunk), so the first page
+// doesn't download the admin tools and eleven games. Home, favorites and
+// account stay in the main bundle: they're the landing page or re-rendered
+// from store subscriptions below.
+// A tab left open across a deploy asks for chunk names that no longer
+// exist; reloading once picks up the new build.
+async function loadPage(load) {
+  try {
+    const mod = await load();
+    try { sessionStorage.removeItem('aninest-chunk-reload'); } catch { /* storage blocked */ }
+    return mod;
+  } catch (err) {
+    let reloaded = false;
+    try { reloaded = sessionStorage.getItem('aninest-chunk-reload') === '1'; sessionStorage.setItem('aninest-chunk-reload', '1'); } catch { reloaded = true; }
+    if (!reloaded) window.location.reload();
+    throw err;
+  }
+}
+const page = (load, name) => async (...args) => (await loadPage(load))[name](...args);
+const load_browse = () => import('./pages/browse.js');
+const renderBrowse = page(load_browse, 'renderBrowse');
+const load_details = () => import('./pages/details.js');
+const renderDetails = page(load_details, 'renderDetails');
+const load_franchise = () => import('./pages/franchise.js');
+const renderFranchise = page(load_franchise, 'renderFranchise');
+const load_vibe = () => import('./pages/vibe.js');
+const renderVibe = page(load_vibe, 'renderVibe');
+const load_together = () => import('./pages/together.js');
+const renderTogether = page(load_together, 'renderTogether');
+const renderRoom = page(load_together, 'renderRoom');
+const load_tournament = () => import('./pages/tournament.js');
+const renderTournament = page(load_tournament, 'renderTournament');
+const load_wrapped = () => import('./pages/wrapped.js');
+const renderWrapped = page(load_wrapped, 'renderWrapped');
+const load_schedule = () => import('./pages/schedule.js');
+const renderSchedule = page(load_schedule, 'renderSchedule');
+const load_login = () => import('./pages/login.js');
+const renderLogin = page(load_login, 'renderLogin');
+const load_register = () => import('./pages/register.js');
+const renderRegister = page(load_register, 'renderRegister');
+const load_passwordReset = () => import('./pages/passwordReset.js');
+const renderForgotPassword = page(load_passwordReset, 'renderForgotPassword');
+const renderResetPassword = page(load_passwordReset, 'renderResetPassword');
+const load_profile = () => import('./pages/profile.js');
+const renderProfile = page(load_profile, 'renderProfile');
+const load_studio = () => import('./pages/studio.js');
+const renderStudio = page(load_studio, 'renderStudio');
+const load_person = () => import('./pages/person.js');
+const renderPerson = page(load_person, 'renderPerson');
+const load_screenshotSearch = () => import('./pages/screenshotSearch.js');
+const renderScreenshotSearch = page(load_screenshotSearch, 'renderScreenshotSearch');
+const load_tierList = () => import('./pages/tierList.js');
+const renderTierList = page(load_tierList, 'renderTierList');
+const load_games_hub = () => import('./pages/games/hub.js');
+const renderGamesHub = page(load_games_hub, 'renderGamesHub');
+const load_games_higherLower = () => import('./pages/games/higherLower.js');
+const renderHigherLower = page(load_games_higherLower, 'renderHigherLower');
+const load_games_guessTheAnime = () => import('./pages/games/guessTheAnime.js');
+const renderGuessTheAnime = page(load_games_guessTheAnime, 'renderGuessTheAnime');
+const load_games_quiz = () => import('./pages/games/quiz.js');
+const renderQuiz = page(load_games_quiz, 'renderQuiz');
+const load_games_dailyChallenge = () => import('./pages/games/dailyChallenge.js');
+const renderDailyChallenge = page(load_games_dailyChallenge, 'renderDailyChallenge');
+const renderMangaDailyChallenge = page(load_games_dailyChallenge, 'renderMangaDailyChallenge');
+const load_games_leaderboard = () => import('./pages/games/leaderboard.js');
+const renderLeaderboard = page(load_games_leaderboard, 'renderLeaderboard');
+const load_games_choiceGames = () => import('./pages/games/choiceGames.js');
+const renderChoiceGame = page(load_games_choiceGames, 'renderChoiceGame');
+const load_games_timeline = () => import('./pages/games/timeline.js');
+const renderTimeline = page(load_games_timeline, 'renderTimeline');
+const load_games_stats = () => import('./pages/games/stats.js');
+const renderGameStats = page(load_games_stats, 'renderGameStats');
+const load_compare = () => import('./pages/compare.js');
+const renderCompare = page(load_compare, 'renderCompare');
+const load_xpLeaderboard = () => import('./pages/xpLeaderboard.js');
+const renderXpLeaderboard = page(load_xpLeaderboard, 'renderXpLeaderboard');
+const load_notifications = () => import('./pages/notifications.js');
+const renderNotifications = page(load_notifications, 'renderNotifications');
+const load_mangaBrowse = () => import('./pages/mangaBrowse.js');
+const renderMangaBrowse = page(load_mangaBrowse, 'renderMangaBrowse');
+const load_mangaDetail = () => import('./pages/mangaDetail.js');
+const renderMangaDetail = page(load_mangaDetail, 'renderMangaDetail');
+const load_watchSourceSubmit = () => import('./pages/watchSourceSubmit.js');
+const renderWatchSourceSubmit = page(load_watchSourceSubmit, 'renderWatchSourceSubmit');
+const load_admin_watchSourcesAdmin = () => import('./pages/admin/watchSourcesAdmin.js');
+const renderWatchSourcesAdmin = page(load_admin_watchSourcesAdmin, 'renderWatchSourcesAdmin');
+const load_admin_reviewReports = () => import('./pages/admin/reviewReports.js');
+const renderReviewReportsAdmin = page(load_admin_reviewReports, 'renderReviewReportsAdmin');
 
 installGlobalErrorReporting();
 wireThemeToggle(document.getElementById('theme-toggle'));
