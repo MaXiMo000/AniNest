@@ -10,12 +10,12 @@ import { apiGet, apiPost, API_BASE } from '../lib/http.js';
 // (backend/src/lib/calendar.js). The link is only created when asked for.
 function calendarSectionHTML() {
   return `
-    <section class="section" style="max-width:520px;margin:24px auto 0">
+    <section class="section account-section">
       <div class="section-head">
         <h2 class="section-title">📅 Airing Calendar</h2>
         <span class="section-sub">New episodes of everything you're Watching, right in Google, Apple or Outlook Calendar. It updates itself.</span>
       </div>
-      <div id="cal-box" class="hero-actions" style="justify-content:center">
+      <div id="cal-box" class="hero-actions account-actions account-actions--tight">
         <button id="cal-get" class="btn-pow btn-pow--blue">GET MY CALENDAR LINK</button>
       </div>
     </section>`;
@@ -25,12 +25,12 @@ function calendarLinkHTML(url) {
   const webcal = url.replace(/^https?:/, 'webcal:');
   return `
     <input id="cal-url" type="text" readonly value="${escapeHtml(url)}" aria-label="Your private calendar link"
-      style="width:100%;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600" />
+      class="account-input" />
     <a class="btn-pow btn-pow--blue" target="_blank" rel="noopener" href="https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}">Google Calendar</a>
     <a class="btn-pow btn-pow--outline" href="${escapeHtml(webcal)}">Apple / Outlook</a>
     <button id="cal-copy" class="chip">📋 Copy link</button>
     <button id="cal-rotate" class="chip">🔄 Reset link</button>
-    <p class="section-sub" style="width:100%;text-align:center;margin:0">Keep this link private. Resetting it stops the old one working.</p>`;
+    <p class="section-sub account-note">Keep this link private. Resetting it stops the old one working.</p>`;
 }
 
 function wireCalendar(root) {
@@ -66,14 +66,13 @@ function wireCalendar(root) {
   });
 }
 
-const INPUT_STYLE = 'width:100%;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600';
 
 // Change password, sign out other devices, download everything, delete.
 // What reaches the bell (and push), plus the weekly email digest
 // (backend/src/routes/notifications.js). Filled in once the settings load.
 function notifySectionHTML() {
   return `
-    <section class="section" style="max-width:520px;margin:24px auto 0">
+    <section class="section account-section">
       <div class="section-head">
         <h2 class="section-title">🔔 Notifications</h2>
         <span class="section-sub">Choose what you hear about.</span>
@@ -115,7 +114,7 @@ function recoveryCodesHTML(codes) {
   return `
     <p><strong>Save these recovery codes.</strong> Each one signs you in once if you lose your phone. This is the only time they’re shown.</p>
     <pre class="twofa-codes">${codes.map(escapeHtml).join('\n')}</pre>
-    <div class="hero-actions" style="justify-content:center">
+    <div class="hero-actions account-actions account-actions--tight">
       <button type="button" class="chip" data-copy-codes>📋 Copy</button>
       <button type="button" class="chip" data-done>Done</button>
     </div>`;
@@ -224,23 +223,23 @@ async function wireNotifySettings(root) {
 
 function securitySectionHTML() {
   return `
-    <section class="section" style="max-width:520px;margin:24px auto 0">
+    <section class="section account-section">
       <div class="section-head">
         <h2 class="section-title">🔒 Account & Privacy</h2>
         <span class="section-sub">Changing your password signs out every other device.</span>
       </div>
-      <form id="password-form" class="hero-actions" style="justify-content:center" novalidate>
-        <input id="current-password" type="password" autocomplete="current-password" placeholder="Current password" aria-label="Current password" required style="${INPUT_STYLE}" />
-        <input id="new-password" type="password" autocomplete="new-password" placeholder="New password (8+ chars, a letter and a number)" aria-label="New password" required style="${INPUT_STYLE}" />
+      <form id="password-form" class="hero-actions account-actions account-actions--tight" novalidate>
+        <input id="current-password" type="password" autocomplete="current-password" placeholder="Current password" aria-label="Current password" required class="account-input" />
+        <input id="new-password" type="password" autocomplete="new-password" placeholder="New password (8+ chars, a letter and a number)" aria-label="New password" required class="account-input" />
         <button type="submit" class="btn-pow btn-pow--blue">CHANGE PASSWORD</button>
       </form>
-      <div id="password-result" style="text-align:center;margin-top:8px"></div>
+      <div id="password-result" class="account-result"></div>
       <div id="twofa-box" class="twofa-box"></div>
-      <label class="hero-actions" style="justify-content:center;margin-top:14px;gap:10px;font-weight:700;cursor:pointer">
-        <input id="private-toggle" type="checkbox" ${Auth.get().user?.isPrivate ? 'checked' : ''} style="width:20px;height:20px;accent-color:var(--pink)" />
+      <label class="account-toggle">
+        <input id="private-toggle" type="checkbox" ${Auth.get().user?.isPrivate ? 'checked' : ''}  />
         🔒 Private profile: hide my lists and reviews from other people
       </label>
-      <div class="hero-actions" style="justify-content:center;margin-top:14px">
+      <div class="hero-actions account-actions">
         <button id="logout-others" class="chip">📵 Log out other devices</button>
         <a id="export-data" class="chip" href="${API_BASE}/api/auth/export" download>💾 Download my data</a>
         <a class="chip" href="${API_BASE}/api/export/csv" download>📄 Anime list (CSV)</a>
@@ -310,28 +309,28 @@ function wireSecurity(root) {
 
 function importSectionHTML() {
   return `
-    <section class="section" style="max-width:520px;margin:24px auto 0">
+    <section class="section account-section">
       <div class="section-head">
         <h2 class="section-title">📥 Import from AniList</h2>
         <span class="section-sub">Pull in your whole anime list by username - matches your AniList statuses to ours.</span>
       </div>
-      <form id="import-form" class="hero-actions" style="justify-content:center">
+      <form id="import-form" class="hero-actions account-actions account-actions--tight">
         <input id="import-username" type="text" placeholder="AniList username" maxlength="50" required
-          style="flex:1;min-width:180px;padding:12px 14px;border:2.5px solid var(--ink);border-radius:10px;background:var(--bg2);color:var(--text);font-family:var(--font-body);font-weight:600" />
+          class="account-input account-input--grow" />
         <button type="submit" class="btn-pow btn-pow--pink">IMPORT</button>
       </form>
-      <div id="import-result" style="text-align:center;margin-top:12px"></div>
-      <div class="section-head" style="margin-top:20px">
+      <div id="import-result" class="account-result"></div>
+      <div class="section-head account-subhead">
         <h2 class="section-title">📥 Import from MyAnimeList</h2>
         <span class="section-sub">On MyAnimeList, open <a href="https://myanimelist.net/panel.php?go=export" target="_blank" rel="noopener">Export</a>, download your anime list, then pick that file here (no need to unzip it). Brings over statuses, episode progress and your scores.</span>
       </div>
-      <div class="hero-actions" style="justify-content:center">
-        <label class="btn-pow btn-pow--pink" style="cursor:pointer">
+      <div class="hero-actions account-actions account-actions--tight">
+        <label class="btn-pow btn-pow--pink">
           CHOOSE FILE
           <input id="mal-import-file" type="file" accept=".xml,.gz,application/xml,text/xml,application/gzip" hidden />
         </label>
       </div>
-      <div id="mal-import-result" style="text-align:center;margin-top:12px"></div>
+      <div id="mal-import-result" class="account-result"></div>
     </section>`;
 }
 
@@ -345,18 +344,18 @@ export function renderAccount(root) {
   root.innerHTML = `
     <div class="account-page">
       <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
-      <h1 class="detail-title" style="-webkit-text-stroke:0.5px var(--ink)">${escapeHtml(user.username)}</h1>
+      <h1 class="detail-title account-name">${escapeHtml(user.username)}</h1>
       <p class="sub">${escapeHtml(user.email)}${user.emailVerified ? ' <span class="verified-tag" title="Email confirmed">✓ confirmed</span>' : ''}</p>
       <div id="verify-banner"></div>
       ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
-      <div class="hero-actions" style="justify-content:center;margin-top:20px">
+      <div class="hero-actions account-actions account-actions--loose">
         <a href="#/favorites" class="btn-pow btn-pow--blue" id="fav-count-link">💖 My Favorites (${Favorites.count()})</a>
         <a href="#/u/${encodeURIComponent(user.username)}" class="btn-pow btn-pow--outline">👤 View Public Profile</a>
         <button id="logout-btn" class="btn-pow btn-pow--outline">🚪 Log Out</button>
       </div>
       <div id="xp-card"></div>
       <div id="badges-row"></div>
-      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
+      <div class="hero-actions account-actions"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a></div>
     </div>
 
     ${calendarSectionHTML()}

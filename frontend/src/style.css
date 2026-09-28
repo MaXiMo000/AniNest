@@ -2803,3 +2803,23 @@ body.nav-open .nav-toggle-bars span:nth-child(3) { transform: translateY(-6.5px)
 .twofa-qr { width: 200px; height: 200px; background: #fff; padding: 8px; border: var(--border-w) solid var(--ink); border-radius: 12px; margin: 8px auto; display: block; }
 .twofa-key { font-weight: 800; letter-spacing: 1px; overflow-wrap: anywhere; }
 .twofa-codes { display: inline-block; text-align: left; background: var(--bg2); border: 2px solid var(--ink); border-radius: 10px; padding: 10px 16px; font-size: 1.05rem; line-height: 1.6; user-select: all; }
+
+/* Account page (pages/account.js) */
+.account-section { max-width: 520px; margin: 24px auto 0; }
+.account-name { -webkit-text-stroke: 0.5px var(--ink); }
+.account-subhead { margin-top: 20px; }
+.account-actions { justify-content: center; margin-top: 14px; }
+.account-actions--loose { margin-top: 20px; }
+.account-actions--tight { margin-top: 0; }
+.account-input {
+  width: 100%; padding: 12px 14px;
+  border: 2.5px solid var(--ink); border-radius: 10px;
+  background: var(--bg2); color: var(--text);
+  font-family: var(--font-body); font-weight: 600;
+}
+.account-input--grow { flex: 1; min-width: 180px; width: auto; }
+.account-note { width: 100%; text-align: center; margin: 0; }
+.account-result { text-align: center; margin-top: 10px; }
+.account-toggle { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 14px; font-weight: 700; cursor: pointer; }
+.account-toggle input { width: 20px; height: 20px; accent-color: var(--pink); }
+label.btn-pow { cursor: pointer; }
