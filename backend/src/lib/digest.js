@@ -6,7 +6,8 @@ import { friendsActivity } from './feed.js';
 import { describe } from './notifications.js';
 
 // Weekly email digest, opt-in (users.email_digest, set on the account page).
-// An hourly check mails everyone whose last digest is a week old: episodes
+// It goes out on Sundays from SEND_HOUR_UTC (an hourly check; if more are due
+// than one run sends, the next runs carry on that day): episodes
 // that aired for shows on their Watching list, unread free-episode and
 // chapter alerts, and what the people they follow did. A week with nothing
 // to say sends nothing. Each mail carries a one-click unsubscribe link.
@@ -57,13 +58,26 @@ export function digestText({ username, token, aired, news, friends }) {
   };
 }
 
+const SEND_DAY_UTC = 0; // Sunday
+const SEND_HOUR_UTC = 9;
+
+// Midnight UTC at the start of this week's send day, or null outside the
+// send window (another day, or before SEND_HOUR_UTC on the day).
+export function sendWindowStart(nowMs) {
+  const d = new Date(nowMs);
+  if (d.getUTCDay() !== SEND_DAY_UTC || d.getUTCHours() < SEND_HOUR_UTC) return null;
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
 // Returns how many digests were sent.
 export async function runDigests(nowMs = Date.now()) {
+  const windowStart = sendWindowStart(nowMs);
+  if (windowStart == null) return 0;
   const due = await db.execute({
     sql: `SELECT id, username, email, digest_token FROM users
-          WHERE email_digest = 1 AND email_verified = 1 AND digest_token IS NOT NULL AND (digest_sent_at IS NULL OR digest_sent_at <= ?)
+          WHERE email_digest = 1 AND email_verified = 1 AND digest_token IS NOT NULL AND (digest_sent_at IS NULL OR digest_sent_at < ?)
           ORDER BY digest_sent_at LIMIT ?`,
-    args: [new Date(nowMs - WEEK_MS).toISOString(), PER_RUN],
+    args: [new Date(windowStart).toISOString(), PER_RUN],
   });
   if (!due.rows.length) return 0;
 

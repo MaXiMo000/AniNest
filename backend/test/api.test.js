@@ -2240,7 +2240,12 @@ test('weekly digest: episodes, alerts and friends in one mail, once a week, unsu
     }
     const digests = (email) => sent.filter((m) => m.to === email && m.subject.startsWith('Your AniNest week'));
 
-    const t = Date.now();
+    // Sunday 10:00 UTC: inside the send window.
+    const t = Date.UTC(2026, 9, 4, 10);
+    await runDigests(Date.UTC(2026, 9, 3, 10)); // a Saturday: nothing goes out
+    assert.equal(sent.filter((m) => m.subject.startsWith('Your AniNest week')).length, 0, 'only on Sundays');
+    await runDigests(Date.UTC(2026, 9, 4, 8)); // Sunday, but before 09:00 UTC
+    assert.equal(sent.filter((m) => m.subject.startsWith('Your AniNest week')).length, 0, 'not before 09:00');
     await runDigests(t);
     const mine = digests(reader.user.email);
     assert.equal(mine.length, 1);
@@ -2251,8 +2256,8 @@ test('weekly digest: episodes, alerts and friends in one mail, once a week, unsu
 
     await runDigests(t + 60 * 60 * 1000);
     assert.equal(digests(reader.user.email).length, 1, 'once a week');
-    await runDigests(t + 8 * 24 * 60 * 60 * 1000);
-    assert.equal(digests(reader.user.email).length, 2, 'and again next week');
+    await runDigests(t + 7 * 24 * 60 * 60 * 1000);
+    assert.equal(digests(reader.user.email).length, 2, 'and again next Sunday');
 
     const token = /unsubscribe\?token=([0-9a-f]{64})/.exec(mine[0].text)[1];
     const anon = makeAgent();
