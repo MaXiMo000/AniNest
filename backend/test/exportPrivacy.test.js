@@ -14,8 +14,10 @@ process.env.NODE_ENV = 'test';
 // temp database and can't hit Turnstile or send real mail or push.
 for (const key of ['TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'TURNSTILE_SECRET_KEY', 'RESEND_API_KEY', 'SMTP_USER', 'SMTP_PASS', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'YOUTUBE_API_KEY']) process.env[key] = '';
 process.env.DB_PATH = path.join(os.tmpdir(), `aninest-export-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-process.env.AUTH_RATE_LIMIT = '1000';
-process.env.RATE_LIMIT = '1000';
+process.env.AUTH_RATE_LIMIT = '100000';
+// High enough that a fast CI machine running the whole file from one
+// address never meets the per-minute limit (a 429 looked like a failed sign-up).
+process.env.RATE_LIMIT = '100000';
 
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/lib/db.js');

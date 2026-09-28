@@ -41,10 +41,12 @@ process.env.DB_PATH = path.join(os.tmpdir(), `aninest-test-${Date.now()}-${Math.
 // they don't trip each other's limit. The limiter's actual behavior (does it
 // return 429 once exceeded?) is verified separately below with its own
 // tightly-scoped limit.
-process.env.AUTH_RATE_LIMIT = '1000';
+process.env.AUTH_RATE_LIMIT = '100000';
 // Same reasoning for the general limiter (default 120/min) - the suite as a
 // whole now makes well over that from one shared IP within its run time.
-process.env.RATE_LIMIT = '1000';
+// High enough that a fast CI machine running the whole file from one
+// address never meets the per-minute limit (a 429 looked like a failed sign-up).
+process.env.RATE_LIMIT = '100000';
 
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/lib/db.js');
@@ -165,6 +167,7 @@ async function registeredAgent() {
   await agent.get('/api/health');
   const user = uniqueUser();
   const reg = await agent.post('/api/auth/register', { csrf: true, body: user });
+  assert.equal(reg.status, 201, `sign-up failed: ${reg.status} ${JSON.stringify(reg.json)}`);
   return { agent, user, id: reg.json.user.id };
 }
 
@@ -706,7 +709,7 @@ test('manga tags route returns the curated list without needing MangaDex', async
   assert.ok(res.json.data.every((t) => t.id && t.name));
 });
 
-// This process's authLimiter was created with AUTH_RATE_LIMIT=1000 (see top
+// This process's authLimiter was created with AUTH_RATE_LIMIT=100000 (see top
 // of file) so the many other tests above don't trip each other's shared
 // 127.0.0.1 bucket. That means we can't cheaply prove "the 11th request
 // gets a 429" here without a second, isolated process — express-rate-limit
@@ -735,7 +738,7 @@ test('auth endpoints report a decrementing rate-limit budget', async () => {
 // instance (same library, same config shape as rateLimits.js) at a tiny
 // limit on a throwaway route of its own tiny app/server, instead of reusing
 // the shared authLimiter singleton — that singleton is already locked in at
-// AUTH_RATE_LIMIT=1000 for this process and can't be reconfigured at
+// AUTH_RATE_LIMIT=100000 for this process and can't be reconfigured at
 // runtime, and lowering it would just reintroduce the cross-test pollution
 // this file works around above.
 test('express-rate-limit actually returns 429 once its limit is exceeded', async () => {

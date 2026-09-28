@@ -13,8 +13,10 @@ process.env.NODE_ENV = 'test';
 // temp database and can't hit Turnstile or send real mail or push.
 for (const key of ['TURSO_DATABASE_URL', 'TURSO_AUTH_TOKEN', 'TURNSTILE_SECRET_KEY', 'RESEND_API_KEY', 'SMTP_USER', 'SMTP_PASS', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'ANTHROPIC_API_KEY', 'YOUTUBE_API_KEY']) process.env[key] = '';
 process.env.DB_PATH = path.join(os.tmpdir(), `aninest-security-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-process.env.AUTH_RATE_LIMIT = '1000';
-process.env.RATE_LIMIT = '1000';
+process.env.AUTH_RATE_LIMIT = '100000';
+// High enough that a fast CI machine running the whole file from one
+// address never meets the per-minute limit (a 429 looked like a failed sign-up).
+process.env.RATE_LIMIT = '100000';
 // Production shape: the frontend's /api rewrite plus Render's load balancer.
 process.env.TRUST_PROXY = '2';
 process.env.LOGIN_MAX_FAILURES = '3';
