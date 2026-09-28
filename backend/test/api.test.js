@@ -2177,7 +2177,7 @@ test('notification settings: alert kinds can be muted, the digest needs mail', a
   const { agent, id } = await registeredAgent();
   const settings = (body) => agent.post('/api/notifications/settings', { csrf: true, body });
   assert.deepEqual((await agent.get('/api/notifications/settings')).json,
-    { notifyEpisodes: true, notifyChapters: true, emailDigest: false, mailEnabled: false });
+    { notifyEpisodes: true, notifyChapters: true, notifyPredictions: true, emailDigest: false, mailEnabled: false });
   assert.equal((await settings({ emailDigest: true })).status, 409, 'no mail service, no digest');
   assert.equal((await settings({ notifyEpisodes: 'yes' })).status, 400);
 
@@ -3383,6 +3383,54 @@ test('prediction league: points and the season clock', async () => {
   assert.deepEqual(p.leagueSeason(Date.UTC(2026, 11, 20)), { season: 'WINTER', year: 2027 });
   const c = p.leagueClock({ season: 'FALL', year: 2026 });
   assert.deepEqual([c.locksAt, c.finalAt].map((t) => new Date(t).toISOString().slice(0, 10)), ['2026-10-15', '2027-01-15']);
+});
+
+test('prediction league reminders: a day before the lock, and when results are final, once each', async () => {
+  const p = await import('../src/lib/predictions.js');
+  const shows = Array.from({ length: 6 }, (_, i) => ({ mal_id: 92700 + i, title: `Winter ${i}`, image: null }));
+  p.setPredictionSources({ seasonShows: async () => shows, scores: async () => new Map(shows.map((x) => [x.mal_id, 7.5])) });
+  let clock = Date.UTC(2026, 11, 20);
+  p.setPredictionClock(() => clock);
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    const league = (await anon.get('/api/predictions/current')).json.data;
+    assert.deepEqual([league.season, league.year], ['WINTER', 2027]);
+    const pick = (who, ids) => who.agent.post(`/api/predictions/${league.id}/picks`, { csrf: true, body: { picks: ids.map((mal_id) => ({ mal_id, score: 7 })) } });
+    const partial = await registeredAgent();
+    const complete = await registeredAgent();
+    const muted = await registeredAgent();
+    await pick(partial, [92700]);
+    await pick(complete, shows.map((x) => x.mal_id));
+    await pick(muted, [92700]);
+    await muted.agent.post('/api/notifications/settings', { csrf: true, body: { notifyPredictions: false } });
+    const unread = async (who) => (await who.agent.get('/api/notifications')).json.notifications.filter((n) => n.kind === 'predictions');
+
+    clock = Date.UTC(2027, 0, 10); // five days before the lock: too early
+    await p.runPredictionReminders();
+    assert.equal((await unread(partial)).length, 0);
+
+    clock = Date.UTC(2027, 0, 14, 12); // twelve hours before the lock
+    await p.runPredictionReminders();
+    await p.runPredictionReminders();
+    const [lockNote] = await unread(partial);
+    assert.match(lockNote.message, /lock in less than a day/);
+    assert.equal(lockNote.link, '#/predictions?season=WINTER&year=2027');
+    assert.equal((await unread(partial)).length, 1, 'once');
+    assert.equal((await unread(complete)).length, 0, 'every show already guessed');
+    assert.equal((await unread(muted)).length, 0, 'turned off');
+
+    clock = Date.UTC(2027, 3, 15, 1); // results are due
+    await p.runPredictionReminders();
+    await p.runPredictionReminders();
+    const finals = (await unread(complete)).filter((n) => /Final results/.test(n.message));
+    assert.equal(finals.length, 1);
+    assert.equal((await anon.get('/api/predictions/2027/winter')).json.data.final, true, 'finalized by the job, not a page view');
+    assert.equal((await unread(muted)).length, 0);
+  } finally {
+    p.setPredictionSources(null);
+    p.setPredictionClock(null);
+  }
 });
 
 test('prediction league API: snapshot once, picks until the lock, live then final standings', async () => {

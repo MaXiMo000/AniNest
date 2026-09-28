@@ -77,8 +77,28 @@ export async function notifyNewChapter(mangaId) {
   }
 }
 
+// One notification to each of `userIds` (bell, and push where turned on).
+export async function notifyUsers(userIds, { kind, ref, title }) {
+  for (const id of userIds) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await bump(Number(id), kind, ref, title, 1);
+    } catch (err) {
+      logger.error({ err, kind, ref }, 'notifyUsers failed for one user');
+    }
+  }
+}
+
 export function describe(n) {
   const count = Number(n.count);
+  if (n.kind === 'predictions') {
+    // ref is "lock:SEASON:YEAR" or "final:SEASON:YEAR"
+    const [what, season, year] = String(n.ref).split(':');
+    const link = `#/predictions?season=${season}&year=${year}`;
+    return what === 'lock'
+      ? { message: 'Picks lock in less than a day. Finish your guesses!', link }
+      : { message: 'Final results are in. See where you placed!', link };
+  }
   if (n.kind === 'anime-episodes') {
     return { message: `${count} new free episode${count === 1 ? '' : 's'} available`, link: `#/anime/${n.ref}` };
   }

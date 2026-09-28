@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { logger } from './logger.js';
+import { notifyUsers } from './notifications.js';
 import { anilistSeason, anilistBasicsForMalIds } from './anilist.js';
 import { seasonOf, seasonStartMs } from './tournament.js';
 
@@ -94,7 +95,9 @@ export async function ensureLeague(season, year) {
 async function refreshScores(league) {
   const t = now();
   const { locksAt, finalAt } = leagueClock(league);
-  if (Number(league.final) || t < locksAt || t - Number(league.scores_at) < REFRESH_MS) return league;
+  // Once results are due, refresh straight away rather than waiting out REFRESH_MS.
+  const due = t >= finalAt;
+  if (Number(league.final) || t < locksAt || (!due && t - Number(league.scores_at) < REFRESH_MS)) return league;
   const shows = await db.execute({ sql: 'SELECT mal_id FROM prediction_shows WHERE league_id = ?', args: [league.id] });
   let scores;
   try {
@@ -197,4 +200,52 @@ export async function savePicks(league, userId, picks) {
       args: [league.id, userId, p.mal_id, Math.round(p.score * 10) / 10],
     })), 'write');
   return null;
+}
+
+// ---- Reminders (bell and push), run hourly from server.js ----
+
+const label = (l) => `${l.season[0]}${l.season.slice(1).toLowerCase()} ${l.year} Predictions`;
+const wantsReminders = 'user_id IN (SELECT id FROM users WHERE notify_predictions = 1)';
+
+// A day before picks lock: everyone who has played any league and hasn't
+// guessed every show in this one. When a league's results are due: it's
+// finalized (scores refreshed) and everyone who played it hears. Each goes
+// out once per league.
+export async function runPredictionReminders() {
+  const t = now();
+  const { season, year } = leagueSeason(t);
+  const current = await findLeague(season, year);
+  if (current && !Number(current.lock_reminded)) {
+    const { locksAt } = leagueClock(current);
+    if (t < locksAt && locksAt - t <= DAY_MS) {
+      const rows = await db.execute({
+        sql: `SELECT DISTINCT p.user_id FROM predictions p
+              WHERE ${wantsReminders.replace('user_id', 'p.user_id')}
+                AND (SELECT COUNT(*) FROM predictions q WHERE q.user_id = p.user_id AND q.league_id = ?)
+                    < (SELECT COUNT(*) FROM prediction_shows s WHERE s.league_id = ?)`,
+        args: [current.id, current.id],
+      });
+      await db.execute({ sql: 'UPDATE prediction_leagues SET lock_reminded = 1 WHERE id = ?', args: [current.id] });
+      await notifyUsers(rows.rows.map((r) => r.user_id), { kind: 'predictions', ref: `lock:${current.season}:${current.year}`, title: label(current) });
+    }
+  }
+  const pending = await db.execute('SELECT * FROM prediction_leagues WHERE final_notified = 0');
+  for (const row of pending.rows) {
+    if (t < leagueClock(row).finalAt) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const league = await refreshScores(row);
+    if (!Number(league.final)) continue; // score lookup failed: next hour
+    // eslint-disable-next-line no-await-in-loop
+    const players = await db.execute({ sql: `SELECT DISTINCT user_id FROM predictions WHERE league_id = ? AND ${wantsReminders}`, args: [row.id] });
+    // eslint-disable-next-line no-await-in-loop
+    await db.execute({ sql: 'UPDATE prediction_leagues SET final_notified = 1 WHERE id = ?', args: [row.id] });
+    // eslint-disable-next-line no-await-in-loop
+    await notifyUsers(players.rows.map((r) => r.user_id), { kind: 'predictions', ref: `final:${row.season}:${row.year}`, title: label(row) });
+  }
+}
+
+export function startPredictionReminders() {
+  const run = () => runPredictionReminders().catch((err) => logger.error({ err }, 'prediction reminders failed'));
+  setTimeout(run, 2 * 60 * 1000).unref();
+  setInterval(run, 60 * 60 * 1000).unref();
 }

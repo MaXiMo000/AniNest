@@ -760,11 +760,16 @@ await db.execute(`
   )
 `);
 
+// Which prediction-league reminders have gone out (lib/predictions.js).
+await ensureColumn('prediction_leagues', 'lock_reminded', 'INTEGER NOT NULL DEFAULT 0');
+await ensureColumn('prediction_leagues', 'final_notified', 'INTEGER NOT NULL DEFAULT 0');
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.
 await ensureColumn('users', 'notify_episodes', 'INTEGER NOT NULL DEFAULT 1');
 await ensureColumn('users', 'notify_chapters', 'INTEGER NOT NULL DEFAULT 1');
+await ensureColumn('users', 'notify_predictions', 'INTEGER NOT NULL DEFAULT 1');
 await ensureColumn('users', 'email_digest', 'INTEGER NOT NULL DEFAULT 0');
 await ensureColumn('users', 'digest_sent_at', 'TEXT');
 await ensureColumn('users', 'digest_token', 'TEXT');

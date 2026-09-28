@@ -61,7 +61,7 @@ that differ from that proposal, and the **checklist** for each phase.
 
 **Then, features**
 - [x] Custom lists: drag-and-drop reorder (pointer events, works on touch; ▲▼ kept for keyboards), follow other people's lists
-- [ ] Prediction league: reminders before picks lock and when results are final
+- [x] Prediction league: reminders (bell and push) a day before picks lock and when results are final; an hourly job finalizes leagues; own on/off setting
 - [ ] Weekly digest on a fixed day (e.g. Sunday)
 - [ ] Warm-up job that pre-fills `api_cache` for popular titles
 - [ ] Visual novels via VNDB (free, keyless), after light novels settle

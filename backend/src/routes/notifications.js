@@ -30,11 +30,12 @@ notificationsRouter.use(requireAuth);
 
 async function settingsOf(userId) {
   const row = (await db.execute({
-    sql: 'SELECT notify_episodes, notify_chapters, email_digest FROM users WHERE id = ?', args: [userId],
+    sql: 'SELECT notify_episodes, notify_chapters, notify_predictions, email_digest FROM users WHERE id = ?', args: [userId],
   })).rows[0];
   return {
     notifyEpisodes: Boolean(Number(row.notify_episodes)),
     notifyChapters: Boolean(Number(row.notify_chapters)),
+    notifyPredictions: Boolean(Number(row.notify_predictions)),
     emailDigest: Boolean(Number(row.email_digest)),
     mailEnabled: isMailEnabled(),
   };
@@ -47,9 +48,12 @@ notificationsRouter.get('/settings', asyncRoute(async (req, res) => {
 const settingsSchema = z.object({
   notifyEpisodes: z.boolean().optional(),
   notifyChapters: z.boolean().optional(),
+  notifyPredictions: z.boolean().optional(),
   emailDigest: z.boolean().optional(),
 });
-const SETTING_COLUMNS = { notifyEpisodes: 'notify_episodes', notifyChapters: 'notify_chapters', emailDigest: 'email_digest' };
+const SETTING_COLUMNS = {
+  notifyEpisodes: 'notify_episodes', notifyChapters: 'notify_chapters', notifyPredictions: 'notify_predictions', emailDigest: 'email_digest',
+};
 
 notificationsRouter.post('/settings', asyncRoute(async (req, res) => {
   const parsed = settingsSchema.safeParse(req.body);

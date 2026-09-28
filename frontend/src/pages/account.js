@@ -84,6 +84,7 @@ function notifySectionHTML() {
 const NOTIFY_OPTIONS = [
   { key: 'notifyEpisodes', label: '📺 New free episodes of shows on my list' },
   { key: 'notifyChapters', label: '📖 New chapters of manga I’m reading' },
+  { key: 'notifyPredictions', label: '🔮 Prediction league: a reminder before picks lock, and when the results are in' },
   { key: 'emailDigest', label: '✉️ Weekly email: new episodes of what I’m watching, my alerts, and what the people I follow are up to', needsMail: true },
 ];
 

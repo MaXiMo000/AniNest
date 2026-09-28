@@ -6,6 +6,7 @@ import { escapeHtml, errorHTML, wireRetry, emptyHTML, showToast, timeAgo, skelet
 const KIND_META = {
   'anime-episodes': { emoji: '🆓', label: 'Free episodes' },
   'manga-chapter': { emoji: '📖', label: 'New chapter' },
+  predictions: { emoji: '🔮', label: 'Predictions' },
 };
 
 function rowHTML(n) {
