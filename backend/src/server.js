@@ -7,6 +7,7 @@ import { startMangaUpdatePolling } from './lib/mangaUpdates.js';
 import { startWatchSourceChecks } from './lib/watchSourceHealth.js';
 import { startDigests } from './lib/digest.js';
 import { startPredictionReminders } from './lib/predictions.js';
+import { startCacheWarmup } from './lib/cacheWarmup.js';
 
 const PORT = process.env.PORT || 8787;
 const app = createApp();
@@ -20,6 +21,7 @@ startMangaUpdatePolling();
 startWatchSourceChecks();
 startDigests();
 startPredictionReminders();
+startCacheWarmup();
 
 const server = app.listen(PORT, () => {
   logger.info(`AniNest backend listening on http://localhost:${PORT}`);

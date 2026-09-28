@@ -63,7 +63,7 @@ that differ from that proposal, and the **checklist** for each phase.
 - [x] Custom lists: drag-and-drop reorder (pointer events, works on touch; ▲▼ kept for keyboards), follow other people's lists
 - [x] Prediction league: reminders (bell and push) a day before picks lock and when results are final; an hourly job finalizes leagues; own on/off setting
 - [x] Weekly digest on a fixed day: Sundays from 09:00 UTC
-- [ ] Warm-up job that pre-fills `api_cache` for popular titles
+- [x] Warm-up job that pre-fills `api_cache` for popular titles (`lib/cacheWarmup.js`, every 12h, paced)
 - [ ] Visual novels via VNDB (free, keyless), after light novels settle
 
 ## Phase 0: Episode progress

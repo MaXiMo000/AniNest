@@ -3410,6 +3410,18 @@ test('prediction league: points and the season clock', async () => {
   assert.deepEqual([c.locksAt, c.finalAt].map((t) => new Date(t).toISOString().slice(0, 10)), ['2026-10-15', '2027-01-15']);
 });
 
+test('cache warm-up: popular shows once each, in order, one failure doesn’t stop the rest', async () => {
+  const { warmPopular, setWarmupSources } = await import('../src/lib/cacheWarmup.js');
+  const fetched = [];
+  setWarmupSources({
+    lists: async () => [{ data: [{ mal_id: 1 }, { mal_id: 2 }] }, { data: [{ mal_id: 2 }, { mal_id: 3 }, { mal_id: 0 }] }, { data: [{ mal_id: 4 }] }],
+    detail: async (id) => { fetched.push(id); if (id === 2) throw new Error('upstream down'); },
+    pause: async () => {},
+  });
+  assert.equal(await warmPopular(3), 2, 'two warmed, one failed');
+  assert.deepEqual(fetched, [1, 2, 3], 'deduped, capped, bad ids skipped');
+});
+
 test('prediction league reminders: a day before the lock, and when results are final, once each', async () => {
   const p = await import('../src/lib/predictions.js');
   const shows = Array.from({ length: 6 }, (_, i) => ({ mal_id: 92700 + i, title: `Winter ${i}`, image: null }));

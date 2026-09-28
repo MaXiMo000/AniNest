@@ -282,6 +282,7 @@ Backend (`backend/.env.example` locally; the Render dashboard in production, whe
 | `TURNSTILE_SECRET_KEY` | optional bot check on registration (the frontend needs `VITE_TURNSTILE_SITE_KEY` too) |
 | `RATE_LIMIT`, `AUTH_RATE_LIMIT` | limiter ceilings (defaults: 120/min per IP, 10 per 15 min on auth). The tests raise them |
 | `MANGA_POLL` | `off` disables the manga-chapter job |
+| `WARM_CACHE` | `off` disables the cache warm-up (details of the ~60 top and airing shows, every 12h, first run 5 minutes after boot) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | optional browser push alerts (`npx web-push generate-vapid-keys`). Unset, only the bell |
 | `ANTHROPIC_API_KEY`, `VIBE_AI_DAILY_LIMIT` | optional vibe search v2 through Claude Haiku (default cap 500 calls a day). Unset, rules only |
 | `LOG_LEVEL` | pino log level |
