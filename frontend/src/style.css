@@ -2852,3 +2852,10 @@ label.btn-pow { cursor: pointer; }
 .review-row-body { flex: 1; min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) { .skeleton-shimmer::after { animation: none; } }
+
+/* Reordering a list by dragging its number (pages/lists.js) */
+.list-drag { cursor: grab; touch-action: none; user-select: none; display: inline-flex; align-items: center; gap: 4px; padding: 6px 4px; border-radius: 8px; }
+.list-drag:hover { background: var(--hairline); }
+.list-grip { color: var(--muted); font-size: 1rem; }
+.list-item.is-dragging { opacity: 0.85; box-shadow: 6px 6px 0 var(--ink); transform: scale(1.01); position: relative; z-index: 2; }
+.list-item.is-dragging .list-drag { cursor: grabbing; }

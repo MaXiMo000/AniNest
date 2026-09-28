@@ -11,7 +11,7 @@ import { db } from './db.js';
 const EXPORT_TABLES = [
   'favorites', 'manga_favorites', 'reviews', 'manga_reviews', 'game_scores',
   'daily_results', 'manga_daily_results', 'episode_log', 'episode_ratings', 'theme_tournament_votes',
-  'predictions', 'manga_continuations', 'custom_lists', 'novel_favorites', 'novel_reviews',
+  'predictions', 'manga_continuations', 'custom_lists', 'novel_favorites', 'novel_reviews', 'list_follows',
 ];
 // Also exported, but deleted separately below.
 const EXPORT_ALSO = ['game_score_log', 'it_clicked'];
@@ -46,6 +46,7 @@ export async function deleteUserData(userId) {
     { sql: `DELETE FROM watch_room_members WHERE user_id = ? OR room_id IN (${ownRooms})`, args: [userId, userId] },
     { sql: 'DELETE FROM watch_rooms WHERE created_by = ?', args: [userId] },
     { sql: 'DELETE FROM custom_list_items WHERE list_id IN (SELECT id FROM custom_lists WHERE user_id = ?)', args: [userId] },
+    { sql: 'DELETE FROM list_follows WHERE user_id = ? OR list_id IN (SELECT id FROM custom_lists WHERE user_id = ?)', args: [userId, userId] },
     ...EXPORT_TABLES.map(byUser),
     byUser('game_runs'),
     byUser('game_score_log'),

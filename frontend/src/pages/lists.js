@@ -27,8 +27,9 @@ export async function renderMyLists(root) {
   if (!Auth.get().user) { navigate('#/login'); return; }
   root.innerHTML = loadingHTML('FETCHING YOUR LISTS');
   let lists;
+  let following = [];
   try {
-    ({ lists } = await apiGet('/api/lists/mine'));
+    [{ lists }, { lists: following = [] }] = await Promise.all([apiGet('/api/lists/mine'), apiGet('/api/lists/following')]);
   } catch {
     root.innerHTML = errorHTML('Couldn’t load your lists.');
     wireRetry(root, () => renderMyLists(root));
@@ -43,7 +44,12 @@ export async function renderMyLists(root) {
       <input name="name" maxlength="60" required placeholder="New list name" aria-label="New list name" class="list-input" />
       <button class="btn-pow btn-pow--pink" type="submit">➕ CREATE</button>
     </form>
-    ${lists.length ? listGridHTML(lists) : emptyHTML('No lists yet. Make one above, then add anime from any anime page.', '📋')}`;
+    ${lists.length ? listGridHTML(lists) : emptyHTML('No lists yet. Make one above, then add anime from any anime page.', '📋')}
+    ${following.length ? `
+      <section class="section">
+        <div class="section-head"><h2 class="section-title">⭐ Lists you follow</h2></div>
+        ${listGridHTML(following)}
+      </section>` : ''}`;
   root.querySelector('#new-list').addEventListener('submit', async (e) => {
     e.preventDefault();
     try {
@@ -57,8 +63,10 @@ export async function renderMyLists(root) {
 
 function itemHTML(item, i, list) {
   return `
-    <li class="list-item">
-      <span class="list-rank">${i + 1}</span>
+    <li class="list-item" data-id="${item.mal_id}">
+      ${list.mine
+    ? `<span class="list-rank list-drag" data-drag title="Drag to reorder" aria-hidden="true"><span class="list-grip">⠿</span>${i + 1}</span>`
+    : `<span class="list-rank">${i + 1}</span>`}
       ${item.image ? `<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />` : '<div class="duel-cover"></div>'}
       <div class="duel-body">
         <a class="duel-song" href="#/anime/${item.mal_id}">${escapeHtml(item.title)}</a>
@@ -79,11 +87,12 @@ function listPageHTML(list) {
   return `
     <div class="section-head">
       <h1 class="section-title">📋 ${escapeHtml(list.name)}</h1>
-      <span class="section-sub">A list by <a href="#/u/${encodeURIComponent(list.owner)}">${escapeHtml(list.owner)}</a> · ${list.items.length} anime</span>
+      <span class="section-sub">A list by <a href="#/u/${encodeURIComponent(list.owner)}">${escapeHtml(list.owner)}</a> · ${list.items.length} anime · ${list.followers} follower${list.followers === 1 ? '' : 's'}</span>
     </div>
     ${list.description ? `<p class="speech-bubble">${escapeHtml(list.description)}</p>` : ''}
     <div class="hero-actions" style="margin-bottom:14px">
       ${shareButtonHTML()}
+      ${!list.mine && Auth.get().user ? `<button class="btn-pow ${list.following ? 'btn-pow--outline' : 'btn-pow--pink'}" id="list-follow" aria-pressed="${list.following}">${list.following ? '✓ FOLLOWING' : '➕ FOLLOW'}</button>` : ''}
       ${list.mine ? '<button class="btn-pow btn-pow--outline" id="list-edit">✏️ EDIT</button><button class="btn-pow btn-pow--outline" id="list-delete">🗑️ DELETE</button>' : ''}
     </div>
     ${list.mine ? `
@@ -97,6 +106,39 @@ function listPageHTML(list) {
     : emptyHTML(list.mine ? 'Nothing here yet. Use “Add to list” on any anime page.' : 'This list is empty.', '📋')}`;
 }
 
+// Drag an item by its number to reorder (mouse, pen or touch: pointer
+// events, since native drag-and-drop doesn't work on phones). The page
+// scrolls when the item nears the top or bottom. The ▲▼ buttons stay for
+// keyboards. `onDrop(ids)` gets the new order if it changed.
+function wireDrag(listEl, onDrop) {
+  if (!listEl) return;
+  listEl.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('[data-drag]');
+    if (!handle || e.button > 0) return;
+    e.preventDefault();
+    const item = handle.closest('.list-item');
+    const before = [...listEl.children].map((x) => Number(x.dataset.id));
+    try { handle.setPointerCapture(e.pointerId); } catch { /* not a live pointer */ }
+    item.classList.add('is-dragging');
+    const move = (ev) => {
+      if (ev.clientY < 70) window.scrollBy(0, -14);
+      else if (ev.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+      const others = [...listEl.children].filter((x) => x !== item);
+      const next = others.find((x) => { const b = x.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; });
+      if (next !== item.nextElementSibling) listEl.insertBefore(item, next || null);
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', move);
+      item.classList.remove('is-dragging');
+      const after = [...listEl.children].map((x) => Number(x.dataset.id));
+      if (after.some((id, i) => id !== before[i])) onDrop(after);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', end, { once: true });
+    handle.addEventListener('pointercancel', end, { once: true });
+  });
+}
+
 function wireList(root, state) {
   const { list } = state;
   const redraw = (next) => { state.list = next; root.innerHTML = listPageHTML(next); wireList(root, state); };
@@ -104,7 +146,11 @@ function wireList(root, state) {
     try { redraw((await fn()).data); } catch (err) { showToast(err.message || 'Couldn’t save — try again.'); }
   };
   wireShare(root, { kind: 'list', id: list.id, title: `${list.name} — AniNest` });
+  root.querySelector('#list-follow')?.addEventListener('click', () => act(() => (list.following
+    ? apiDelete(`/api/lists/${list.id}/follow`)
+    : apiPost(`/api/lists/${list.id}/follow`))));
   if (!list.mine) return;
+  wireDrag(root.querySelector('.list-items'), (ids) => act(() => apiPost(`/api/lists/${list.id}/order`, { mal_ids: ids })));
   root.querySelector('#list-edit').addEventListener('click', () => { root.querySelector('#list-edit-form').hidden = false; });
   root.querySelector('#list-edit-form').addEventListener('submit', (e) => {
     e.preventDefault();

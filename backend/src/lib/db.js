@@ -750,6 +750,16 @@ await db.executeMultiple(`
 await ensureColumn('round_runs', 'pool_version', 'TEXT');
 await ensureColumn('hl_runs', 'pool_version', 'TEXT');
 
+// People following someone else's custom list (routes/lists.js).
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS list_follows (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    list_id INTEGER NOT NULL REFERENCES custom_lists(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, list_id)
+  )
+`);
+
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).
 // digest_token is the secret in the digest's unsubscribe link.

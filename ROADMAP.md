@@ -60,7 +60,7 @@ that differ from that proposal, and the **checklist** for each phase.
 - [x] Layout-shaped loading placeholders (detail pages, feeds, notifications, leaderboards, home) announced to screen readers; empty states already share `emptyHTML`. Games keep their playful loaders
 
 **Then, features**
-- [ ] Custom lists: drag-and-drop reorder, follow other people's lists
+- [x] Custom lists: drag-and-drop reorder (pointer events, works on touch; ▲▼ kept for keyboards), follow other people's lists
 - [ ] Prediction league: reminders before picks lock and when results are final
 - [ ] Weekly digest on a fixed day (e.g. Sunday)
 - [ ] Warm-up job that pre-fills `api_cache` for popular titles

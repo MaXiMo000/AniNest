@@ -49,11 +49,16 @@ async function findList(id, viewerId) {
 }
 
 async function listView(l, viewerId) {
-  const items = await db.execute({
-    sql: 'SELECT mal_id, title, image, note FROM custom_list_items WHERE list_id = ? ORDER BY position',
-    args: [l.id],
-  });
+  const [items, follows] = await Promise.all([
+    db.execute({ sql: 'SELECT mal_id, title, image, note FROM custom_list_items WHERE list_id = ? ORDER BY position', args: [l.id] }),
+    db.execute({
+      sql: 'SELECT COUNT(*) AS n, SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) AS mine FROM list_follows WHERE list_id = ?',
+      args: [viewerId ?? 0, l.id],
+    }),
+  ]);
   return {
+    followers: Number(follows.rows[0].n),
+    following: Number(follows.rows[0].mine) > 0,
     id: Number(l.id),
     name: l.name,
     description: l.description || null,
@@ -79,6 +84,16 @@ const touch = (id) => ({ sql: "UPDATE custom_lists SET updated_at = datetime('no
 
 listsRouter.get('/mine', requireAuth, asyncRoute(async (req, res) => {
   res.json({ lists: await summaries('l.user_id = ?', [req.user.id]) });
+}));
+
+// Lists the signed-in user follows that they can still see (an owner who
+// went private hides theirs).
+listsRouter.get('/following', requireAuth, asyncRoute(async (req, res) => {
+  const lists = await summaries(
+    'l.id IN (SELECT list_id FROM list_follows WHERE user_id = ?) AND l.user_id IN (SELECT id FROM users WHERE is_private = 0)',
+    [req.user.id],
+  );
+  res.json({ lists });
 }));
 
 listsRouter.get('/user/:username', asyncRoute(async (req, res) => {
@@ -129,10 +144,29 @@ listsRouter.post('/:id', requireAuth, asyncRoute(async (req, res) => {
   res.json({ data: await listView(await findList(Number(l.id), req.user.id), req.user.id) });
 }));
 
+// Follow someone else's list (it shows under "Lists you follow").
+listsRouter.post('/:id/follow', requireAuth, asyncRoute(async (req, res) => {
+  const id = idOf(req.params.id);
+  const l = id && await findList(id, req.user.id);
+  if (!l) return res.status(404).json({ error: 'No such list.' });
+  if (Number(l.user_id) === req.user.id) return res.status(400).json({ error: 'That’s your own list.' });
+  await db.execute({ sql: 'INSERT OR IGNORE INTO list_follows (user_id, list_id) VALUES (?, ?)', args: [req.user.id, l.id] });
+  res.json({ data: await listView(l, req.user.id) });
+}));
+
+listsRouter.delete('/:id/follow', requireAuth, asyncRoute(async (req, res) => {
+  const id = idOf(req.params.id);
+  if (!id) return res.status(404).json({ error: 'No such list.' });
+  await db.execute({ sql: 'DELETE FROM list_follows WHERE user_id = ? AND list_id = ?', args: [req.user.id, id] });
+  const l = await findList(id, req.user.id);
+  res.json({ data: l ? await listView(l, req.user.id) : null });
+}));
+
 listsRouter.delete('/:id', requireAuth, asyncRoute(async (req, res) => {
   const l = await ownList(req, res);
   if (!l) return;
   await db.batch([
+    { sql: 'DELETE FROM list_follows WHERE list_id = ?', args: [l.id] },
     { sql: 'DELETE FROM custom_list_items WHERE list_id = ?', args: [l.id] },
     { sql: 'DELETE FROM custom_lists WHERE id = ?', args: [l.id] },
   ], 'write');

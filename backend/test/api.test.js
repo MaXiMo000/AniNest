@@ -2147,6 +2147,30 @@ test('two-factor login: setup, login needs the code, recovery codes, turning it 
   assert.equal((await login(after)).json.user.username, user.username, 'plain login again');
 });
 
+test('custom lists: follow someone else’s list, see it under lists you follow', async () => {
+  const owner = await registeredAgent();
+  const fan = await registeredAgent();
+  const id = (await owner.agent.post('/api/lists', { csrf: true, body: { name: 'Best of 2026' } })).json.data.id;
+  const follow = (who) => who.agent.post(`/api/lists/${id}/follow`, { csrf: true });
+  assert.equal((await follow(owner)).status, 400, 'not your own list');
+  const after = (await follow(fan)).json.data;
+  assert.deepEqual([after.following, after.followers], [true, 1]);
+  await follow(fan);
+  assert.equal((await fan.agent.get(`/api/lists/${id}`)).json.data.followers, 1, 'following twice counts once');
+  assert.deepEqual((await fan.agent.get('/api/lists/following')).json.lists.map((l) => l.name), ['Best of 2026']);
+
+  await owner.agent.post('/api/auth/privacy', { csrf: true, body: { private: true } });
+  assert.deepEqual((await fan.agent.get('/api/lists/following')).json.lists, [], 'a private owner’s list drops out');
+  await owner.agent.post('/api/auth/privacy', { csrf: true, body: { private: false } });
+
+  const off = (await fan.agent.delete(`/api/lists/${id}/follow`, { csrf: true })).json.data;
+  assert.deepEqual([off.following, off.followers], [false, 0]);
+  await follow(fan);
+  await owner.agent.delete(`/api/lists/${id}`, { csrf: true });
+  assert.deepEqual((await fan.agent.get('/api/lists/following')).json.lists, [], 'a deleted list is unfollowed');
+  assert.equal(Number((await db.execute({ sql: 'SELECT COUNT(*) AS n FROM list_follows WHERE list_id = ?', args: [id] })).rows[0].n), 0);
+});
+
 test('notification settings: alert kinds can be muted, the digest needs mail', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');
   const { notifyNewEpisodes } = await import('../src/lib/notifications.js');
