@@ -22,6 +22,7 @@ const tabsHTML = (active) => `
   <div class="vibe-examples" role="tablist" style="margin-bottom:12px">
     <a class="chip${active === 'browse' ? ' active' : ''}" href="#/novels">📚 Browse</a>
     <a class="chip${active === 'free' ? ' active' : ''}" href="#/novels/free">🆓 Read Free</a>
+    <a class="chip" href="#/vn">🎮 Visual Novels</a>
     ${Auth.get().user ? `<a class="chip${active === 'list' ? ' active' : ''}" href="#/novel-list">📌 My Novels</a>` : ''}
   </div>`;
 
@@ -285,6 +286,12 @@ const FREE_SITES = [
     ],
   },
   {
+    group: 'Visual novels, free to play',
+    sites: [
+      { name: 'Free visual novels on AniNest', url: '#/vn?free=1', about: 'Complete, official visual novels that cost nothing, like Doki Doki Literature Club!', internal: true },
+    ],
+  },
+  {
     group: 'Original English web novels',
     sites: [
       { name: 'Royal Road', url: 'https://www.royalroad.com/', about: 'LitRPG, progression fantasy and isekai, written in English and free.' },
@@ -309,8 +316,8 @@ export async function renderNovelFree(root, params) {
       <section class="section">
         <div class="section-head"><h2 class="section-title">${escapeHtml(g.group)}</h2></div>
         <div class="free-site-grid">${g.sites.map((s) => `
-          <a class="free-site" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">
-            <strong>${escapeHtml(s.name)} ↗</strong>
+          <a class="free-site" href="${escapeHtml(s.url)}"${s.internal ? '' : ' target="_blank" rel="noopener"'}>
+            <strong>${escapeHtml(s.name)}${s.internal ? ' →' : ' ↗'}</strong>
             <span>${escapeHtml(s.about)}</span>
           </a>`).join('')}</div>
       </section>`).join('')}

@@ -87,7 +87,7 @@ async function dispatch() {
 }
 
 // Detail pages light up their section's link too (an anime page -> Anime).
-const SECTION_OF = [['/anime/', '/browse'], ['/manga/', '/manga'], ['/novel/', '/novels'], ['/games/', '/games']];
+const SECTION_OF = [['/anime/', '/browse'], ['/manga/', '/manga'], ['/novel/', '/novels'], ['/vn', '/novels'], ['/games/', '/games']];
 
 function highlightNav(path, params) {
   const full = params.toString() ? `${path}?${params.toString()}` : path;

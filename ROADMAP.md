@@ -64,7 +64,7 @@ that differ from that proposal, and the **checklist** for each phase.
 - [x] Prediction league: reminders (bell and push) a day before picks lock and when results are final; an hourly job finalizes leagues; own on/off setting
 - [x] Weekly digest on a fixed day: Sundays from 09:00 UTC
 - [x] Warm-up job that pre-fills `api_cache` for popular titles (`lib/cacheWarmup.js`, every 12h, paced)
-- [ ] Visual novels via VNDB (free, keyless), after light novels settle
+- [x] Visual novels via VNDB (free, keyless): browse, search, "free to play" (official, complete freeware), detail pages with official store links. All-ages only: a release rated under 18 and no "Sexual Content" tag; suggestive covers hidden
 
 ## Phase 0: Episode progress
 

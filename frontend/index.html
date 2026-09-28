@@ -30,7 +30,7 @@
        done via a real header in render.yaml for the deployed site instead).
        localhost:8787 is the dev backend; in production the API is same-origin
        (render.yaml proxies /api/*), so 'self' covers it. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com https://www.gutenberg.org http://localhost:8787; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787; base-uri 'self'; form-action 'self'; object-src 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://cdn.myanimelist.net https://s4.anilist.co https://*.anilist.co https://i.ytimg.com https://www.gutenberg.org https://t.vndb.org http://localhost:8787; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' https://challenges.cloudflare.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; media-src 'self' https://v.animethemes.moe; connect-src 'self' http://localhost:8787; base-uri 'self'; form-action 'self'; object-src 'none'" />
   <link rel="preconnect" href="https://s4.anilist.co">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -90,6 +90,7 @@
           <div class="nav-dropdown-menu">
             <a href="#/vibe" data-route="/vibe">✨ Vibe Search</a>
             <a href="#/novels/free" data-route="/novels/free">🆓 Read Novels Free</a>
+            <a href="#/vn" data-route="/vn">🎮 Visual Novels</a>
             <a href="#/free" data-route="/free">📺 Free in My Country</a>
             <a href="#/together" data-route="/together">🍿 Watch Together</a>
             <a href="#/tournament" data-route="/tournament">🏆 OP/ED Tournament</a>
@@ -119,7 +120,7 @@
 
   <footer class="site-footer">
     <div class="footer-inner">
-      <p><span class="brand-bolt">🪺</span> AniNest — built for fans, by a fan. Data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a>, <a href="https://mangadex.org" target="_blank" rel="noopener">MangaDex</a> &amp; <a href="https://animethemes.moe" target="_blank" rel="noopener">AnimeThemes</a>.</p>
+      <p><span class="brand-bolt">🪺</span> AniNest — built for fans, by a fan. Data from <a href="https://anilist.co" target="_blank" rel="noopener">AniList</a>, <a href="https://jikan.moe" target="_blank" rel="noopener">Jikan</a>, <a href="https://mangadex.org" target="_blank" rel="noopener">MangaDex</a>, <a href="https://vndb.org" target="_blank" rel="noopener">VNDB</a> &amp; <a href="https://animethemes.moe" target="_blank" rel="noopener">AnimeThemes</a>.</p>
       <p class="footer-note">Free episodes are official uploads from licensed YouTube channels. For everything else, please support the creators on official platforms like Crunchyroll, HIDIVE, or Netflix.</p>
       <button id="install-btn" class="btn-pow btn-pow--sm" style="margin-top:14px" hidden>📲 Install App</button>
     </div>

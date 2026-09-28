@@ -52,6 +52,7 @@ render.yaml         Render Blueprint for both services, including the production
 |---|---|---|
 | AniList (GraphQL) | primary for anime lists, detail, search, characters | **30 requests/minute**. A 429 carries `Retry-After`. |
 | Jikan (MyAnimeList) | fallback for everything above; also fills MAL-only fields (rank, duration, rating, streaming links) when it serves detail | slow and sometimes flaky |
+| VNDB | visual novels (`routes/visualNovels.js`, `/api/vn/*`) | keyless, 200 requests / 5 min, so searches are cached 10 min and details 24h. Only VNs with a release rated under 18 and no `g23` "Sexual Content" tag; covers with `image.sexual` ≥ 0.5 are hidden; store links come from all-ages official releases through an allowlist. "Free" means an official, complete, non-patch freeware release |
 | MangaDex | all manga metadata and covers | metadata only, `safe` rating only, behind Cloudflare (needs a browser User-Agent) |
 | AnimeThemes.moe | OP/ED jukebox | third party with occasional full outages; also behind Cloudflare |
 | trace.moe | screenshot search | small shared daily quota |

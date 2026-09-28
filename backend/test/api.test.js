@@ -3410,6 +3410,55 @@ test('prediction league: points and the season clock', async () => {
   assert.deepEqual([c.locksAt, c.finalAt].map((t) => new Date(t).toISOString().slice(0, 10)), ['2026-10-15', '2027-01-15']);
 });
 
+test('visual novels: only all-ages VNs, safe covers, official stores, real freeware', async () => {
+  const { setVndbPost, plainDescription } = await import('../src/routes/visualNovels.js');
+  assert.equal(plainDescription('See [url=https://x.y]the site[/url]. [spoiler]Twist![/spoiler]Done.'), 'See the site. Done.');
+  const calls = [];
+  setVndbPost(async (path, body) => {
+    calls.push({ path, body });
+    if (path === '/release') {
+      return { results: [
+        { freeware: true, patch: true, vns: [{ id: 'v1', rtype: 'complete' }], languages: [{ lang: 'en' }], extlinks: [{ label: 'ErogameScape', url: 'https://ero.example/1' }, { label: 'Steam', url: 'https://store.steampowered.com/app/1' }] },
+        { freeware: false, patch: false, vns: [{ id: 'v1', rtype: 'complete' }], languages: [{ lang: 'ja' }], extlinks: [{ label: 'Steam', url: 'https://store.steampowered.com/app/2' }, { label: 'Official website', url: 'https://vn.example' }, { label: 'Wikipedia', url: 'https://en.wikipedia.org/x' }] },
+      ] };
+    }
+    const wantsOne = JSON.stringify(body.filters).includes('"id","=","v1"');
+    const notFound = JSON.stringify(body.filters).includes('"id","=","v2"');
+    if (notFound) return { results: [] };
+    return {
+      more: true,
+      results: [{
+        id: 'v1', title: 'Test VN', image: { url: 'https://t.vndb.org/cv/1.jpg', sexual: wantsOne ? 0 : 1.2 }, rating: 87.4, votecount: 10, length_minutes: 600,
+        ...(wantsOne ? {
+          description: 'A [url=https://x]story[/url].', developers: [{ name: 'Dev' }], platforms: ['win'],
+          tags: [{ name: 'Mystery', category: 'cont', rating: 2.5, spoiler: 0 }, { name: 'Spoiler', category: 'cont', rating: 3, spoiler: 2 }, { name: 'Ero', category: 'ero', rating: 3, spoiler: 0 }],
+        } : {}),
+      }],
+    };
+  });
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    const list = (await anon.get('/api/vn/search?free=1&q=test')).json;
+    assert.deepEqual([list.data[0].title, list.data[0].rating, list.data[0].hours, list.data[0].image], ['Test VN', 8.7, 10, null], 'a suggestive cover is hidden');
+    const filters = JSON.stringify(calls[0].body.filters);
+    assert.match(filters, /"minage","<",18/);
+    assert.match(filters, /"tag","!=","g23"/, 'nothing tagged for sexual content');
+    assert.match(filters, /"freeware","=",1\],\["official","=",1\],\["patch","!=",1\]/, 'free means official, not a fan patch');
+
+    const vn = (await anon.get('/api/vn/v1')).json.data;
+    assert.equal(vn.image, 'https://t.vndb.org/cv/1.jpg');
+    assert.equal(vn.description, 'A story.');
+    assert.deepEqual(vn.tags, ['Mystery'], 'no spoiler or ero tags');
+    assert.deepEqual(vn.stores.map((s) => s.url), ['https://store.steampowered.com/app/1', 'https://vn.example'], 'stores only, one per store, English first');
+    assert.equal(vn.free, false, 'the only free release is a fan patch');
+    assert.equal((await anon.get('/api/vn/v2')).status, 404, 'filtered out or missing');
+    assert.equal((await anon.get('/api/vn/nope')).status, 400);
+  } finally {
+    setVndbPost(null);
+  }
+});
+
 test('cache warm-up: popular shows once each, in order, one failure doesn’t stop the rest', async () => {
   const { warmPopular, setWarmupSources } = await import('../src/lib/cacheWarmup.js');
   const fetched = [];
