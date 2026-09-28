@@ -49,7 +49,7 @@ function followHTML(follows, username) {
   const button = me && !own
     ? `<button class="chip follow-btn${follows.isFollowing ? ' is-following' : ''}" id="follow-btn" aria-pressed="${follows.isFollowing}">${follows.isFollowing ? '✓ Following' : '➕ Follow'}</button>`
     : '';
-  return `<div class="hero-actions" style="justify-content:center;margin-top:12px">${counts}${button}${own ? '<a href="#/feed" class="chip">👥 Friends’ Activity</a>' : ''}</div>`;
+  return `<div class="hero-actions profile-actions profile-actions--12">${counts}${button}${own ? '<a href="#/feed" class="chip">👥 Friends’ Activity</a>' : ''}</div>`;
 }
 
 function wireFollow(root, username, follows) {
@@ -144,9 +144,9 @@ function reviewRowHTML(r, anime) {
   const title = anime?.title || `Anime #${r.mal_id}`;
   const img = anime ? imageOf(anime) : '';
   return `
-    <a class="review-card" href="#/anime/${r.mal_id}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
-      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
-      <div style="flex:1;min-width:0">
+    <a class="review-card review-row-link" href="#/anime/${r.mal_id}">
+      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" class="review-row-cover" />` : ''}
+      <div class="review-row-body">
         <div class="review-head">
           <span class="badge-score small">${r.rating}</span>
           <strong>${escapeHtml(title)}</strong>
@@ -161,9 +161,9 @@ function mangaReviewRowHTML(r, manga) {
   const date = new Date(r.updated_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   const img = mangaImg(manga?.coverImage);
   return `
-    <a class="review-card" href="#/manga/${encodeURIComponent(r.manga_id)}" style="display:flex;gap:14px;text-decoration:none;color:inherit">
-      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" style="width:56px;height:78px;object-fit:cover;border-radius:8px;border:2px solid var(--ink);flex-shrink:0" />` : ''}
-      <div style="flex:1;min-width:0">
+    <a class="review-card review-row-link" href="#/manga/${encodeURIComponent(r.manga_id)}">
+      ${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" class="review-row-cover" />` : ''}
+      <div class="review-row-body">
         <div class="review-head">
           <span class="badge-score small">${r.rating}</span>
           <strong>${escapeHtml(manga?.title || 'A manga')}</strong>
@@ -198,7 +198,7 @@ export async function renderProfile(root, username) {
     root.innerHTML = `
       <div class="account-page">
         <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
-        <h1 class="detail-title" style="-webkit-text-stroke:0.5px var(--ink)">${escapeHtml(user.username)}</h1>
+        <h1 class="detail-title profile-name">${escapeHtml(user.username)}</h1>
         ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
         ${followHTML(data.follows, user.username)}
         ${xpCardHTML(xp)}
@@ -230,16 +230,16 @@ export async function renderProfile(root, username) {
   root.innerHTML = `
     <div class="account-page">
       <div class="account-avatar">${escapeHtml(user.username[0]?.toUpperCase() || '?')}</div>
-      <h1 class="detail-title" style="-webkit-text-stroke:0.5px var(--ink)">${escapeHtml(user.username)}</h1>
+      <h1 class="detail-title profile-name">${escapeHtml(user.username)}</h1>
       ${joined ? `<p class="section-sub">Member since ${escapeHtml(joined)}</p>` : ''}
-      <div class="hero-actions" style="justify-content:center;margin-top:16px">
+      <div class="hero-actions profile-actions profile-actions--16">
         <span class="stat-pill">💖 ${favorites.length} favorite${favorites.length === 1 ? '' : 's'}</span>
         <span class="stat-pill">💬 ${reviews.length + mangaReviews.length} review${reviews.length + mangaReviews.length === 1 ? '' : 's'}</span>
       </div>
       ${followHTML(data.follows, user.username)}
       ${xpCardHTML(xp)}
       ${badgesRowHTML(badges)}
-      <div class="hero-actions" style="justify-content:center;margin-top:14px"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a>${shareButtonHTML('📤 Share profile').replace('btn-pow btn-pow--outline', 'chip')}</div>
+      <div class="hero-actions profile-actions"><a href="#/leaderboard/xp" class="chip">🏆 XP Leaderboard</a>${shareButtonHTML('📤 Share profile').replace('btn-pow btn-pow--outline', 'chip')}</div>
     </div>
 
     <div id="taste-match"></div>

@@ -2823,3 +2823,12 @@ body.nav-open .nav-toggle-bars span:nth-child(3) { transform: translateY(-6.5px)
 .account-toggle { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 14px; font-weight: 700; cursor: pointer; }
 .account-toggle input { width: 20px; height: 20px; accent-color: var(--pink); }
 label.btn-pow { cursor: pointer; }
+
+/* Profile page (pages/profile.js) */
+.profile-name { -webkit-text-stroke: 0.5px var(--ink); }
+.profile-actions { justify-content: center; margin-top: 14px; }
+.profile-actions--12 { margin-top: 12px; }
+.profile-actions--16 { margin-top: 16px; }
+.review-row-link { display: flex; gap: 14px; text-decoration: none; color: inherit; }
+.review-row-cover { width: 56px; height: 78px; object-fit: cover; border-radius: 8px; border: 2px solid var(--ink); flex-shrink: 0; }
+.review-row-body { flex: 1; min-width: 0; }

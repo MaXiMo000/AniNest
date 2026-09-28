@@ -55,8 +55,8 @@ that differ from that proposal, and the **checklist** for each phase.
 - [x] Update vitest to 5 (0 advisories)
 
 **Then, UI**
-- [ ] Mobile and accessibility pass over every page: keyboard access, focus states, contrast, tap targets
-- [ ] Inline `style="..."` into CSS classes (Account page first: 24 of them)
+- [x] Mobile and accessibility pass over every page: keyboard access, focus states, contrast, tap targets (sweep at 375px: sideways scroll on game pages, unlabeled inputs, focus rings, drawer focus)
+- [x] Inline `style="..."` into CSS classes on the Account (25) and Profile (11) pages. What's left is one-off spacing (2-5 per page) and the admin-only curation page
 - [ ] Layout-shaped loading placeholders and consistent empty states
 
 **Then, features**
