@@ -134,7 +134,7 @@ gamesRouter.post('/hl/:runId/guess', asyncRoute(async (req, res) => {
   if (Date.now() - Number(row.dealt_at) < MIN_GUESS_MS) return res.status(429).json({ error: 'Too fast! Take a look first.' });
   const out = await guessHl(row, parsed.data.direction);
   if (!out) return res.status(409).json({ error: 'That round was already answered.' });
-  if (out.gameOver && row.user_id != null) out.best = await recordScore(Number(row.user_id), row.game, out.streak);
+  if (out.gameOver && !out.unscored && row.user_id != null) out.best = await recordScore(Number(row.user_id), row.game, out.streak);
   res.json(out);
 }));
 

@@ -731,6 +731,12 @@ await db.executeMultiple(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_round_runs_user ON round_runs(user_id, created_at);
+  -- Each game pool once, by a hash of its contents (lib/gamePool.js); runs point at a version.
+  CREATE TABLE IF NOT EXISTS game_pools (
+    version TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   -- What each signed-in player was dealt lately, per game, so a new run deals unseen shows first.
   CREATE TABLE IF NOT EXISTS game_recent (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -739,6 +745,10 @@ await db.executeMultiple(`
     PRIMARY KEY (user_id, game)
   );
 `);
+
+// Game runs point at a stored pool version instead of carrying a copy.
+await ensureColumn('round_runs', 'pool_version', 'TEXT');
+await ensureColumn('hl_runs', 'pool_version', 'TEXT');
 
 // Notification settings (routes/notifications.js): which alerts reach the
 // bell and push, and the opt-in weekly email digest (lib/digest.js).

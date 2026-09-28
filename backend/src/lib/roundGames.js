@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
-import { getGamePool } from './gamePool.js';
+import { getGamePoolSnapshot, getGamePoolVersion } from './gamePool.js';
 import * as animeSource from './animeSource.js';
 import { EMOJI_PUZZLES } from './emojiPuzzles.js';
 import { hashString, shuffleSeeded } from './hlGame.js';
@@ -286,17 +286,28 @@ export function setRoundSources(s) {
 
 // ---- Runs ----
 
-async function deckFor(def) {
-  if (def.puzzles) return [];
-  const pool = (await getGamePool()).filter(def.filter);
-  return def.deck ? def.deck(pool) : pool;
-}
-
-// A copy of what the run needs, stored with it so a pool refresh can't change
-// the answers: for these games that's the pool itself, trimmed to the fields
-// the builders read.
+// The run's deck, from one pool version: filtered for the game, by difficulty,
+// sorted by id. Always rebuilt the same way, so each answer deals from
+// exactly the deck the run started with.
 const SLIM = ['id', 'title', 'title_english', 'image', 'members', 'year', 'type', 'studio', 'source', 'synopsis', 'genres', 'episodes'];
 const slim = (a) => Object.fromEntries(SLIM.map((k) => [k, a[k] ?? null]));
+
+function deckFor(def, fullPool) {
+  if (def.puzzles) return [];
+  const pool = fullPool.filter(def.filter);
+  return (def.deck ? def.deck(pool) : pool).map(slim).sort((a, b) => a.id - b.id);
+}
+
+// The deck for a stored run, or null if its pool version is gone (versions
+// outlive runs, so only a run abandoned for days hits that). Runs from before
+// versions carry their own copy in `pool`.
+async function deckOf(row) {
+  const def = ROUND_GAMES[row.game];
+  if (!row.pool_version) return JSON.parse(row.pool);
+  if (def.puzzles) return [];
+  const full = await getGamePoolVersion(row.pool_version);
+  return full ? deckFor(def, full) : null;
+}
 
 async function buildRound(def, pool, ctx) {
   for (let i = 0; i < MAX_BUILD_TRIES; i += 1) {
@@ -328,7 +339,8 @@ function publicView(run, round, extra = {}) {
 
 export async function startRoundRun(game, { userId = null, seed = null, input = 'choices' }) {
   const def = ROUND_GAMES[game];
-  const pool = (await deckFor(def)).map(slim).sort((a, b) => a.id - b.id);
+  const { version, pool: fullPool } = def.puzzles ? { version: null, pool: [] } : await getGamePoolSnapshot();
+  const pool = deckFor(def, fullPool);
   if (!def.puzzles && pool.length < 8) return null;
   const rng = makeRng(seed ? hashString(`${game}:${seed}`) : crypto.randomBytes(4).readUInt32BE());
   const mode = { input: def.typed && input === 'typed' ? 'typed' : 'choices', seeded: Boolean(seed) };
@@ -345,9 +357,9 @@ export async function startRoundRun(game, { userId = null, seed = null, input = 
   await db.batch([
     { sql: 'DELETE FROM round_runs WHERE created_at < ?', args: [Date.now() - RUN_TTL_MS] },
     {
-      sql: `INSERT INTO round_runs (id, user_id, game, mode, pool, used, rng, round, round_no, streak, lives, skips, dealt_at, ends_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)`,
-      args: [run.id, userId, game, JSON.stringify(mode), JSON.stringify(pool), JSON.stringify([...used]), rng.state,
+      sql: `INSERT INTO round_runs (id, user_id, game, mode, pool, pool_version, used, rng, round, round_no, streak, lives, skips, dealt_at, ends_at, created_at)
+            VALUES (?, ?, ?, ?, '[]', ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?)`,
+      args: [run.id, userId, game, JSON.stringify(mode), version, JSON.stringify([...used]), rng.state,
         JSON.stringify(round), run.lives, run.skips, Date.now(), run.ends_at, Date.now()],
     },
   ], 'write');
@@ -378,7 +390,7 @@ async function endRun(row, fields = {}) {
   if (res.rowsAffected !== 1) return false;
   // Remember what this run dealt (up to half the deck) for the next one.
   if (row.user_id != null && !JSON.parse(row.mode).seeded) {
-    const size = ROUND_GAMES[row.game].puzzles ? EMOJI_PUZZLES.length : JSON.parse(row.pool).length;
+    const size = ROUND_GAMES[row.game].puzzles ? EMOJI_PUZZLES.length : ((await deckOf(row))?.length || 0);
     const ids = JSON.parse(row.used).slice(-Math.max(1, Math.floor(size / 2)));
     await db.execute({
       sql: `INSERT INTO game_recent (user_id, game, ids) VALUES (?, ?, ?)
@@ -437,11 +449,12 @@ export async function answerRound(row, { answer, typed, order, giveUp }) {
     return { ...base, correct, streak, lives, gameOver: true, timeUp: endsAt != null };
   }
 
-  const pool = JSON.parse(row.pool);
+  const pool = await deckOf(row);
   const rng = makeRng(Number(row.rng));
   const used = new Set(JSON.parse(row.used));
   const mode = JSON.parse(row.mode);
-  const next = await buildRound(def, pool, { pool, rng, used, streak, mode });
+  // No deck (a pool version long gone) ends the run like running out of rounds.
+  const next = pool && await buildRound(def, pool, { pool, rng, used, streak, mode });
   if (!next) {
     if (!(await endRun(row, { streak, lives }))) return { stale: true };
     return { ...base, correct, streak, lives, gameOver: true };
@@ -461,7 +474,8 @@ export async function answerRound(row, { answer, typed, order, giveUp }) {
 export async function skipRound(row) {
   const def = ROUND_GAMES[row.game];
   if (!def.skippable || Number(row.skips) <= 0) return null;
-  const pool = JSON.parse(row.pool);
+  const pool = await deckOf(row);
+  if (!pool) return null;
   const rng = makeRng(Number(row.rng));
   const used = new Set(JSON.parse(row.used));
   const next = await buildRound(def, pool, { pool, rng, used, streak: Number(row.streak), mode: JSON.parse(row.mode) });

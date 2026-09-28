@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
-import { getGamePool, setGamePool } from './gamePool.js';
+import { getGamePoolSnapshot, getGamePoolVersion, setGamePool } from './gamePool.js';
 
 // Higher or Lower, dealt and judged by the server (routes/games.js /hl/*), so
 // its four leaderboards hold real streaks: the browser only ever sees the
@@ -25,7 +25,6 @@ export const SKIPS = 1;
 // reveal animation already takes longer; this only stops scripted play.
 export const MIN_GUESS_MS = 700;
 
-const getPool = getGamePool;
 // Test hook, kept for the Higher or Lower tests: sets the shared game pool.
 export const setHlPool = setGamePool;
 
@@ -89,12 +88,26 @@ function draw(deck, rngState, cards, champion) {
   return { challenger: d[d.length - 1], deck: d.slice(0, -1), rng: s };
 }
 
-export async function startHlRun(game, { userId = null, seed = null }) {
+// {malId: [value, title, image]} for one mode, from one pool version. A run
+// stores the version, not the cards, and rebuilds them the same way.
+function cardsFrom(game, pool) {
   const valueOf = HL_GAMES[game];
-  const pool = (await getPool()).filter((a) => VALID[game](valueOf(a)));
-  if (pool.length < 8) return null;
-  const cards = Object.fromEntries(pool.map((a) => [a.id, [valueOf(a), a.title, a.image]]));
-  const ids = pool.map((a) => a.id).sort((a, b) => a - b);
+  return Object.fromEntries(pool.filter((a) => VALID[game](valueOf(a))).map((a) => [a.id, [valueOf(a), a.title, a.image]]));
+}
+
+// The run's cards, or null if its pool version is gone. Runs from before
+// versions carry their own copy.
+async function cardsOf(row) {
+  if (!row.pool_version) return JSON.parse(row.cards);
+  const pool = await getGamePoolVersion(row.pool_version);
+  return pool ? cardsFrom(row.game, pool) : null;
+}
+
+export async function startHlRun(game, { userId = null, seed = null }) {
+  const { version, pool } = await getGamePoolSnapshot();
+  const cards = cardsFrom(game, pool);
+  const ids = Object.keys(cards).map(Number).sort((a, b) => a - b);
+  if (ids.length < 8) return null;
   const [deck, rng] = shuffleSeeded(ids, seed ? hashString(String(seed)) : crypto.randomBytes(4).readUInt32BE());
   const champion = deck.pop();
   const next = draw(deck, rng, cards, champion);
@@ -104,9 +117,9 @@ export async function startHlRun(game, { userId = null, seed = null }) {
   await db.batch([
     { sql: 'DELETE FROM hl_runs WHERE created_at < ?', args: [Date.now() - 24 * 60 * 60 * 1000] },
     {
-      sql: `INSERT INTO hl_runs (id, user_id, game, cards, deck, rng, champion, challenger, streak, skips, dealt_at, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
-      args: [run.id, userId, game, JSON.stringify(cards), JSON.stringify(next.deck), next.rng, champion, next.challenger, SKIPS, Date.now(), Date.now()],
+      sql: `INSERT INTO hl_runs (id, user_id, game, cards, pool_version, deck, rng, champion, challenger, streak, skips, dealt_at, created_at)
+            VALUES (?, ?, ?, '{}', ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+      args: [run.id, userId, game, version, JSON.stringify(next.deck), next.rng, champion, next.challenger, SKIPS, Date.now(), Date.now()],
     },
   ], 'write');
   return view(run, cards);
@@ -124,7 +137,12 @@ export async function loadHlRun(runId, userId) {
 // { correct, value, streak, gameOver, next? }. Guarded on the current
 // challenger, so a double-sent guess can't count twice.
 export async function guessHl(row, direction) {
-  const cards = JSON.parse(row.cards);
+  const cards = await cardsOf(row);
+  // A run abandoned for days (its pool version pruned) just ends, unscored.
+  if (!cards) {
+    await db.execute({ sql: 'UPDATE hl_runs SET finished = 1 WHERE id = ?', args: [row.id] });
+    return { correct: false, value: null, streak: Number(row.streak), gameOver: true, unscored: true };
+  }
   const champ = cards[row.champion][0];
   const value = cards[row.challenger][0];
   const correct = isCorrect(direction, champ, value);
@@ -149,7 +167,8 @@ export async function guessHl(row, direction) {
 
 export async function skipHl(row) {
   if (Number(row.skips) <= 0) return null;
-  const cards = JSON.parse(row.cards);
+  const cards = await cardsOf(row);
+  if (!cards) return null;
   const next = draw(JSON.parse(row.deck), Number(row.rng), cards, Number(row.champion));
   const res = await db.execute({
     sql: 'UPDATE hl_runs SET challenger = ?, deck = ?, rng = ?, skips = skips - 1, dealt_at = ? WHERE id = ? AND challenger = ? AND skips > 0',

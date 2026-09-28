@@ -843,6 +843,8 @@ test('Higher or Lower is dealt and judged by the server', async () => {
     const { agent } = await registeredAgent();
     const start = (a, body) => a.post('/api/games/hl/start', { csrf: true, body });
     const run = (await start(agent, { game: 'higher-lower' })).json;
+    const stored = (await db.execute({ sql: 'SELECT length(cards) AS n, pool_version FROM hl_runs WHERE id = ?', args: [run.runId] })).rows[0];
+    assert.ok(Number(stored.n) < 10 && stored.pool_version, 'the run points at the stored pool instead of copying it');
     assert.equal(typeof run.champion.value, 'number');
     assert.equal(run.challenger.value, undefined, 'the challenger’s number stays on the server');
     assert.equal((await start(agent, { game: 'hl-year' })).status, 503, 'a mode without data says so');
@@ -1045,6 +1047,28 @@ test('timeline on the server: years stay hidden until the order is locked in', a
     assert.equal((await lockIn(run.runId, wrongOrder)).correct, false);
     const cheat = await lockIn(run.runId, ['1', '1', '1', '1']);
     assert.equal(cheat.correct, false, 'the same card four times isn’t an order');
+  } finally {
+    setGamePool(null);
+  }
+});
+
+test('round games: runs point at one stored pool, and keep working after a restart', async () => {
+  const { setGamePool } = await import('../src/lib/gamePool.js');
+  const make = async () => roundTestPool();
+  setGamePool(make);
+  try {
+    const { agent } = await registeredAgent();
+    const run = (await agent.post('/api/games/rounds/start', { csrf: true, body: { game: 'guess-the-anime' } })).json;
+    const row = (await db.execute({ sql: 'SELECT length(pool) AS pool, pool_version, length(round) AS round FROM round_runs WHERE id = ?', args: [run.runId] })).rows[0];
+    assert.ok(Number(row.pool) < 10 && Number(row.round) < 3000, 'no pool copy in the run');
+    assert.ok(row.pool_version);
+    assert.equal(Number((await db.execute({ sql: 'SELECT COUNT(*) AS n FROM game_pools WHERE version = ?', args: [row.pool_version] })).rows[0].n), 1);
+
+    setGamePool(make); // forgets the pool in memory, like a restart
+    await db.execute({ sql: 'UPDATE round_runs SET dealt_at = dealt_at - 5000 WHERE id = ?', args: [run.runId] });
+    const answer = JSON.parse((await db.execute({ sql: 'SELECT round FROM round_runs WHERE id = ?', args: [run.runId] })).rows[0].round).answer;
+    const out = (await agent.post(`/api/games/rounds/${run.runId}/answer`, { csrf: true, body: { answer } })).json;
+    assert.deepEqual([out.correct, out.next.round.choices.length], [true, 4], 'the deck is rebuilt from the stored pool');
   } finally {
     setGamePool(null);
   }
