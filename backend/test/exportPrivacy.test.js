@@ -64,10 +64,12 @@ function makeAgent() {
   };
 }
 
+// Unique within this file's own database (time digits could repeat).
+const RUN_TAG = Math.random().toString(36).slice(2, 7);
 let n = 0;
 async function signedIn() {
   n += 1;
-  const id = `${Date.now()}${n}`.slice(-10);
+  const id = `${RUN_TAG}${n}`;
   const agent = makeAgent();
   await agent.get('/api/health');
   const reg = await agent.post('/api/auth/register', { username: `x${id}`, email: `x${id}@test.local`, password: 'correcthorse123' });

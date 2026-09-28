@@ -133,9 +133,12 @@ function makeAgent() {
 }
 
 let uniqueSuffix = 0;
+// A per-run prefix plus a counter: unique within the file's own database
+// (the old "last 10 digits of time + counter" could repeat as the counter grew).
+const RUN_TAG = Math.random().toString(36).slice(2, 7);
 function uniqueUser() {
   uniqueSuffix += 1;
-  const n = `${Date.now()}${uniqueSuffix}`.slice(-10);
+  const n = `${RUN_TAG}${uniqueSuffix}`;
   return { username: `u${n}`, email: `u${n}@test.local`, password: 'correcthorse123' };
 }
 
@@ -163,6 +166,18 @@ async function registeredAgent() {
   const user = uniqueUser();
   const reg = await agent.post('/api/auth/register', { csrf: true, body: user });
   return { agent, user, id: reg.json.user.id };
+}
+
+// Waits until `check()` is true (background work: a cache write, an email
+// handed to the mail sender), up to `ms`. Fixed sleeps flake on slow CI.
+async function eventually(check, ms = 5000) {
+  const until = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > until) return false;
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((r) => { setTimeout(r, 25); });
+  }
+  return true;
 }
 
 // Records a finished run's score for the signed-in `agent`, as the server
@@ -1756,7 +1771,11 @@ test('persistentCached: fresh copies skip upstream, outages fall back to the sto
   // Miss -> asks upstream and stores the answer.
   assert.deepEqual(await persistentCached(key, DAY, ok({ v: 1 })), { v: 1 });
   assert.equal(calls, 2);
-  await new Promise((r) => setTimeout(r, 50)); // the write is fire-and-forget
+  const stored = async (v) => {
+    const row = (await db.execute({ sql: 'SELECT value FROM api_cache WHERE cache_key = ?', args: [key] })).rows[0];
+    return Boolean(row) && JSON.parse(row.value).v === v;
+  };
+  assert.ok(await eventually(() => stored(1)), 'the write is fire-and-forget');
 
   // Fresh -> served from our database; upstream isn't touched at all.
   const before = calls;
@@ -1777,7 +1796,7 @@ test('persistentCached: fresh copies skip upstream, outages fall back to the sto
 
   // Stale + upstream healthy again -> refreshes the stored copy.
   assert.deepEqual(await persistentCached(key, 0, ok({ v: 2 })), { v: 2 });
-  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(await eventually(() => stored(2)));
   assert.deepEqual(await persistentCached(key, DAY, ok({ v: 999 })), { v: 2 });
 });
 
@@ -1787,7 +1806,7 @@ test('the anime themes list survives an AnimeThemes outage once it has been fetc
   const key = `anime:themes:test-${Date.now()}`;
   const themes = [{ slug: 'OP1', type: 'OP', title: 'Guren no Yumiya', videoUrl: 'https://v.animethemes.moe/OP1.webm' }];
   await persistentCached(key, 7 * 24 * 60 * 60 * 1000, async () => themes);
-  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(await eventually(async () => (await db.execute({ sql: 'SELECT 1 FROM api_cache WHERE cache_key = ?', args: [key] })).rows.length > 0));
   const outage = async () => { throw new Error('AnimeThemes error 522'); };
   assert.deepEqual(await persistentCached(key, 0, outage), themes, 'stale list is served while the service is down');
 });
@@ -2034,8 +2053,7 @@ test('email verification, password-change and new-device alerts', async () => {
   const mailsTo = (email, re) => sent.filter((m) => m.to === email && re.test(m.subject));
   try {
     const { agent, user } = await registeredAgent();
-    await settle();
-    assert.equal(mailsTo(user.email, /Confirm your AniNest email/).length, 1, 'sign-up sends the link');
+    assert.ok(await eventually(() => mailsTo(user.email, /Confirm your AniNest email/).length === 1), 'sign-up sends the link');
     assert.equal((await agent.get('/api/auth/me')).json.user.emailVerified, false);
 
     // Alerts wait for a confirmed address.
@@ -2044,9 +2062,8 @@ test('email verification, password-change and new-device alerts', async () => {
     assert.equal(mailsTo(user.email, /password was changed/).length, 0);
 
     await agent.post('/api/auth/verify-email/resend', { csrf: true });
-    await settle();
+    assert.ok(await eventually(() => mailsTo(user.email, /Confirm/).length === 2));
     const links = mailsTo(user.email, /Confirm/);
-    assert.equal(links.length, 2);
     const token = /token=([0-9a-f]{64})/.exec(links[1].text)[1];
     const oldToken = /token=([0-9a-f]{64})/.exec(links[0].text)[1];
     const anon = makeAgent();
@@ -2058,8 +2075,7 @@ test('email verification, password-change and new-device alerts', async () => {
     assert.equal((await agent.post('/api/auth/verify-email/resend', { csrf: true })).status, 409);
 
     await agent.post('/api/auth/password', { csrf: true, body: { currentPassword: 'newhorse4567', newPassword: 'thirdhorse890' } });
-    await settle();
-    assert.equal(mailsTo(user.email, /password was changed/).length, 1);
+    assert.ok(await eventually(() => mailsTo(user.email, /password was changed/).length === 1));
 
     // The sign-up browser is known; a fresh one alerts, once.
     const login = (a) => a.post('/api/auth/login', { csrf: true, body: { identifier: user.username, password: 'thirdhorse890' } });
@@ -2069,8 +2085,7 @@ test('email verification, password-change and new-device alerts', async () => {
     const laptop = makeAgent();
     await laptop.get('/api/health');
     assert.equal((await login(laptop)).status, 200);
-    await settle();
-    assert.equal(mailsTo(user.email, /New sign-in/).length, 1);
+    assert.ok(await eventually(() => mailsTo(user.email, /New sign-in/).length === 1));
     await login(laptop);
     await settle();
     assert.equal(mailsTo(user.email, /New sign-in/).length, 1, 'known after the first time');
@@ -2124,14 +2139,16 @@ test('two-factor login: setup, login needs the code, recovery codes, turning it 
   assert.equal(first.json.user, undefined, 'no session from the password alone');
   assert.equal((await phone.get('/api/auth/me')).json.user, null);
   assert.equal((await second(phone, first.json.ticket, '123456')).status, 401);
-  assert.equal((await second(phone, first.json.ticket, codeFor(setup.secret, 1))).status, 200, 'next step’s code, allowed as drift');
+  // Computed once: recomputing later could land in a new 30s window and be a fresh code.
+  const usedCode = codeFor(setup.secret, 1);
+  assert.equal((await second(phone, first.json.ticket, usedCode)).status, 200, 'next step’s code, allowed as drift');
   assert.equal((await phone.get('/api/auth/me')).json.user.username, user.username);
 
   // The same code again is refused (replay), and a spent ticket is gone.
   const again = makeAgent();
   await again.get('/api/health');
   const t2 = (await login(again)).json.ticket;
-  assert.equal((await second(again, t2, codeFor(setup.secret, 1))).status, 401, 'a used code can’t be reused');
+  assert.equal((await second(again, t2, usedCode)).status, 401, 'a used code can’t be reused');
   assert.equal((await second(again, t2, recoveryCodes[0].toUpperCase())).status, 200, 'a recovery code works');
   const lost = makeAgent();
   await lost.get('/api/health');

@@ -78,9 +78,10 @@ function makeAgent(ip) {
 }
 
 let userN = 0;
+const RUN_TAG = Math.random().toString(36).slice(2, 7);
 function newUser() {
   userN += 1;
-  const n = `${Date.now()}${userN}`.slice(-9);
+  const n = `${RUN_TAG}${userN}`;
   return { username: `s${n}`, email: `s${n}@test.local`, password: 'correcthorse123' };
 }
 
