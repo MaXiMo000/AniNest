@@ -1,5 +1,5 @@
 import { Api, imageOf } from '../lib/api.js';
-import { cardRail, cardGrid, loadingHTML, errorHTML, escapeHtml, genreGradient, wireRetry, skeletonRail } from '../lib/ui.js';
+import { cardRail, cardGrid, errorHTML, escapeHtml, genreGradient, wireRetry, skeletonRail, skeletonHome } from '../lib/ui.js';
 import { navigate } from '../lib/router.js';
 import { RecentlyViewed } from '../lib/recentlyViewed.js';
 import { Auth } from '../lib/authStore.js';
@@ -67,7 +67,7 @@ function tickerHTML(airingToday) {
 // upstream MyAnimeList connection can be unreliable) doesn't blank the whole
 // page — sections that fail just show their own small retry prompt.
 export async function renderHome(root) {
-  root.innerHTML = loadingHTML('SUMMONING ANIME');
+  root.innerHTML = skeletonHome();
 
   const [airingRes, seasonRes, topRes, scheduleRes] = await Promise.allSettled([
     Api.topAnime(1, 'airing'),

@@ -887,6 +887,24 @@ summary:focus-visible, .anime-card:focus-visible, .manga-card:focus-visible {
   border-radius: 6px;
   margin: 6px 0;
 }
+.skeleton-title { height: 28px; width: 70%; }
+.skeleton-heading { height: 22px; width: 220px; margin: 8px 0 14px; }
+.skeleton-w-40 { width: 40%; }
+.skeleton-w-60 { width: 60%; }
+.skeleton-detail-hero { display: flex; gap: 22px; padding: 22px; background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 18px; box-shadow: 6px 6px 0 var(--ink); }
+.skeleton-detail-poster { flex: none; width: 200px; aspect-ratio: 2 / 3; border-radius: 12px; }
+.skeleton-detail-main { flex: 1; min-width: 0; padding-top: 6px; }
+.skeleton-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.skeleton-pill { width: 84px; height: 28px; border-radius: 999px; }
+.skeleton-block { height: 120px; border-radius: 14px; margin-top: 22px; }
+.skeleton-rows { display: flex; flex-direction: column; gap: 10px; }
+.skeleton-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 12px; }
+.skeleton-avatar { flex: none; width: 36px; height: 36px; border-radius: 50%; }
+@media (max-width: 640px) {
+  .skeleton-detail-hero { flex-direction: column; align-items: center; }
+  .skeleton-detail-poster { width: 160px; }
+  .skeleton-detail-main { width: 100%; }
+}
 
 /* ===================== Auth: header area, forms, account ===================== */
 .auth-page {
@@ -2832,3 +2850,5 @@ label.btn-pow { cursor: pointer; }
 .review-row-link { display: flex; gap: 14px; text-decoration: none; color: inherit; }
 .review-row-cover { width: 56px; height: 78px; object-fit: cover; border-radius: 8px; border: 2px solid var(--ink); flex-shrink: 0; }
 .review-row-body { flex: 1; min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) { .skeleton-shimmer::after { animation: none; } }

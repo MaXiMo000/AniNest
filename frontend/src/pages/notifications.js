@@ -1,7 +1,7 @@
 import { Notifications } from '../lib/notificationsApi.js';
 import { Auth } from '../lib/authStore.js';
 import { pushState, enablePush, disablePush } from '../lib/push.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML, showToast, timeAgo } from '../lib/ui.js';
+import { escapeHtml, errorHTML, wireRetry, emptyHTML, showToast, timeAgo, skeletonRows } from '../lib/ui.js';
 
 const KIND_META = {
   'anime-episodes': { emoji: '🆓', label: 'Free episodes' },
@@ -35,7 +35,7 @@ export async function renderNotifications(root) {
     return;
   }
 
-  root.innerHTML = loadingHTML('CHECKING FOR NEWS');
+  root.innerHTML = skeletonRows(5, 'Loading notifications');
   let data;
   try {
     data = await Notifications.list();

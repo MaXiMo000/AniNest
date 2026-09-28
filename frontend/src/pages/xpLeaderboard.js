@@ -1,6 +1,6 @@
 import { Users } from '../lib/usersApi.js';
 import { Auth } from '../lib/authStore.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML } from '../lib/ui.js';
+import { escapeHtml, errorHTML, wireRetry, emptyHTML, skeletonRows } from '../lib/ui.js';
 
 const RANK_MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
@@ -20,7 +20,7 @@ function rowHTML(row, index, myUsername) {
 
 export async function renderXpLeaderboard(root) {
   document.title = 'XP Leaderboard — AniNest';
-  root.innerHTML = loadingHTML('TALLYING XP');
+  root.innerHTML = skeletonRows(10, 'Loading leaderboard');
 
   let data;
   try {

@@ -1,9 +1,9 @@
 import { Api } from '../lib/api.js';
-import { cardGrid, loadingHTML, errorHTML, escapeHtml, wireRetry, emptyHTML } from '../lib/ui.js';
+import { cardGrid, errorHTML, escapeHtml, wireRetry, emptyHTML, skeletonDetail } from '../lib/ui.js';
 
 export async function renderPerson(root, name) {
   document.title = `${name} — AniNest`;
-  root.innerHTML = loadingHTML('LOOKING UP THE VOICE ACTOR');
+  root.innerHTML = skeletonDetail('Loading voice actor');
 
   let data;
   try {

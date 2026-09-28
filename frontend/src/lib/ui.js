@@ -70,7 +70,45 @@ export function showToast(msg) {
 }
 
 export function loadingHTML(label = 'LOADING...') {
-  return `<div class="loading-wrap"><div class="pow-spinner">✦ ${escapeHtml(label)} ✦</div></div>`;
+  return `<div class="loading-wrap" role="status"><div class="pow-spinner">✦ ${escapeHtml(label)} ✦</div></div>`;
+}
+
+// Placeholders shaped like the page that's coming, so it doesn't jump when
+// the data lands. `label` is what a screen reader hears meanwhile.
+const busy = (label) => `role="status" aria-busy="true" aria-label="${escapeHtml(label)}"`;
+
+// A detail page: cover, title, a row of pills, then a paragraph.
+export function skeletonDetail(label = 'Loading') {
+  return `
+    <div class="skeleton-detail" ${busy(label)}>
+      <div class="skeleton-detail-hero">
+        <div class="skeleton-detail-poster skeleton-shimmer"></div>
+        <div class="skeleton-detail-main">
+          <div class="skeleton-line skeleton-shimmer skeleton-title"></div>
+          <div class="skeleton-line skeleton-shimmer skeleton-w-40"></div>
+          <div class="skeleton-pills">${'<span class="skeleton-pill skeleton-shimmer"></span>'.repeat(4)}</div>
+        </div>
+      </div>
+      <div class="skeleton-block skeleton-shimmer"></div>
+    </div>`;
+}
+
+// A list of rows (leaderboards, feeds, notifications).
+export function skeletonRows(count = 8, label = 'Loading') {
+  return `<div class="skeleton-rows" ${busy(label)}>${Array.from({ length: count }, () => `
+    <div class="skeleton-row">
+      <span class="skeleton-avatar skeleton-shimmer"></span>
+      <span class="skeleton-line skeleton-shimmer skeleton-w-60"></span>
+    </div>`).join('')}</div>`;
+}
+
+// The home page: a few titled rails of cards.
+export function skeletonHome() {
+  return `<div ${busy('Loading anime')}>${Array.from({ length: 3 }, () => `
+    <section class="section">
+      <div class="skeleton-line skeleton-shimmer skeleton-heading"></div>
+      ${skeletonRail(6)}
+    </section>`).join('')}</div>`;
 }
 
 export function skeletonGrid(count = 12) {

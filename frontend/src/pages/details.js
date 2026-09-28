@@ -1,5 +1,5 @@
 import { Api, imageOf } from '../lib/api.js';
-import { cardRail, loadingHTML, errorHTML, escapeHtml, wireRetry, showToast, WATCH_STATUSES } from '../lib/ui.js';
+import { cardRail, errorHTML, escapeHtml, wireRetry, showToast, WATCH_STATUSES, skeletonDetail } from '../lib/ui.js';
 import { Favorites } from '../lib/store.js';
 import { Reviews } from '../lib/reviewsApi.js';
 import { createReviewsUi } from '../lib/reviewsUi.js';
@@ -275,7 +275,7 @@ async function loadFranchise(root, id, retried = false) {
 const animeReviews = createReviewsUi(Reviews);
 
 export async function renderDetails(root, id) {
-  root.innerHTML = loadingHTML('LOADING EPISODE DATA');
+  root.innerHTML = skeletonDetail('Loading anime');
   try {
     const [{ data: a }, recRes, reviewsData, charRes, watchSourcesRes] = await Promise.all([
       Api.fullById(id),

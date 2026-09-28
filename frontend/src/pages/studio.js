@@ -1,9 +1,9 @@
 import { Api } from '../lib/api.js';
-import { cardGrid, loadingHTML, errorHTML, escapeHtml, wireRetry, emptyHTML } from '../lib/ui.js';
+import { cardGrid, errorHTML, escapeHtml, wireRetry, emptyHTML, skeletonDetail } from '../lib/ui.js';
 
 export async function renderStudio(root, name) {
   document.title = `${name} — AniNest`;
-  root.innerHTML = loadingHTML('LOOKING UP THE STUDIO');
+  root.innerHTML = skeletonDetail('Loading studio');
 
   let data;
   try {

@@ -1,5 +1,5 @@
 import { MangaApi } from '../lib/mangaApi.js';
-import { loadingHTML, errorHTML, escapeHtml, wireRetry, showToast, READ_STATUSES } from '../lib/ui.js';
+import { errorHTML, escapeHtml, wireRetry, showToast, READ_STATUSES, skeletonDetail } from '../lib/ui.js';
 import { MangaFavorites } from '../lib/mangaStore.js';
 import { mangaImg } from '../lib/mangaImage.js';
 import { MangaReviews } from '../lib/reviewsApi.js';
@@ -41,7 +41,7 @@ function readStatusHTML(mangaId) {
 const mangaReviews = createReviewsUi(MangaReviews);
 
 export async function renderMangaDetail(root, id) {
-  root.innerHTML = loadingHTML('LOADING CHAPTER DATA');
+  root.innerHTML = skeletonDetail('Loading manga');
   try {
     const [{ data: m }, reviewsData] = await Promise.all([MangaApi.byId(id), mangaReviews.load(id)]);
 

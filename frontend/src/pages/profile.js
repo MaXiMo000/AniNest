@@ -2,7 +2,7 @@ import { Users } from '../lib/usersApi.js';
 import { Api, imageOf } from '../lib/api.js';
 import { MangaApi } from '../lib/mangaApi.js';
 import { mangaImg } from '../lib/mangaImage.js';
-import { escapeHtml, loadingHTML, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML, showToast } from '../lib/ui.js';
+import { escapeHtml, errorHTML, emptyHTML, wireRetry, badgesRowHTML, xpCardHTML, showToast, skeletonDetail } from '../lib/ui.js';
 import { profileStats, STATUS_ORDER } from '../lib/profileStats.js';
 import { Auth } from '../lib/authStore.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
@@ -175,7 +175,7 @@ function mangaReviewRowHTML(r, manga) {
 }
 
 export async function renderProfile(root, username) {
-  root.innerHTML = loadingHTML('LOADING PROFILE');
+  root.innerHTML = skeletonDetail('Loading profile');
   let data;
   try {
     data = await Users.profile(username);

@@ -1,7 +1,7 @@
 import { apiDelete, apiGet, apiPost } from '../lib/http.js';
 import { Auth } from '../lib/authStore.js';
 import { navigate } from '../lib/router.js';
-import { escapeHtml, emptyHTML, errorHTML, loadingHTML, skeletonGrid, showToast, wireRetry, READ_STATUSES } from '../lib/ui.js';
+import { escapeHtml, emptyHTML, errorHTML, skeletonGrid, showToast, wireRetry, READ_STATUSES, skeletonDetail } from '../lib/ui.js';
 import { createReviewsUi } from '../lib/reviewsUi.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
 
@@ -157,7 +157,7 @@ function trackerHTML(n, mine) {
 }
 
 export async function renderNovelDetail(root, id) {
-  root.innerHTML = loadingHTML('OPENING THE BOOK');
+  root.innerHTML = skeletonDetail('Loading light novel');
   let res;
   let reviewsData;
   try {

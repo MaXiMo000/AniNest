@@ -57,7 +57,7 @@ that differ from that proposal, and the **checklist** for each phase.
 **Then, UI**
 - [x] Mobile and accessibility pass over every page: keyboard access, focus states, contrast, tap targets (sweep at 375px: sideways scroll on game pages, unlabeled inputs, focus rings, drawer focus)
 - [x] Inline `style="..."` into CSS classes on the Account (25) and Profile (11) pages. What's left is one-off spacing (2-5 per page) and the admin-only curation page
-- [ ] Layout-shaped loading placeholders and consistent empty states
+- [x] Layout-shaped loading placeholders (detail pages, feeds, notifications, leaderboards, home) announced to screen readers; empty states already share `emptyHTML`. Games keep their playful loaders
 
 **Then, features**
 - [ ] Custom lists: drag-and-drop reorder, follow other people's lists

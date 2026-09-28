@@ -1,6 +1,6 @@
 import { Users } from '../lib/usersApi.js';
 import { Auth } from '../lib/authStore.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML, timeAgo } from '../lib/ui.js';
+import { escapeHtml, errorHTML, wireRetry, emptyHTML, timeAgo, skeletonRows } from '../lib/ui.js';
 
 // Friends' activity: what the people you follow added, finished or rated in
 // the last 30 days (backend/src/routes/feed.js).
@@ -53,7 +53,7 @@ export async function renderFeed(root) {
     return;
   }
 
-  root.innerHTML = loadingHTML('CATCHING UP');
+  root.innerHTML = skeletonRows(6, 'Loading activity');
   let data;
   try {
     data = await Users.feed();

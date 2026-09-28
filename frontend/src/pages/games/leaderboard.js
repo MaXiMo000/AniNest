@@ -1,6 +1,6 @@
 import { Games } from '../../lib/gamesApi.js';
 import { Auth } from '../../lib/authStore.js';
-import { escapeHtml, loadingHTML, errorHTML, wireRetry, emptyHTML } from '../../lib/ui.js';
+import { escapeHtml, errorHTML, wireRetry, emptyHTML, skeletonRows } from '../../lib/ui.js';
 import { BOARDS, boardBySlug, playHrefFor } from '../../lib/gameCatalog.js';
 
 const RANK_MEDAL = { 1: '🥇', 2: '🥈', 3: '🥉' };
@@ -33,7 +33,7 @@ export async function renderLeaderboard(root, gameSlug, params = new URLSearchPa
   const period = params.get('period') === 'week' ? 'week' : 'all';
 
   document.title = `${board.label} Leaderboard — AniNest`;
-  root.innerHTML = loadingHTML('TALLYING STREAKS');
+  root.innerHTML = skeletonRows(10, 'Loading leaderboard');
 
   let data;
   try {
