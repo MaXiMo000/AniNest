@@ -7,7 +7,9 @@ import {
   hashPassword, verifyPassword, createSession, destroySession, destroyOtherSessions, destroyAllSessionsForUser,
   setPassword, createPasswordReset, consumePasswordReset, consumeEmailVerification, SESSION_COOKIE, SESSION_MAX_AGE_MS,
 } from '../lib/auth.js';
-import { sendVerificationEmail, sendPasswordChangedEmail, sendSecurityNotice, noteSignIn, DEVICE_COOKIE } from '../lib/accountMail.js';
+import {
+  sendVerificationEmail, sendPasswordChangedEmail, sendSecurityNotice, noteSignIn, passwordResetEmail, DEVICE_COOKIE,
+} from '../lib/accountMail.js';
 import {
   verifyTotp, newSecret, otpauthUri, encryptSecret, decryptSecret, totpAvailable, newRecoveryCodes, hashRecoveryCode,
 } from '../lib/totp.js';
@@ -398,15 +400,10 @@ authRouter.post('/forgot', async (req, res, next) => {
     const found = await db.execute({ sql: 'SELECT id, username FROM users WHERE email = ?', args: [parsed.data.email] });
     const user = found.rows[0];
     if (user) {
-      const origin = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
       // In the background: waiting on the mail server only when the account
       // exists would make registered emails answer noticeably slower.
       createPasswordReset(Number(user.id))
-        .then((token) => sendMail({
-          to: parsed.data.email,
-          subject: 'Reset your AniNest password',
-          text: `Hi ${user.username},\n\nReset your AniNest password here (the link works once, for 30 minutes):\n${origin}/#/reset-password?token=${token}\n\nIf you didn't ask for this, ignore this email and nothing changes.`,
-        }))
+        .then((token) => sendMail({ to: parsed.data.email, ...passwordResetEmail(user.username, token) }))
         .catch((err) => req.log.error({ err }, 'password reset email failed'));
     }
     res.json({ ok: true });

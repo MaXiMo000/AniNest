@@ -2045,6 +2045,30 @@ test('light novels: catalog, reading list with volume progress, reviews, reports
   }
 });
 
+test('email template: HTML and text from one description, user text escaped', async () => {
+  const { renderEmail } = await import('../src/lib/emailTemplate.js');
+  const { passwordResetEmail } = await import('../src/lib/accountMail.js');
+  const m = renderEmail({
+    preheader: 'Preview', heading: 'Hello', greeting: 'Hi <script>alert(1)</script>',
+    button: { label: 'Go', url: 'https://x.example/?a=1&b=2' },
+    details: [{ label: 'Device', value: 'Chrome "quoted"' }],
+    sections: [{ title: 'Things', items: [{ text: 'One & two', url: 'https://x.example/1', sub: 'note' }], more: { label: 'More', url: 'https://x.example/more' } }],
+    footer: ['Why you got this'], footerLinks: [{ label: 'Unsubscribe', url: 'https://x.example/u' }],
+  });
+  assert.ok(!m.html.includes('<script>'), 'user text is escaped');
+  assert.match(m.html, /Hi &lt;script&gt;/);
+  assert.match(m.html, /href="https:\/\/x\.example\/\?a=1&amp;b=2"/);
+  assert.ok(!/<img|src="http/.test(m.html), 'no remote images');
+  assert.match(m.text, /^HELLO/);
+  assert.match(m.text, /Go: https:\/\/x\.example\/\?a=1&b=2/);
+  assert.match(m.text, /- One & two \(note\)\n  https:\/\/x\.example\/1/);
+  assert.match(m.text, /Unsubscribe: https:\/\/x\.example\/u/);
+  const reset = passwordResetEmail('ana', 'f'.repeat(64));
+  assert.equal(reset.subject, 'Reset your AniNest password');
+  assert.match(reset.html, /Choose a new password/);
+  assert.match(reset.text, /reset-password\?token=f{64}/);
+});
+
 test('email verification, password-change and new-device alerts', async () => {
   const { setMailSender } = await import('../src/lib/mailer.js');
   const { describeDevice } = await import('../src/lib/accountMail.js');
@@ -2252,9 +2276,9 @@ test('weekly digest: episodes, alerts and friends in one mail, once a week, unsu
     await runDigests(t);
     const mine = digests(reader.user.email);
     assert.equal(mine.length, 1);
-    assert.match(mine[0].text, /Airing 92981: episodes 5, 6/);
+    assert.match(mine[0].text, /- Airing 92981 \(Episodes 5 and 6\)/);
     assert.doesNotMatch(mine[0].text, /Airing 92982/, 'only shows on your own Watching list');
-    assert.match(mine[0].text, new RegExp(`${friend.user.username} added Their Show`));
+    assert.ok(mine[0].text.includes(`- Their Show (${friend.user.username} added it to their list)`));
     assert.equal(digests(quiet.user.email).length, 0, 'nothing to say, no mail');
 
     await runDigests(t + 60 * 60 * 1000);

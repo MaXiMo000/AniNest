@@ -38,13 +38,14 @@ function smtpTransport() {
   return transport;
 }
 
-export async function sendMail({ to, subject, text }) {
-  if (sender) return sender({ to, subject, text });
+// `html` is optional; `text` is always sent as the plain-text part.
+export async function sendMail({ to, subject, text, html }) {
+  if (sender) return sender({ to, subject, text, html });
   if (useResend()) {
     const res = await fetch(RESEND_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: process.env.MAIL_FROM, to: [to], subject, text }),
+      body: JSON.stringify({ from: process.env.MAIL_FROM, to: [to], subject, text, ...(html ? { html } : {}) }),
     });
     if (!res.ok) {
       logger.error({ status: res.status }, 'sending email failed');
@@ -53,7 +54,7 @@ export async function sendMail({ to, subject, text }) {
     return true;
   }
   try {
-    await smtpTransport().sendMail({ from: process.env.MAIL_FROM || `AniNest <${process.env.SMTP_USER}>`, to, subject, text });
+    await smtpTransport().sendMail({ from: process.env.MAIL_FROM || `AniNest <${process.env.SMTP_USER}>`, to, subject, text, ...(html ? { html } : {}) });
     return true;
   } catch (err) {
     logger.error({ code: err?.code, responseCode: err?.responseCode }, 'sending email over SMTP failed');

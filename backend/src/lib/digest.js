@@ -4,6 +4,7 @@ import { isMailEnabled, sendMail } from './mailer.js';
 import { anilistAiringForMalIds } from './anilist.js';
 import { friendsActivity } from './feed.js';
 import { describe } from './notifications.js';
+import { renderEmail } from './emailTemplate.js';
 
 // Weekly email digest, opt-in (users.email_digest, set on the account page).
 // It goes out on Sundays from SEND_HOUR_UTC (an hourly check; if more are due
@@ -24,37 +25,65 @@ export function setDigestAiring(fn) { airing = fn || anilistAiringForMalIds; }
 
 const origin = () => (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
 
-const STATUS_VERB = { watching: 'started watching', completed: 'completed', dropped: 'dropped', plan_to_watch: 'plans to watch' };
+const STATUS_VERB = { watching: 'started watching it', completed: 'completed it', dropped: 'dropped it', plan_to_watch: 'plans to watch it' };
+// What a friend did, said under the show's title.
 function friendLine(i) {
-  if (i.kind === 'review') return `${i.username} rated ${i.title || 'a show'} ${i.rating}/10`;
-  if (i.kind === 'status') return `${i.username} ${STATUS_VERB[i.status] || 'updated'} ${i.title}`;
-  return `${i.username} added ${i.title}`;
+  if (i.kind === 'review') return `${i.username} rated it ${i.rating}/10`;
+  if (i.kind === 'status') return `${i.username} ${STATUS_VERB[i.status] || 'updated it'}`;
+  return `${i.username} added it to their list`;
 }
+const episodesLine = (eps) => (eps.length === 1 ? `Episode ${eps[0]}` : `Episodes ${eps.slice(0, -1).join(', ')} and ${eps[eps.length - 1]}`);
 
-// { subject, text }, or null when there's nothing worth a mail.
+// { subject, text, html }, or null when there's nothing worth a mail.
 export function digestText({ username, token, aired, news, friends }) {
   if (!aired.length && !news.length && !friends.length) return null;
   const site = origin();
-  const parts = [`Hi ${username}, here's your week on AniNest.`];
+  const sections = [];
   if (aired.length) {
-    parts.push(['NEW EPISODES OF SHOWS YOU\'RE WATCHING', ...aired.map((a) => (
-      `- ${a.title}: episode${a.episodes.length === 1 ? '' : 's'} ${a.episodes.join(', ')}\n  ${site}/#/anime/${a.mal_id}`
-    ))].join('\n'));
+    sections.push({
+      title: 'New episodes of shows you’re watching',
+      emoji: '📺',
+      items: aired.map((a) => ({ text: a.title, sub: episodesLine(a.episodes), url: `${site}/#/anime/${a.mal_id}` })),
+    });
   }
   if (news.length) {
-    parts.push(['FREE EPISODES AND NEW CHAPTERS', ...news.map((n) => {
-      const { message, link } = describe(n);
-      return `- ${n.title}: ${message}\n  ${site}/${link}`;
-    })].join('\n'));
+    sections.push({
+      title: 'Your alerts',
+      emoji: '🔔',
+      items: news.map((n) => {
+        const { message, link } = describe(n);
+        return { text: n.title, sub: message, url: `${site}/${link}` };
+      }),
+    });
   }
   if (friends.length) {
-    parts.push(['FROM PEOPLE YOU FOLLOW', ...friends.map((i) => `- ${friendLine(i)}`), `More: ${site}/#/feed`].join('\n'));
+    sections.push({
+      title: 'From people you follow',
+      emoji: '👥',
+      items: friends.map((i) => ({ text: i.title || 'A show', sub: friendLine(i), url: i.mal_id ? `${site}/#/anime/${i.mal_id}` : undefined })),
+      more: { label: 'See all their activity', url: `${site}/#/feed` },
+    });
   }
-  parts.push(`Change what you get: ${site}/#/account\nUnsubscribe from this email: ${site}/#/unsubscribe?token=${token}`);
   const count = aired.length + news.length;
+  const summary = [
+    aired.length && `${aired.length} show${aired.length === 1 ? '' : 's'} with new episodes`,
+    news.length && `${news.length} alert${news.length === 1 ? '' : 's'}`,
+    friends.length && `${friends.length} update${friends.length === 1 ? '' : 's'} from friends`,
+  ].filter(Boolean).join(', ');
   return {
     subject: count ? `Your AniNest week: ${count} update${count === 1 ? '' : 's'}` : 'Your AniNest week',
-    text: parts.join('\n\n'),
+    ...renderEmail({
+      preheader: `This week: ${summary}.`,
+      heading: 'Your week on AniNest',
+      greeting: `Hi ${username}, here’s what happened this week.`,
+      sections,
+      footer: ['You got this because you turned on the weekly email. It comes on Sundays.', 'AniNest, your anime and manga home base.'],
+      footerLinks: [
+        { label: 'Open AniNest', url: `${site}/#/` },
+        { label: 'Change what you get', url: `${site}/#/account` },
+        { label: 'Unsubscribe', url: `${site}/#/unsubscribe?token=${token}` },
+      ],
+    }),
   };
 }
 

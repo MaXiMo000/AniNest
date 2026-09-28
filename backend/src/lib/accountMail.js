@@ -3,6 +3,7 @@ import { db } from './db.js';
 import { logger } from './logger.js';
 import { isMailEnabled, sendMail } from './mailer.js';
 import { createEmailVerification } from './auth.js';
+import { renderEmail } from './emailTemplate.js';
 
 // Account emails: the verification link, and security alerts (password
 // changed, sign-in from a new device). All sent in the background: a slow
@@ -11,6 +12,28 @@ import { createEmailVerification } from './auth.js';
 // be used to send mail to someone who never asked for it.
 
 const origin = () => (process.env.FRONTEND_ORIGIN || 'http://localhost:5173').split(',')[0].trim();
+const footer = (why) => ({
+  footer: [why, 'AniNest, your anime and manga home base.'],
+  footerLinks: [{ label: 'Open AniNest', url: `${origin()}/#/` }, { label: 'Account settings', url: `${origin()}/#/account` }],
+});
+const when = () => new Date().toUTCString().replace('GMT', 'UTC');
+
+// The password reset email (routes/auth.js sends it).
+export function passwordResetEmail(username, token) {
+  const url = `${origin()}/#/reset-password?token=${token}`;
+  return {
+    subject: 'Reset your AniNest password',
+    ...renderEmail({
+      preheader: 'Choose a new password. The link works for 30 minutes.',
+      heading: 'Reset your password',
+      greeting: `Hi ${username},`,
+      paragraphs: ['Someone (hopefully you) asked to reset the password for your AniNest account. Choose a new one with the button below.'],
+      button: { label: 'Choose a new password', url },
+      note: 'The link works once, for 30 minutes. If you didn’t ask for this, ignore this email: your password stays the same.',
+      ...footer('You got this because a password reset was requested for your AniNest account.'),
+    }),
+  };
+}
 const background = (label, fn) => {
   if (!isMailEnabled()) return;
   fn().catch((err) => logger.error({ err, label }, 'account email failed'));
@@ -22,7 +45,15 @@ export function sendVerificationEmail(user) {
     await sendMail({
       to: user.email,
       subject: 'Confirm your AniNest email',
-      text: `Hi ${user.username},\n\nConfirm this is your email by opening this link (it works once, for 2 days):\n${origin()}/#/verify-email?token=${token}\n\nIf you didn't make an AniNest account, ignore this email.`,
+      ...renderEmail({
+        preheader: 'One click and you’re all set.',
+        heading: 'Confirm your email',
+        greeting: `Welcome to AniNest, ${user.username}!`,
+        paragraphs: ['Confirm this is your email address. It turns on the weekly email and lets us warn you about new sign-ins and password changes.'],
+        button: { label: 'Confirm my email', url: `${origin()}/#/verify-email?token=${token}` },
+        note: 'The link works once, for 2 days. If you didn’t make an AniNest account, you can ignore this email.',
+        ...footer('You got this because this address was used to sign up for AniNest.'),
+      }),
     });
   });
 }
@@ -32,8 +63,11 @@ async function verifiedEmail(userId) {
   return row && Number(row.email_verified) ? row : null;
 }
 
-const when = () => `${new Date().toUTCString().replace('GMT', 'UTC')}`;
-const help = () => `If this wasn't you, reset your password now: ${origin()}/#/forgot-password\nThen use "Log out other devices" on your account page.`;
+// The "if this wasn't you" part every security email ends with.
+const notYou = {
+  button: { label: 'This wasn’t me: reset my password', url: `${origin()}/#/forgot-password` },
+  note: 'If that was you, there’s nothing to do. If it wasn’t, reset your password, then use “Log out other devices” on your account page.',
+};
 
 // A short "this changed on your account" email to a confirmed address.
 export function sendSecurityNotice(userId, subject, what) {
@@ -43,7 +77,15 @@ export function sendSecurityNotice(userId, subject, what) {
     await sendMail({
       to: u.email,
       subject,
-      text: `Hi ${u.username},\n\n${what} on ${when()}.\n\nIf that was you, there's nothing to do.\n${help()}`,
+      ...renderEmail({
+        preheader: `${what}.`,
+        heading: subject.replace(/ for your AniNest account$| on your AniNest account$/, ''),
+        greeting: `Hi ${u.username},`,
+        paragraphs: [`${what}.`],
+        details: [{ label: 'When', value: when() }],
+        ...notYou,
+        ...footer('You got this because something changed on your AniNest account.'),
+      }),
     });
   });
 }
@@ -87,7 +129,19 @@ export async function noteSignIn(user, { deviceCookie, userAgent, ip }) {
       await sendMail({
         to: u.email,
         subject: 'New sign-in to your AniNest account',
-        text: `Hi ${u.username},\n\nYour AniNest account was just signed in from a device we haven't seen before:\n\n  ${describeDevice(userAgent)}\n  ${when()}${ip ? `\n  IP address ${ip}` : ''}\n\nIf that was you, there's nothing to do.\n${help()}`,
+        ...renderEmail({
+          preheader: `Signed in from ${describeDevice(userAgent)}.`,
+          heading: 'New sign-in to your account',
+          greeting: `Hi ${u.username},`,
+          paragraphs: ['Your AniNest account was just signed in from a device we haven’t seen before.'],
+          details: [
+            { label: 'Device', value: describeDevice(userAgent) },
+            { label: 'When', value: when() },
+            ...(ip ? [{ label: 'IP address', value: ip }] : []),
+          ],
+          ...notYou,
+          ...footer('You got this because of a sign-in to your AniNest account.'),
+        }),
       });
     });
   }
