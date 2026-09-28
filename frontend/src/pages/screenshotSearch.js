@@ -42,7 +42,7 @@ function formHTML() {
       <span class="section-sub">Upload a frame from any anime and we'll try to identify it, powered by trace.moe.</span>
     </div>
     <div class="watch-box" style="max-width:480px;margin:0 auto">
-      <input id="screenshot-input" type="file" accept="image/jpeg,image/png,image/webp" />
+      <input id="screenshot-input" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose a screenshot to search" />
       <p class="section-sub" style="margin-top:10px">JPEG, PNG, or WebP, up to 5MB. This feature shares a small daily search quota across every AniNest visitor — it may be briefly unavailable if it's been heavily used today.</p>
     </div>
     <div id="screenshot-result" style="margin-top:20px"></div>

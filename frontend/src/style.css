@@ -172,7 +172,9 @@ body.is-admin [data-admin-only] { display: flex; }
 .chip.active { background: var(--pink-deep); border-color: var(--ink); color: #fff; }
 
 /* ===================== Layout ===================== */
-#app { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 24px 20px 60px; min-height: 100vh; /* keeps the footer below the fold while a page loads */ }
+#app { position: relative; z-index: 1; max-width: 1300px; margin: 0 auto; padding: 24px 20px 60px; min-height: 100vh; /* keeps the footer below the fold while a page loads */
+  /* Slide-in animations start 30px to the right; without this a phone could scroll sideways mid-animation. */
+  overflow-x: clip; }
 
 .section { margin: 48px 0; }
 .section-head {
@@ -855,8 +857,8 @@ body.is-admin [data-admin-only] { display: flex; }
 .footer-note { font-size: 0.8rem; margin-top: 6px; opacity: 0.8; }
 
 /* ===================== Accessibility ===================== */
-a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
-.anime-card:focus-visible, .manga-card:focus-visible {
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+summary:focus-visible, .anime-card:focus-visible, .manga-card:focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: 2px;
   border-radius: 6px;

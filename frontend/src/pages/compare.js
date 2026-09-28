@@ -25,8 +25,8 @@ function emptySlotHTML(slot) {
     <div class="compare-slot compare-slot--empty">
       <span class="compare-slot-emoji">${slot === 0 ? '🅰️' : '🅱️'}</span>
       <form class="compare-search-form" data-slot="${slot}">
-        <input type="text" class="compare-search-input" placeholder="Search an anime..." autocomplete="off" />
-        <button type="submit" class="btn-pow btn-pow--sm">🔍</button>
+        <input type="text" class="compare-search-input" placeholder="Search an anime..." autocomplete="off" aria-label="Search an anime to compare" />
+        <button type="submit" class="btn-pow btn-pow--sm" aria-label="Search">🔍</button>
       </form>
       <div class="compare-results" data-slot="${slot}"></div>
     </div>`;

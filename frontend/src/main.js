@@ -265,6 +265,8 @@ function setNavOpen(open) {
   document.body.classList.toggle('nav-open', open);
   navToggle.setAttribute('aria-expanded', String(open));
   navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  // Keyboard and screen-reader focus stays inside the open drawer.
+  for (const el of [app, document.querySelector('.site-footer')]) if (el) el.inert = open;
   if (open) document.getElementById('nav-close').focus();
 }
 navToggle.addEventListener('click', () => setNavOpen(!document.body.classList.contains('nav-open')));
@@ -273,7 +275,7 @@ document.getElementById('nav-scrim').addEventListener('click', () => setNavOpen(
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.body.classList.contains('nav-open')) { setNavOpen(false); navToggle.focus(); }
 });
-window.addEventListener('hashchange', () => navToggle.setAttribute('aria-expanded', 'false'));
+window.addEventListener('hashchange', () => setNavOpen(false));
 
 // Phones keep the header to one row: the search box opens from a button.
 const searchToggle = document.getElementById('search-toggle');
