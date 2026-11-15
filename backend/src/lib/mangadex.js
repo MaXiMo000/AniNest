@@ -42,10 +42,10 @@ function scheduled(fn) {
   return queue;
 }
 
-// MangaDex sits behind Cloudflare, same as AnimeThemes.moe - a normal
-// browser-like UA is required or requests 403 (see animeThemes.js).
+// MangaDex's API rules forbid spoofed browser User-Agents and block them
+// (a 302/403 from its edge); an honest app name with a contact URL is accepted.
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': 'AniNest/1.0 (+https://github.com/MaXiMo000/AniNest)',
   Accept: 'application/json',
 };
 

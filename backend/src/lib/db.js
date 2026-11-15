@@ -517,6 +517,9 @@ await db.execute(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )
 `);
+// Placeholder rows from a test fetcher (cover "x.jpg") are removed so the
+// background backfill fetches the real title and cover again.
+await db.execute(`DELETE FROM anime_titles WHERE image = 'https://cdn.myanimelist.net/x.jpg'`);
 
 // Who follows whom, for the activity feed (routes/feed.js). The feed itself is
 // built on read from favorites and reviews, so there is no events table.
