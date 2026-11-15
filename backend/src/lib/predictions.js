@@ -126,7 +126,7 @@ export async function leagueView(league, userId) {
   const open = t >= clockTimes.opensAt && t < clockTimes.locksAt;
   const [showRows, pickRows] = await Promise.all([
     db.execute({ sql: 'SELECT mal_id, title, image, score FROM prediction_shows WHERE league_id = ? ORDER BY rank', args: [fresh.id] }),
-    // ponytail: every pick in memory; fine for thousands of players, move the sums into SQL past that.
+    // Loads every pick into memory: fine for thousands of players, move the sums into SQL past that.
     db.execute({
       sql: 'SELECT p.user_id, u.username, p.mal_id, p.score FROM predictions p JOIN users u ON u.id = p.user_id WHERE p.league_id = ?',
       args: [fresh.id],

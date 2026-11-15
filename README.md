@@ -8,6 +8,14 @@ when something you follow has new episodes or chapters.
 
 Full stack with no framework on either side: a Vite + vanilla JS single-page app and an Express API on SQLite (Turso).
 
+| Home | Anime page | Game Zone |
+|---|---|---|
+| ![Home page](.github/screenshots/home.jpg) | ![Anime detail page](.github/screenshots/anime.jpg) | ![Game Zone](.github/screenshots/games.jpg) |
+
+| Home on a phone | Anime page on a phone |
+|---|---|
+| <img src=".github/screenshots/mobile-home.jpg" alt="Home page on a phone" width="260"> | <img src=".github/screenshots/mobile-anime.jpg" alt="Anime page on a phone" width="260"> |
+
 ## Features
 
 **Anime**
@@ -69,8 +77,8 @@ AniNest/
   backend/           Express API (src/app.js, src/server.js, src/lib, src/routes, src/middleware)
     test/            integration test suite (node:test)
   render.yaml        Render Blueprint for both services
-  HANDOFF.md         architecture, invariants and gotchas for developers
   DEPLOY.md          deployment guide
+  SECURITY.md        how to report a vulnerability
 ```
 
 ## Running locally
@@ -126,23 +134,9 @@ The browser only talks to AniNest's own API, and only the backend calls third-pa
 
 ## Security
 
-- Passwords are hashed with bcrypt (cost 12) and are never logged or returned.
-- Sessions are random 256-bit tokens in an **httpOnly** cookie (`Secure` in production). The database stores only their SHA-256 hash.
-- **CSRF**: a double-submit token in the `x-csrf-token` header on every mutating request, compared in constant time.
-- Login returns the same error, with the same timing, for an unknown account and a wrong password.
-- Rate limits: 120 requests/min per IP, and 10 per 15 minutes on auth routes.
-- Every write is validated with `zod`, and every SQL value is a bound parameter.
-- CORS allows only the frontend's origin. `helmet` sets security headers, request bodies are size-capped, and errors are generic.
-- Every user-owned row is checked against the signed-in user. Admin routes answer non-admins with 404.
-- **Untrusted links**: a submitted YouTube link is reduced to its 11-character video id, and embeds are rebuilt from that id on
-  `youtube-nocookie.com`. No raw URL is ever stored or embedded.
-- Manga is limited to MangaDex's `safe` rating, including lookups by direct id. Covers go through an allowlisted, size-capped proxy.
-- The frontend escapes every dynamic value, attributes included. A strict Content-Security-Policy ships as a real HTTP header (with
-  `frame-ancestors`) and as a `<meta>` tag.
-- Game scores need a single-use run that was started on the server, and must fit the time actually played.
-- Structured JSON logs (`pino`), with frontend errors relayed to the backend log.
-
-Not included, because each needs an external service: email verification and password reset, 2FA, and an error-tracking service.
+Hashed passwords, hashed session tokens in httpOnly cookies, CSRF protection, optional two-factor login, email
+verification, rate limits, validated input, a strict Content-Security-Policy, and ranked games scored on the server.
+See [SECURITY.md](SECURITY.md) for the full list and how to report a problem.
 
 ## Deployment
 

@@ -16,7 +16,7 @@ import { renderEmail } from './emailTemplate.js';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 const CHECK_MS = 60 * 60 * 1000;
-// ponytail: Gmail SMTP allows ~500 mails a day; move to Resend (or batch sends) past that.
+// Gmail SMTP allows ~500 mails a day; move to Resend (or batch sends) past that.
 const PER_RUN = 100;
 
 let airing = anilistAiringForMalIds;

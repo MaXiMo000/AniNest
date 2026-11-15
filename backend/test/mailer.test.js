@@ -37,7 +37,7 @@ before(async () => {
   delete process.env.RESEND_API_KEY;
   process.env.SMTP_HOST = '127.0.0.1';
   process.env.SMTP_PORT = String(server.address().port);
-  process.env.SMTP_USER = 'aninest.app@gmail.com';
+  process.env.SMTP_USER = 'sender@example.com';
   process.env.SMTP_PASS = 'abcd efgh ijkl mnop';
 });
 
@@ -47,10 +47,10 @@ test('with SMTP_USER and SMTP_PASS, mail goes out over SMTP from that address', 
   const { isMailEnabled, sendMail } = await import('../src/lib/mailer.js');
   assert.equal(isMailEnabled(), true);
   await sendMail({ to: 'someone@example.com', subject: 'Reset your AniNest password', text: 'Hi there' });
-  assert.equal(received.auth, '\u0000aninest.app@gmail.com\u0000abcd efgh ijkl mnop');
-  assert.match(received.from, /<aninest\.app@gmail\.com>/);
+  assert.equal(received.auth, '\u0000sender@example.com\u0000abcd efgh ijkl mnop');
+  assert.match(received.from, /<sender@example\.com>/);
   assert.deepEqual(received.to.map((l) => l.match(/<(.+)>/)[1]), ['someone@example.com']);
   assert.match(received.data, /Subject: Reset your AniNest password/);
-  assert.match(received.data, /From: AniNest <aninest\.app@gmail\.com>/);
+  assert.match(received.data, /From: AniNest <sender@example\.com>/);
   assert.match(received.data, /Hi there/);
 });
