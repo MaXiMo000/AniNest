@@ -531,6 +531,26 @@ body.is-admin [data-admin-only] { display: flex; }
 }
 .toolbar-label { font-size: 0.75rem; color: var(--muted); font-weight: 800; text-transform: uppercase; margin-right: -4px; }
 
+/* Phones: each label sits beside its own control in a two-column grid, and
+   the genre/tag chips become one sideways-scrolling row so the filters don't
+   fill the first screen. */
+@media (max-width: 640px) {
+  .toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; }
+  .toolbar-label { margin-right: 0; }
+  .toolbar select { width: 100%; }
+  .toolbar > .chip { grid-column: 1 / -1; justify-self: start; }
+  .minscore-slider input[type="range"] { flex: 1; width: auto; }
+  .genre-filter-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 2px 6px 8px 2px;
+    margin-inline: -2px;
+  }
+  .genre-filter-list::-webkit-scrollbar { display: none; }
+  .genre-filter-list > .chip { flex-shrink: 0; }
+}
+
 .minscore-slider { display: flex; align-items: center; gap: 10px; }
 .minscore-slider input[type="range"] {
   width: 120px;
