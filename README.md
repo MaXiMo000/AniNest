@@ -12,6 +12,10 @@ Full stack with no framework on either side: a Vite + vanilla JS single-page app
 |---|---|---|
 | ![Home page](.github/screenshots/home.jpg) | ![Anime detail page](.github/screenshots/anime.jpg) | ![Game Zone](.github/screenshots/games.jpg) |
 
+| Browse manga | Free and official episodes |
+|---|---|
+| ![Manga browsing](.github/screenshots/manga.jpg) | ![Free official episodes by country](.github/screenshots/free-episodes.jpg) |
+
 | Home on a phone | Anime page on a phone |
 |---|---|
 | <img src=".github/screenshots/mobile-home.jpg" alt="Home page on a phone" width="260"> | <img src=".github/screenshots/mobile-anime.jpg" alt="Anime page on a phone" width="260"> |
