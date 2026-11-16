@@ -137,9 +137,9 @@ const SORT_ORDER_PARAMS = {
   relevance: ['order[relevance]', 'desc'],
 };
 
-export function mangaSearch({ q, tags, demographic, status, sort, page = 1 } = {}) {
+export function mangaSearch({ q, tags, demographic, status, sort, origin, year, page = 1 } = {}) {
   const sortKey = SORT_ORDER_PARAMS[sort] ? sort : (q ? 'relevance' : 'popular');
-  const key = `manga:search:${q || ''}:${(tags || []).join(',')}:${demographic || ''}:${status || ''}:${sortKey}:${page}`;
+  const key = `manga:search:${q || ''}:${(tags || []).join(',')}:${demographic || ''}:${status || ''}:${origin || ''}:${year || ''}:${sortKey}:${page}`;
   return cached(key, TTL.list, async () => {
     const limit = 20;
     const offset = Math.max(0, (Math.max(1, page) - 1) * limit);
@@ -155,6 +155,8 @@ export function mangaSearch({ q, tags, demographic, status, sort, page = 1 } = {
     for (const t of tags || []) params.push(['includedTags[]', t]);
     if (demographic) params.push(['publicationDemographic[]', demographic]);
     if (status) params.push(['status[]', status]);
+    if (origin) params.push(['originalLanguage[]', origin]);
+    if (year) params.push(['year', String(year)]);
 
     const json = await mangadexGet('/manga', params);
     return { data: (json.data || []).map(normalizeManga), total: json.total || 0 };

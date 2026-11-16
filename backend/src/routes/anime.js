@@ -45,7 +45,11 @@ animeRouter.get('/search', asyncRoute(async (req, res) => {
   const sort = req.query.sort === 'asc' ? 'asc' : 'desc';
   const minScoreRaw = Number(req.query.min_score);
   const minScore = Number.isFinite(minScoreRaw) && minScoreRaw > 0 && minScoreRaw <= 10 ? minScoreRaw : undefined;
-  res.json(await animeSource.search({ q, genres: genresParam, type, status, order_by: orderBy, sort, page, minScore }));
+  const yearRaw = Number(req.query.year);
+  const year = Number.isInteger(yearRaw) && yearRaw >= 1917 && yearRaw <= new Date().getUTCFullYear() + 2 ? yearRaw : undefined;
+  // A season only means something within a year.
+  const season = year && ['winter', 'spring', 'summer', 'fall'].includes(req.query.season) ? req.query.season : undefined;
+  res.json(await animeSource.search({ q, genres: genresParam, type, status, order_by: orderBy, sort, page, minScore, year, season }));
 }));
 
 const VALID_SCHEDULE_DAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);

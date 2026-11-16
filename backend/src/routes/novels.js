@@ -7,12 +7,13 @@ import { persistentCached } from '../lib/persistentCache.js';
 import { anilistNovelSearch, anilistNovelById } from '../lib/anilist.js';
 import { GENRE_NAMES } from '../lib/vibeParser.js';
 import { httpUrl } from './favorites.js';
+import { catalogEntry, getBook } from '../lib/classics.js';
 
 // Light novels: catalog from AniList (format NOVEL, ids are AniList ids),
 // a reading list with volume progress, reviews, and public-domain classics
-// from Project Gutenberg (through the free Gutendex API). Reading is always a
-// link-out to official or public-domain sources, same line the manga section
-// holds: no fan-translation sites, no hosted text.
+// from Project Gutenberg (through the free Gutendex API). Light novels are
+// always a link-out to official sources, same line the manga section holds:
+// no fan-translation sites. Only out-of-copyright classics are read in-app.
 export const novelsRouter = Router();
 
 function asyncRoute(fn) {
@@ -46,29 +47,122 @@ novelsRouter.get('/search', asyncRoute(async (req, res) => {
 novelsRouter.get('/genres', (_req, res) => res.json({ data: GENRE_NAMES }));
 
 // Public-domain classics: Gutendex search (or its most-downloaded list),
-// English only, each with a read-online link on gutenberg.org.
+// limited to books out of copyright with a plain-text edition, so every
+// result opens in the reader (#/read/:id).
+const CLASSIC_TOPICS = {
+  adventure: 'adventure', scifi: 'science fiction', fantasy: 'fantasy', mystery: 'detective', horror: 'horror',
+  romance: 'love stories', children: 'children', humor: 'humor', poetry: 'poetry', gothic: 'gothic',
+};
+const CLASSIC_ERAS = {
+  before1800: { author_year_end: 1799 },
+  '1800s': { author_year_start: 1800, author_year_end: 1899 },
+  '1900s': { author_year_start: 1900 },
+};
+const CLASSIC_LANGS = ['en', 'fr', 'de', 'es', 'it', 'pt', 'ja'];
+
 novelsRouter.get('/classics', asyncRoute(async (req, res) => {
   const page = Math.min(50, Math.max(1, Number(req.query.page) || 1));
   const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
-  const url = `https://gutendex.com/books/?languages=en&page=${page}${q ? `&search=${encodeURIComponent(q)}` : ''}`;
-  const data = await cached(`novels:classics:${q.toLowerCase()}:${page}`, 60 * 60 * 1000, async () => {
-    const upstream = await sources.gutendex(url);
+  const topic = CLASSIC_TOPICS[req.query.topic] ? req.query.topic : '';
+  const era = CLASSIC_ERAS[req.query.era] ? req.query.era : '';
+  const lang = CLASSIC_LANGS.includes(req.query.lang) ? req.query.lang : 'en';
+  const params = new URLSearchParams({ languages: lang, copyright: 'false', mime_type: 'text/plain', page: String(page) });
+  if (q) params.set('search', q);
+  if (topic) params.set('topic', CLASSIC_TOPICS[topic]);
+  for (const [k, v] of Object.entries(CLASSIC_ERAS[era] || {})) params.set(k, String(v));
+  const data = await cached(`novels:classics:${q.toLowerCase()}:${topic}:${era}:${lang}:${page}`, 60 * 60 * 1000, async () => {
+    const upstream = await sources.gutendex(`https://gutendex.com/books/?${params}`);
     if (!upstream.ok) throw Object.assign(new Error('Gutendex unavailable'), { status: 502 });
     const json = await upstream.json();
     return {
       hasNext: Boolean(json.next),
-      data: (json.results || []).map((b) => ({
-        id: b.id,
-        title: b.title,
-        authors: (b.authors || []).map((a) => a.name),
-        image: b.formats?.['image/jpeg'] || null,
-        // gutenberg.org's own reader page; the files themselves stay there.
-        readUrl: `https://www.gutenberg.org/ebooks/${Number(b.id)}`,
-        downloads: b.download_count || 0,
-      })).filter((b) => Number.isInteger(b.id)),
+      count: Number(json.count) || 0,
+      data: (json.results || []).map((b) => {
+        const entry = catalogEntry(b);
+        return { ...entry, readUrl: entry.sourceUrl };
+      }).filter((b) => Number.isInteger(b.id) && b.readable),
     };
   });
   res.json(data);
+}));
+
+// Books you've opened in the reader, most recent first (the "continue
+// reading" shelf), plus how many you've finished.
+novelsRouter.get('/classics/reading', requireAuth, asyncRoute(async (req, res) => {
+  const rows = await db.execute({
+    sql: 'SELECT book_id, title, authors, image, part, max_part, parts, finished_at, updated_at FROM classic_reads WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100',
+    args: [req.user.id],
+  });
+  const list = rows.rows.map((r) => ({
+    id: Number(r.book_id), title: r.title, authors: r.authors ? r.authors.split('|') : [], image: r.image,
+    part: Number(r.part), maxPart: Number(r.max_part), parts: Number(r.parts), finishedAt: r.finished_at, updatedAt: r.updated_at,
+  }));
+  res.json({ list, finished: list.filter((b) => b.finishedAt).length });
+}));
+
+const bookId = (raw) => {
+  const id = idOf(raw);
+  return id && id < 1e7 ? id : null;
+};
+
+async function myRead(userId, id) {
+  if (!userId) return null;
+  const row = (await db.execute({ sql: 'SELECT part, max_part, finished_at FROM classic_reads WHERE user_id = ? AND book_id = ?', args: [userId, id] })).rows[0];
+  return row ? { part: Number(row.part), maxPart: Number(row.max_part), finishedAt: row.finished_at } : null;
+}
+
+// One book: its catalog details and table of contents (no text).
+novelsRouter.get('/classics/:id', asyncRoute(async (req, res) => {
+  const id = bookId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid book id.' });
+  const { meta, parts } = await getBook(id);
+  const totalWords = parts.reduce((s, p) => s + p.words, 0);
+  res.json({
+    data: { ...meta, words: totalWords, parts: parts.map((p) => ({ title: p.title, words: p.words })) },
+    mine: await myRead(req.user?.id, id),
+  });
+}));
+
+// One part's text, as plain paragraphs (the page escapes them).
+novelsRouter.get('/classics/:id/parts/:n', asyncRoute(async (req, res) => {
+  const id = bookId(req.params.id);
+  const n = Number(req.params.n);
+  if (!id || !Number.isInteger(n) || n < 0) return res.status(400).json({ error: 'Invalid book or part.' });
+  const { parts } = await getBook(id);
+  if (n >= parts.length) return res.status(404).json({ error: 'No such part.' });
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.json({ index: n, title: parts[n].title, words: parts[n].words, paragraphs: parts[n].paragraphs });
+}));
+
+const progressSchema = z.object({ part: z.number().int().min(0).max(5000) });
+
+// Saves where you are. max_part moves forward only one part at a time, and
+// the book counts as finished when that reaches the last part.
+novelsRouter.post('/classics/:id/progress', requireAuth, asyncRoute(async (req, res) => {
+  const id = bookId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid book id.' });
+  const parsed = progressSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid part.' });
+  const { meta, parts } = await getBook(id);
+  const part = Math.min(parsed.data.part, parts.length - 1);
+  const prev = await myRead(req.user.id, id);
+  const maxPart = prev ? (part === prev.maxPart + 1 ? part : prev.maxPart) : (part === 0 ? 0 : -1);
+  const finishedAt = prev?.finishedAt || (maxPart >= parts.length - 1 ? new Date().toISOString().slice(0, 19).replace('T', ' ') : null);
+  await db.execute({
+    sql: `INSERT INTO classic_reads (user_id, book_id, title, authors, image, part, max_part, parts, finished_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(user_id, book_id) DO UPDATE SET part = excluded.part, max_part = excluded.max_part, parts = excluded.parts,
+            finished_at = excluded.finished_at, updated_at = datetime('now')`,
+    args: [req.user.id, id, meta.title.slice(0, 300), meta.authors.join('|').slice(0, 300), meta.image, part, maxPart, parts.length, finishedAt],
+  });
+  res.json({ mine: { part, maxPart, finishedAt }, justFinished: Boolean(finishedAt && !prev?.finishedAt) });
+}));
+
+novelsRouter.delete('/classics/:id/progress', requireAuth, asyncRoute(async (req, res) => {
+  const id = bookId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid book id.' });
+  await db.execute({ sql: 'DELETE FROM classic_reads WHERE user_id = ? AND book_id = ?', args: [req.user.id, id] });
+  res.status(204).end();
 }));
 
 // ---- Reading list (signed in) ----

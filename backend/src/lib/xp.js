@@ -10,10 +10,11 @@
 // the client (as streaks already were), so every game-derived source is
 // capped and the daily award is at most once per date.
 //
-// Deliberately absent: "watched an episode" and "read a chapter". Free
+// Deliberately absent: "watched an episode" and "read a manga chapter". Free
 // episodes play inside a YouTube iframe (no playback signal) and manga is a
 // link-out, so neither can be measured honestly. Marking something
-// completed already counts, which is the real signal we do have.
+// completed already counts, which is the real signal we do have. Classics are
+// different: they are read in AniNest's own reader, chapter by chapter.
 import { computeBadges } from './badges.js';
 
 export const XP_RULES = {
@@ -28,6 +29,8 @@ export const XP_RULES = {
   dailyWon: 30,           // replaces dailyPlayed on a win, not added to it
   approvedLink: 50,       // a free-watch link someone submitted and an admin approved
   approvedLinkCap: 100,
+  classicFinished: 40,    // a public-domain book read to the end in the reader (3+ parts)
+  classicFinishedCap: 25,
   badge: { bronze: 50, silver: 100, gold: 200 },
 };
 
@@ -79,6 +82,7 @@ export function computeXp(i) {
     createdAt: i.createdAt,
     streaksByGame: i.streaksByGame || {},
     dailyWon: n(i.dailyWon),
+    classicsFinished: n(i.classicsFinished),
   });
 
   const rows = [
@@ -98,6 +102,7 @@ export function computeXp(i) {
       id: 'daily', emoji: '📅', label: 'Daily challenges', count: n(i.dailyPlayed),
       xp: n(i.dailyWon) * XP_RULES.dailyWon + dailyLosses * XP_RULES.dailyPlayed,
     },
+    { id: 'classics', emoji: '📜', label: 'Classics read', count: n(i.classicsFinished), xp: capped(i.classicsFinished, XP_RULES.classicFinishedCap) * XP_RULES.classicFinished },
     { id: 'links', emoji: '🆓', label: 'Free-watch links approved', count: n(i.approvedLinks), xp: capped(i.approvedLinks, XP_RULES.approvedLinkCap) * XP_RULES.approvedLink },
     { id: 'badges', emoji: '🏅', label: 'Badges earned', count: badges.length, xp: badges.reduce((sum, b) => sum + XP_RULES.badge[b.tier], 0) },
   ];

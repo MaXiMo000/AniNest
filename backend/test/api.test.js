@@ -2001,7 +2001,13 @@ test('light novels: catalog, reading list with volume progress, reviews, reports
     byId: async (id) => (id === 929001 ? novel : null),
     gutendex: async (url) => ({
       ok: true,
-      json: async () => ({ next: url.includes('page=1') ? 'x' : null, results: [{ id: 1342, title: 'Pride and Prejudice', authors: [{ name: 'Austen, Jane' }], formats: { 'image/jpeg': 'https://www.gutenberg.org/cover.jpg' }, download_count: 9 }] }),
+      json: async () => ({
+        next: url.includes('page=1') ? 'x' : null,
+        results: [
+          { id: 1342, title: 'Pride and Prejudice', authors: [{ name: 'Austen, Jane' }], copyright: false, formats: { 'image/jpeg': 'https://www.gutenberg.org/cover.jpg', 'text/plain; charset=utf-8': 'https://www.gutenberg.org/ebooks/1342.txt.utf-8' }, download_count: 9 },
+          { id: 99999, title: 'Still In Copyright', authors: [], copyright: true, formats: { 'text/plain; charset=utf-8': 'https://x/1.txt' } },
+        ],
+      }),
     }),
   });
   try {
@@ -2017,6 +2023,7 @@ test('light novels: catalog, reading list with volume progress, reviews, reports
     assert.equal((await anon.get('/api/novels/abc')).status, 400);
     const classics = (await anon.get('/api/novels/classics?q=austen')).json;
     assert.deepEqual([classics.data[0].title, classics.data[0].readUrl, classics.hasNext], ['Pride and Prejudice', 'https://www.gutenberg.org/ebooks/1342', true]);
+    assert.equal(classics.data.length, 1, 'books still in copyright are never listed');
 
     const save = (who, body) => who.agent.post('/api/novels/list', { csrf: true, body: { novel_id: 929001, title: 'Test Novel', ...body } });
     assert.equal((await anon.post('/api/novels/list', { csrf: true, body: { novel_id: 929001, title: 'x' } })).status, 401);
@@ -2042,6 +2049,57 @@ test('light novels: catalog, reading list with volume progress, reviews, reports
     assert.deepEqual((await reader.agent.get('/api/novels/list')).json.list, []);
   } finally {
     setNovelSources(null);
+  }
+});
+
+test('classics reader: chapters, copyright guard, progress that has to be read in order, XP and badge', async () => {
+  const { setClassicsFetcher, clearBooks } = await import('../src/lib/classics.js');
+  const para = (n) => Array.from({ length: 200 }, (_, i) => `word${n}${i}`).join(' ');
+  const text = ['Header', '*** START OF THE PROJECT GUTENBERG EBOOK TEST ***', 'Title page',
+    'CHAPTER I.\nThe Start', para(1), 'CHAPTER II.', para(2), 'CHAPTER III.', para(3),
+    '*** END OF THE PROJECT GUTENBERG EBOOK TEST ***', 'License'].join('\n\n');
+  const books = {
+    92101: { id: 92101, title: 'Test Classic', authors: [{ name: 'Writer, A', birth_year: 1800, death_year: 1870 }], copyright: false, formats: { 'text/plain; charset=utf-8': 'https://pg.test/92101.txt' }, download_count: 5 },
+    92102: { id: 92102, title: 'Modern Book', authors: [], copyright: true, formats: { 'text/plain; charset=utf-8': 'https://pg.test/92102.txt' } },
+  };
+  setClassicsFetcher(async (url) => {
+    const meta = url.match(/books\/(\d+)\//);
+    if (meta) return books[meta[1]] ? { ok: true, status: 200, json: async () => books[meta[1]] } : { ok: false, status: 404 };
+    return { ok: true, status: 200, text: async () => text };
+  });
+  try {
+    const anon = makeAgent();
+    await anon.get('/api/health');
+    const book = (await anon.get('/api/novels/classics/92101')).json;
+    assert.deepEqual(book.data.parts.map((p) => p.title), ['CHAPTER I. — The Start', 'CHAPTER II.', 'CHAPTER III.']);
+    assert.equal(book.mine, null);
+    const part = (await anon.get('/api/novels/classics/92101/parts/1')).json;
+    assert.equal(part.paragraphs[0].startsWith('word20'), true);
+    assert.equal(JSON.stringify(part).includes('License'), false, 'the Gutenberg license footer is removed');
+    assert.equal((await anon.get('/api/novels/classics/92101/parts/3')).status, 404);
+    assert.equal((await anon.get('/api/novels/classics/92102')).status, 404, 'books still in copyright are never served');
+    assert.equal((await anon.get('/api/novels/classics/92103')).status, 404);
+    assert.equal((await anon.post('/api/novels/classics/92101/progress', { csrf: true, body: { part: 0 } })).status, 401);
+
+    const reader = await registeredAgent();
+    const go = async (n) => (await reader.agent.post('/api/novels/classics/92101/progress', { csrf: true, body: { part: n } })).json;
+    assert.equal((await go(2)).mine.finishedAt, null, 'jumping to the last chapter is not finishing');
+    await go(0);
+    await go(1);
+    const done = await go(2);
+    assert.equal(done.justFinished, true);
+    assert.equal((await go(2)).justFinished, false, 'only the first time');
+    const shelf = (await reader.agent.get('/api/novels/classics/reading')).json;
+    assert.deepEqual([shelf.finished, shelf.list[0].title, shelf.list[0].authors[0]], [1, 'Test Classic', 'Writer, A']);
+
+    const profile = (await reader.agent.get(`/api/users/${reader.user.username}`)).json;
+    assert.ok(profile.xp.breakdown.some((r) => r.id === 'classics' && r.xp === 40), 'a finished classic earns XP');
+    assert.ok(profile.badges.some((b) => b.id === 'classics-bronze'), 'and the first Bookworm badge');
+
+    assert.equal((await reader.agent.get('/api/auth/export')).json.classic_reads.length, 1);
+  } finally {
+    setClassicsFetcher(null);
+    clearBooks();
   }
 });
 

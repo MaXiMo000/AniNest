@@ -59,6 +59,12 @@ const VARIETY_TIERS = [
   { min: 3, id: 'variety-bronze', tier: 'bronze', emoji: '🕹️', label: 'Game Hopper', desc: 'Scored in 3+ different games' },
 ];
 
+const CLASSICS_TIERS = [
+  { min: 15, id: 'classics-gold', tier: 'gold', emoji: '📜', label: 'Library Legend', desc: '15+ classics read to the end' },
+  { min: 5, id: 'classics-silver', tier: 'silver', emoji: '📜', label: 'Bookworm', desc: '5+ classics read to the end' },
+  { min: 1, id: 'classics-bronze', tier: 'bronze', emoji: '📜', label: 'First Chapter Closed', desc: 'Read a classic to the end' },
+];
+
 // One "mastery" badge per game for a 20+ best in it. Games not listed here
 // simply have no mastery badge yet.
 const MASTERY_THRESHOLD = 20;
@@ -92,7 +98,7 @@ function masteryBadges(streaksByGame = {}) {
 // are optional so older callers keep working; missing means zero.
 export function computeBadges({
   favoritesCount, reviewsCount, completedCount, bestStreak, createdAt,
-  streaksByGame = {}, dailyWon = 0,
+  streaksByGame = {}, dailyWon = 0, classicsFinished = 0,
 }) {
   const accountAgeDays = createdAt ? (Date.now() - new Date(`${createdAt.replace(' ', 'T')}Z`).getTime()) / DAY_MS : 0;
 
@@ -104,6 +110,7 @@ export function computeBadges({
     pick(MEMBER_TIERS, accountAgeDays),
     pick(DAILY_TIERS, Number(dailyWon) || 0),
     pick(VARIETY_TIERS, Object.values(streaksByGame).filter((v) => Number(v) > 0).length),
+    pick(CLASSICS_TIERS, Number(classicsFinished) || 0),
   ]
     .filter(Boolean)
     .concat(masteryBadges(streaksByGame))

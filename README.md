@@ -25,7 +25,8 @@ Full stack with no framework on either side: a Vite + vanilla JS single-page app
 **Anime**
 - **Home**: spotlight hero, airing-today ticker, trending, this season, all-time top, genre tiles, "Feeling Lucky", recently viewed,
   and personal recommendations built from your favorites.
-- **Browse and search** with genre, type, status, minimum score and sort filters, plus a weekly airing **schedule**.
+- **Browse and search** with several genres at once, type, status, year, season, minimum score and sort, plus a weekly
+  airing **schedule**. Active filters show as removable chips, and on phones the filters fold away so results come first.
 - **Detail pages**: synopsis, stats, trailer, characters and voice actors, studio and voice-actor pages, "where to watch" links
   (official platforms only), similar titles, community reviews, and an **OP/ED jukebox**.
 - **Watch free (official)**: episodes uploaded by licensed channels (Muse Asia, Ani-One Asia, Crunchyroll) play in one embedded
@@ -34,9 +35,16 @@ Full stack with no framework on either side: a Vite + vanilla JS single-page app
   PNG export, **screenshot search** (find an anime from a single frame), and **AniList list import**.
 
 **Manga**
-- Browse by tag, demographic and status, sorted by popularity, latest update, newest or A-Z.
+- Browse by tag, origin (manga, manhwa, manhua), demographic, status and year, sorted by popularity, latest update, newest or A-Z.
 - Detail pages, a reading list with status, and reviews. "Read" links go to official sources (MANGA Plus, VIZ, Webtoons);
   AniNest never hosts or embeds chapters.
+
+**Novels**
+- Light novels from AniList: browse, detail pages, a reading list with volume progress, reviews and official reading links.
+- **Classics reader**: tens of thousands of public-domain books from Project Gutenberg, filtered by topic, era and language,
+  read inside AniNest chapter by chapter, with text size and font settings and your place saved. Finishing a classic earns
+  XP and the Bookworm badges. Only books Gutenberg lists as out of copyright are served.
+- Visual novels from VNDB, including complete official freeware.
 
 **Community and gamification**
 - Accounts, public profiles (`#/u/<username>`) and achievement badges (including daily-win, game-variety and per-game

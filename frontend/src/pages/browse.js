@@ -1,6 +1,7 @@
 import { Api } from '../lib/api.js';
 import { cardGrid, skeletonGrid, errorHTML, escapeHtml, wireRetry } from '../lib/ui.js';
 import { navigate } from '../lib/router.js';
+import { filterPanelHTML, selectHTML, setResultCount, wireFilterPanel, yearOptions } from '../lib/filters.js';
 
 const EXCLUDED_GENRE_IDS = new Set([12, 9, 49]); // Hentai, Ecchi, Erotica — keep the site SFW
 
@@ -12,12 +13,17 @@ async function getGenres() {
   return genreCache;
 }
 
+const SORTS = [['popular', '🔥 Most Popular'], ['top', '🏆 Highest Rated'], ['season', '📅 This Season'], ['newest', '🆕 Newest'], ['title', '🔤 A–Z']];
+const TYPES = [['', 'Any Type'], ['tv', 'TV'], ['movie', 'Movie'], ['ova', 'OVA'], ['special', 'Special'], ['ona', 'ONA'], ['music', 'Music']];
+const STATUSES = [['', 'Any Status'], ['airing', 'Airing'], ['complete', 'Completed'], ['upcoming', 'Upcoming']];
+const SEASONS = [['', 'Any Season'], ['winter', '❄️ Winter'], ['spring', '🌸 Spring'], ['summer', '☀️ Summer'], ['fall', '🍂 Fall']];
+const YEARS = yearOptions(1960);
+
 function buildQueryString(state) {
   const p = new URLSearchParams();
   if (state.q) p.set('q', state.q);
   if (state.genres.length) p.set('genre', state.genres.join(','));
-  if (state.type) p.set('type', state.type);
-  if (state.status) p.set('status', state.status);
+  for (const k of ['type', 'status', 'year', 'season']) if (state[k]) p.set(k, state[k]);
   if (state.sort && state.sort !== 'popular') p.set('sort', state.sort);
   if (state.minScore) p.set('min', state.minScore);
   if (state.page && state.page !== 1) p.set('page', state.page);
@@ -30,58 +36,46 @@ function parseState(params) {
     genres: (params.get('genre') || '').split(',').filter(Boolean).map(Number),
     type: params.get('type') || '',
     status: params.get('status') || '',
+    year: params.get('year') || '',
+    season: params.get('year') ? params.get('season') || '' : '',
     sort: params.get('sort') || 'popular',
     minScore: Number(params.get('min')) || 0,
     page: Number(params.get('page') || 1),
   };
 }
 
-function toolbarHTML(state, genresList) {
-  const sortOptions = [
-    ['popular', '🔥 Most Popular'],
-    ['top', '🏆 Highest Rated'],
-    ['season', '📅 This Season'],
-    ['newest', '🆕 Newest'],
-    ['title', '🔤 A–Z'],
-  ];
-  const typeOptions = ['', 'tv', 'movie', 'ova', 'special', 'ona', 'music'];
-  const statusOptions = [
-    ['', 'Any Status'], ['airing', 'Airing'], ['complete', 'Completed'], ['upcoming', 'Upcoming'],
-  ];
+const labelOf = (opts, v) => opts.find(([k]) => String(k) === String(v))?.[1] || v;
 
-  return `
-    <div class="toolbar">
-      <label class="toolbar-label" for="f-sort">Sort</label>
-      <select id="f-sort">
-        ${sortOptions.map(([v, l]) => `<option value="${v}" ${state.sort === v ? 'selected' : ''}>${l}</option>`).join('')}
-      </select>
-
-      <label class="toolbar-label" for="f-type">Type</label>
-      <select id="f-type">
-        ${typeOptions.map((v) => `<option value="${v}" ${state.type === v ? 'selected' : ''}>${v ? v.toUpperCase() : 'Any Type'}</option>`).join('')}
-      </select>
-
-      <label class="toolbar-label" for="f-status">Status</label>
-      <select id="f-status">
-        ${statusOptions.map(([v, l]) => `<option value="${v}" ${state.status === v ? 'selected' : ''}>${l}</option>`).join('')}
-      </select>
-
-      <label class="toolbar-label" for="f-minscore">Min Score</label>
-      <div class="minscore-slider">
-        <input type="range" id="f-minscore" min="0" max="9" step="0.5" value="${state.minScore || 0}" />
-        <span id="minscore-value">${state.minScore ? `★ ${state.minScore.toFixed(1)}+` : 'Any'}</span>
-      </div>
-
-      ${state.q ? `<span class="chip active">🔍 "${escapeHtml(state.q)}" <span id="clear-q" style="cursor:pointer">✕</span></span>` : ''}
-      ${state.genres.length || state.type || state.status || state.sort !== 'popular' || state.q || state.minScore
-        ? `<button class="chip" id="clear-filters">✕ Clear All</button>` : ''}
-    </div>
-    <div class="genre-filter-list" id="genre-filter-list">
-      ${genresList.slice(0, 22).map((g) => `
-        <button class="chip ${state.genres.includes(g.mal_id) ? 'active' : ''}" data-genre="${Number(g.mal_id) || 0}">${escapeHtml(g.name)}</button>
-      `).join('')}
-    </div>
-  `;
+function panelHTML(state, genresList) {
+  const href = (patch) => `#/browse?${buildQueryString({ ...state, page: 1, ...patch })}`;
+  const thisSeason = state.sort === 'season';
+  const active = [
+    state.q && { label: `🔍 “${state.q}”`, href: href({ q: '' }) },
+    state.sort !== 'popular' && { label: labelOf(SORTS, state.sort), href: href({ sort: 'popular' }) },
+    state.type && { label: labelOf(TYPES, state.type), href: href({ type: '' }) },
+    state.status && { label: labelOf(STATUSES, state.status), href: href({ status: '' }) },
+    state.year && { label: state.season ? `${labelOf(SEASONS, state.season)} ${state.year}` : String(state.year), href: href({ year: '', season: '' }) },
+    state.minScore && { label: `★ ${state.minScore.toFixed(1)}+`, href: href({ minScore: 0 }) },
+    ...state.genres.map((id) => ({ label: genresList.find((g) => g.mal_id === id)?.name || 'Genre', href: href({ genres: state.genres.filter((g) => g !== id) }) })),
+  ].filter(Boolean);
+  // "This Season" is its own list: only the score filter applies to it.
+  const controls = [
+    selectHTML('f-sort', 'Sort', SORTS, state.sort),
+    thisSeason ? '' : selectHTML('f-type', 'Type', TYPES, state.type),
+    thisSeason ? '' : selectHTML('f-status', 'Status', STATUSES, state.status),
+    thisSeason ? '' : selectHTML('f-year', 'Year', YEARS, state.year),
+    thisSeason ? '' : selectHTML('f-season', 'Season', SEASONS, state.season),
+    `<label class="toolbar-label" for="f-minscore">Min Score</label>
+     <div class="minscore-slider">
+       <input type="range" id="f-minscore" min="0" max="9" step="0.5" value="${state.minScore || 0}" />
+       <span id="minscore-value">${state.minScore ? `★ ${state.minScore.toFixed(1)}+` : 'Any'}</span>
+     </div>`,
+  ].join('');
+  const genres = thisSeason ? '' : `
+    <div class="genre-filter-list" id="genre-filter-list" aria-label="Genres (pick several to narrow down)">
+      ${genresList.slice(0, 22).map((g) => `<button class="chip ${state.genres.includes(g.mal_id) ? 'active' : ''}" data-genre="${Number(g.mal_id) || 0}" aria-pressed="${state.genres.includes(g.mal_id)}">${escapeHtml(g.name)}</button>`).join('')}
+    </div>`;
+  return filterPanelHTML(controls, active, '#/browse', genres);
 }
 
 function paginationHTML(state, hasNext) {
@@ -128,6 +122,8 @@ export async function renderBrowse(root, params) {
         order_by: order.order_by,
         sort: order.sort,
         min_score: state.minScore || undefined,
+        year: state.year || undefined,
+        season: state.season || undefined,
         page: state.page,
         sfw: true,
       });
@@ -138,20 +134,24 @@ export async function renderBrowse(root, params) {
     root.innerHTML = `
       <div class="section-head">
         <h2 class="section-title">🧭 ${escapeHtml(titleLabel)}</h2>
-        <span class="section-sub">${list.length ? `Showing ${list.length} results` : ''}</span>
         <a href="#/vibe" class="chip">✨ Search by vibe</a>
         <a href="#/screenshot-search" class="chip">📸 Search by screenshot</a>
       </div>
-      ${toolbarHTML(state, genresList)}
+      ${panelHTML(state, genresList)}
       ${cardGrid(list)}
       ${list.length ? paginationHTML(state, hasNext) : ''}
     `;
+    wireFilterPanel(root);
+    setResultCount(root, list.length ? `Page ${state.page} · ${list.length} shown${hasNext ? ', more on the next page' : ''}` : 'Nothing matches all of these. Try removing one.');
 
     const goto = (patch) => navigate('#/browse?' + buildQueryString({ ...state, page: 1, ...patch }));
 
     root.querySelector('#f-sort')?.addEventListener('change', (e) => goto({ sort: e.target.value }));
     root.querySelector('#f-type')?.addEventListener('change', (e) => goto({ type: e.target.value }));
     root.querySelector('#f-status')?.addEventListener('change', (e) => goto({ status: e.target.value }));
+    root.querySelector('#f-year')?.addEventListener('change', (e) => goto({ year: e.target.value, season: e.target.value ? state.season : '' }));
+    // A season needs a year: picking one on its own uses this year.
+    root.querySelector('#f-season')?.addEventListener('change', (e) => goto({ season: e.target.value, year: state.year || (e.target.value ? new Date().getFullYear() : '') }));
     const minScoreSlider = root.querySelector('#f-minscore');
     const minScoreValue = root.querySelector('#minscore-value');
     minScoreSlider?.addEventListener('input', (e) => {
@@ -159,8 +159,6 @@ export async function renderBrowse(root, params) {
       minScoreValue.textContent = v ? `★ ${v.toFixed(1)}+` : 'Any';
     });
     minScoreSlider?.addEventListener('change', (e) => goto({ minScore: Number(e.target.value) }));
-    root.querySelector('#clear-q')?.addEventListener('click', () => goto({ q: '' }));
-    root.querySelector('#clear-filters')?.addEventListener('click', () => navigate('#/browse'));
     root.querySelectorAll('[data-genre]').forEach((chip) => {
       chip.addEventListener('click', () => {
         const id = Number(chip.dataset.genre);

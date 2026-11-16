@@ -92,18 +92,26 @@ export function seasonNow(page = 1) {
 // simple post-filter behaves identically regardless of which source served
 // the page. Trade-off: a filtered page can come back with fewer than the
 // usual ~20 results.
-function filterByMinScore(result, minScore) {
-  if (!minScore) return result;
-  return { ...result, data: (result.data || []).filter((a) => (a.score || 0) >= minScore) };
+// Jikan has no season filter, so a season (or a whole year) becomes a start
+// date range: winter is January to March, and so on.
+const SEASON_MONTHS = { winter: ['01-01', '03-31'], spring: ['04-01', '06-30'], summer: ['07-01', '09-30'], fall: ['10-01', '12-31'] };
+function jikanDates(year, season) {
+  if (!year) return {};
+  const [from, to] = SEASON_MONTHS[season] || ['01-01', '12-31'];
+  return { start_date: `${year}-${from}`, end_date: `${year}-${to}` };
 }
 
-export function search({ q, genres, type, status, order_by: orderBy, sort, page = 1, minScore }) {
-  const key = `search:${q || ''}:${genres || ''}:${type || ''}:${status || ''}:${orderBy || ''}:${sort || ''}:${page}:${minScore || ''}`;
+// Filters are applied by the source itself (not after the fact), so every
+// page holds a full 20 results.
+export function search({ q, genres, type, status, order_by: orderBy, sort, page = 1, minScore, year, season }) {
+  const key = `search:${q || ''}:${genres || ''}:${type || ''}:${status || ''}:${orderBy || ''}:${sort || ''}:${page}:${minScore || ''}:${year || ''}:${season || ''}`;
   return withFallback(
     key,
     TTL.list,
-    'AniList', async () => filterByMinScore(await anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page }), minScore),
-    'Jikan', async () => filterByMinScore(await jikanGet('/anime', { q, genres, type, status, order_by: orderBy, sort, page, sfw: true }), minScore),
+    'AniList', () => anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page, minScore, year, season }),
+    'Jikan', () => jikanGet('/anime', {
+      q, genres, type, status, order_by: orderBy, sort, page, sfw: true, min_score: minScore, ...jikanDates(year, season),
+    }),
   );
 }
 

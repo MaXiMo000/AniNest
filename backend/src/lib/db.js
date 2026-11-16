@@ -647,6 +647,26 @@ await db.executeMultiple(`
   CREATE INDEX IF NOT EXISTS idx_novel_reviews_novel ON novel_reviews(novel_id);
 `);
 
+// Public-domain books read in AniNest's reader (lib/classics.js). `part` is
+// where you are; `max_part` only moves one part at a time, so jumping to the
+// last chapter doesn't count as reading the book. finished_at is set when
+// max_part reaches the last part.
+await db.executeMultiple(`
+  CREATE TABLE IF NOT EXISTS classic_reads (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    book_id INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    authors TEXT,
+    image TEXT,
+    part INTEGER NOT NULL DEFAULT 0,
+    max_part INTEGER NOT NULL DEFAULT 0,
+    parts INTEGER NOT NULL,
+    finished_at TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, book_id)
+  );
+`);
+
 // Email verification (lib/accountMail.js). Accounts from before this start
 // unverified and see a "verify your email" banner. known_devices remembers
 // which browsers have signed in to an account (by a long-lived random cookie,

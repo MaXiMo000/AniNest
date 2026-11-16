@@ -209,21 +209,39 @@ export async function anilistSeason(season, year, page = 1) {
   };
 }
 
-export async function anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page = 1 }) {
-  const firstGenreId = Number((genres || '').split(',')[0]);
-  const genre = MAL_GENRE_ID_TO_ANILIST_NAME[firstGenreId];
+// Every selected genre must match (AniList's genre_in is AND, like Jikan's
+// `genres`). A MAL genre AniList has no genre for (Isekai, Gourmet, ...) is
+// thrown as an error so the caller falls back to Jikan, which has them all,
+// instead of returning results that silently ignore it.
+export async function anilistSearch({ q, genres, type, status, order_by: orderBy, sort, page = 1, minScore, year, season }) {
+  const genreIds = (genres || '').split(',').map(Number).filter(Boolean);
+  const genreNames = genreIds.map((id) => MAL_GENRE_ID_TO_ANILIST_NAME[id]);
+  if (genreNames.some((g) => !g)) throw new Error('A selected genre has no AniList equivalent.');
   const format = MAL_TYPE_TO_ANILIST_FORMAT[type];
   const anilistStatus = MAL_STATUS_TO_ANILIST_STATUS[status];
   const anilistSort = anilistSortFor(orderBy, sort);
 
   const data = await gql(`
-    query($page: Int, $search: String, $genre: String, $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort]) {
+    query($page: Int, $search: String, $genres: [String], $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort],
+          $minScore: Int, $year: Int, $season: MediaSeason) {
       Page(page: $page, perPage: 20) {
         pageInfo { hasNextPage }
-        media(type: ANIME, search: $search, genre: $genre, format: $format, status: $status, sort: $sort, isAdult: false) { ${MEDIA_FIELDS} }
+        media(type: ANIME, search: $search, genre_in: $genres, format: $format, status: $status, sort: $sort, isAdult: false,
+              averageScore_greater: $minScore, seasonYear: $year, season: $season) { ${MEDIA_FIELDS} }
       }
     }
-  `, { page, search: q || undefined, genre, format, status: anilistStatus, sort: [anilistSort] });
+  `, {
+    page,
+    search: q || undefined,
+    genres: genreNames.length ? genreNames : undefined,
+    format,
+    status: anilistStatus,
+    sort: [anilistSort],
+    // averageScore is 0-100 and the filter is "greater than": 7.5 -> 74.
+    minScore: minScore ? Math.round(minScore * 10) - 1 : undefined,
+    year: year || undefined,
+    season: season ? season.toUpperCase() : undefined,
+  });
   return {
     data: data.Page.media.map(normalizeAniListMedia).filter(Boolean),
     pagination: { has_next_page: data.Page.pageInfo.hasNextPage },

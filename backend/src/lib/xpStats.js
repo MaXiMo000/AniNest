@@ -14,7 +14,7 @@ export async function loadXpInputs(userId = null) {
   const only = userId == null ? '' : ' WHERE user_id = ?';
   const args = userId == null ? [] : [userId];
 
-  const [users, favorites, manga, reviews, scores, daily, links] = await Promise.all([
+  const [users, favorites, manga, reviews, scores, daily, links, classics] = await Promise.all([
     db.execute({
       sql: `SELECT id, username, created_at FROM users${userId == null ? '' : ' WHERE id = ?'}`,
       args,
@@ -45,6 +45,13 @@ export async function loadXpInputs(userId = null) {
             GROUP BY submitted_by`,
       args,
     }),
+    // Classics read to the end in the reader; one- and two-part pieces are
+    // too short to count.
+    db.execute({
+      sql: `SELECT user_id, COUNT(*) AS n FROM classic_reads WHERE finished_at IS NOT NULL AND parts >= 3
+            ${userId == null ? '' : 'AND user_id = ?'} GROUP BY user_id`,
+      args,
+    }),
   ]);
 
   const byUser = new Map();
@@ -52,7 +59,7 @@ export async function loadXpInputs(userId = null) {
     byUser.set(Number(u.id), {
       username: u.username, createdAt: u.created_at,
       favoritesCount: 0, completedCount: 0, mangaFavoritesCount: 0, mangaCompletedCount: 0,
-      reviewsCount: 0, streaks: [], streaksByGame: {}, dailyPlayed: 0, dailyWon: 0, approvedLinks: 0,
+      reviewsCount: 0, streaks: [], streaksByGame: {}, dailyPlayed: 0, dailyWon: 0, approvedLinks: 0, classicsFinished: 0,
     });
   }
   const get = (row) => byUser.get(Number(row.user_id));
@@ -63,6 +70,7 @@ export async function loadXpInputs(userId = null) {
   for (const r of scores.rows) { const u = get(r); if (u) { u.streaks.push(Number(r.best_streak)); u.streaksByGame[r.game] = Number(r.best_streak); } }
   for (const r of daily.rows) { const u = get(r); if (u) { u.dailyPlayed = Number(r.played); u.dailyWon = Number(r.won) || 0; } }
   for (const r of links.rows) { const u = get(r); if (u) u.approvedLinks = Number(r.n); }
+  for (const r of classics.rows) { const u = get(r); if (u) u.classicsFinished = Number(r.n); }
   return byUser;
 }
 

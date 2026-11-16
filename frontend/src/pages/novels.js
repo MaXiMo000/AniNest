@@ -4,6 +4,8 @@ import { navigate } from '../lib/router.js';
 import { escapeHtml, emptyHTML, errorHTML, skeletonGrid, showToast, wireRetry, READ_STATUSES, skeletonDetail } from '../lib/ui.js';
 import { createReviewsUi } from '../lib/reviewsUi.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
+import { filterPanelHTML, selectHTML, setResultCount, wireFilterPanel } from '../lib/filters.js';
+import { readingList } from '../lib/classicsProgress.js';
 
 // Light novels (backend/src/routes/novels.js): browse (#/novels), one novel
 // (#/novel/:id), your reading list (#/novel-list) and free legal reading
@@ -83,14 +85,18 @@ export async function renderNovelBrowse(root, params) {
       apiGet(`/api/novels/search?${new URLSearchParams({ q: state.q, genre: state.genre, status: state.status, sort: state.sort, page: state.page })}`),
     ]);
     if (!root.isConnected) return;
-    const select = (id, label, options, value) => `
-      <label class="toolbar-label" for="${id}">${label}</label>
-      <select id="${id}">${options.map(([v, l]) => `<option value="${escapeHtml(v)}" ${v === value ? 'selected' : ''}>${escapeHtml(l)}</option>`).join('')}</select>`;
-    root.querySelector('#novel-toolbar').innerHTML = `
-      ${state.q ? '' : select('n-sort', 'Sort', SORTS, state.sort)}
-      ${select('n-genre', 'Genre', [['', 'Any Genre'], ...genres.data.map((g) => [g, g])], state.genre)}
-      ${select('n-status', 'Status', STATUSES, state.status)}
-      ${state.q || state.genre || state.status || state.sort !== 'popular' ? '<a class="chip" href="#/novels">✕ Clear All</a>' : ''}`;
+    const active = [
+      state.q && { label: `🔍 “${state.q}”`, href: href({ q: '' }) },
+      state.sort !== 'popular' && { label: SORTS.find(([v]) => v === state.sort)?.[1] || state.sort, href: href({ sort: 'popular' }) },
+      state.genre && { label: state.genre, href: href({ genre: '' }) },
+      state.status && { label: STATUSES.find(([v]) => v === state.status)?.[1] || state.status, href: href({ status: '' }) },
+    ].filter(Boolean);
+    root.querySelector('#novel-toolbar').outerHTML = filterPanelHTML(`
+      ${state.q ? '' : selectHTML('n-sort', 'Sort', SORTS, state.sort)}
+      ${selectHTML('n-genre', 'Genre', [['', 'Any Genre'], ...genres.data.map((g) => [g, g])], state.genre)}
+      ${selectHTML('n-status', 'Status', STATUSES, state.status)}`, active, '#/novels');
+    wireFilterPanel(root);
+    setResultCount(root, `Page ${state.page}${res.data.length ? ` · ${res.data.length} shown` : ''}`);
     root.querySelector('#n-sort')?.addEventListener('change', (e) => navigate(href({ sort: e.target.value })));
     root.querySelector('#n-genre').addEventListener('change', (e) => navigate(href({ genre: e.target.value })));
     root.querySelector('#n-status').addEventListener('change', (e) => navigate(href({ status: e.target.value })));
@@ -302,16 +308,81 @@ const FREE_SITES = [
   },
 ];
 
+const CLASSIC_TOPICS = [['', 'Any Topic'], ['adventure', 'Adventure'], ['scifi', 'Science Fiction'], ['fantasy', 'Fantasy'], ['mystery', 'Mystery & Detective'],
+  ['horror', 'Horror'], ['gothic', 'Gothic'], ['romance', 'Romance'], ['children', 'Children’s'], ['humor', 'Humor'], ['poetry', 'Poetry']];
+const CLASSIC_ERAS = [['', 'Any Era'], ['before1800', 'Before 1800'], ['1800s', '1800s'], ['1900s', '1900s']];
+const CLASSIC_LANGS = [['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese']];
+const BOOKWORM_STEPS = [[1, 'First Chapter Closed'], [5, 'Bookworm'], [15, 'Library Legend']];
+
+function shelfHTML({ list, finished, local }) {
+  const reading = list.filter((b) => !b.finishedAt).slice(0, 8);
+  const next = BOOKWORM_STEPS.find(([n]) => finished < n);
+  const goal = local
+    ? '<a href="#/login">Log in</a> to earn XP and badges for every classic you finish.'
+    : next ? `${finished} finished · ${next[0] - finished} more for the <strong>${escapeHtml(next[1])}</strong> badge (+40 XP each)` : `${finished} finished · every badge earned 🏆`;
+  if (!reading.length && !finished && local) return '';
+  return `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">📖 Continue Reading</h2>
+        <span class="section-sub">${goal}</span>
+      </div>
+      ${reading.length ? `<div class="card-grid">${reading.map((b) => {
+    const pct = Math.round(((b.part + 1) / b.parts) * 100);
+    return `
+        <a class="manga-card" href="#/read/${Number(b.id)}">
+          <div class="poster-wrap">${b.image ? `<img src="${escapeHtml(b.image)}" alt="${escapeHtml(b.title)}" loading="lazy" />` : ''}<span class="card-type">${pct}%</span></div>
+          <div class="card-body">
+            <div class="card-title">${escapeHtml(b.title)}</div>
+            <div class="card-meta">Chapter ${b.part + 1} of ${b.parts}</div>
+            <div class="mini-progress" aria-hidden="true"><span style="width:${pct}%"></span></div>
+          </div>
+        </a>`;
+  }).join('')}</div>` : '<p class="muted-note">Nothing open right now. Pick a classic below.</p>'}
+    </section>`;
+}
+
 export async function renderNovelFree(root, params) {
   document.title = 'Read Novels Free — AniNest';
-  const q = params.get('q') || '';
-  const page = Math.max(1, Number(params.get('page')) || 1);
+  const state = {
+    q: params.get('q') || '', topic: params.get('topic') || '', era: params.get('era') || '', lang: params.get('lang') || 'en',
+    page: Math.max(1, Number(params.get('page')) || 1),
+  };
+  const href = (patch) => {
+    const next = { ...state, page: 1, ...patch };
+    const p = new URLSearchParams(Object.entries(next).filter(([k, v]) => v && !(k === 'lang' && v === 'en') && !(k === 'page' && v === 1)));
+    return `#/novels/free${p.toString() ? `?${p}` : ''}`;
+  };
+  const filters = [
+    ['c-topic', 'Topic', 'topic', CLASSIC_TOPICS],
+    ['c-era', 'Era', 'era', CLASSIC_ERAS],
+    ['c-lang', 'Language', 'lang', CLASSIC_LANGS],
+  ];
+  const active = [
+    state.q && { label: `🔍 “${state.q}”`, href: href({ q: '' }) },
+    ...filters.filter(([, , key]) => state[key] && !(key === 'lang' && state.lang === 'en'))
+      .map(([, , key, opts]) => ({ label: opts.find(([v]) => v === state[key])?.[1] || state[key], href: href({ [key]: key === 'lang' ? 'en' : '' }) })),
+  ].filter(Boolean);
+
   root.innerHTML = `
     <div class="section-head">
       <h1 class="section-title">🆓 Read Novels Free</h1>
-      <span class="section-sub">Legal places to read for free. We link out; the text stays with the people who made it.</span>
+      <span class="section-sub">Public-domain classics read right here, plus legal places to read for free.</span>
     </div>
     ${tabsHTML('free')}
+    <div id="classics-shelf"></div>
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">📜 Classics, Read Here</h2>
+        <span class="section-sub">Out-of-copyright books from Project Gutenberg, chapter by chapter, with your place saved.</span>
+      </div>
+      <form id="classics-search" class="hero-actions" style="margin-bottom:12px">
+        <input name="q" class="list-input" maxlength="100" placeholder="Search by title or author (e.g. Austen, Frankenstein)…" value="${escapeHtml(state.q)}" aria-label="Search classic novels" />
+        <button class="btn-pow btn-pow--pink" type="submit">SEARCH</button>
+      </form>
+      ${filterPanelHTML(filters.map(([id, label, key, opts]) => selectHTML(id, label, opts, state[key])).join(''), active, '#/novels/free')}
+      <div id="classics">${skeletonGrid(6)}</div>
+    </section>
     ${FREE_SITES.map((g) => `
       <section class="section">
         <div class="section-head"><h2 class="section-title">${escapeHtml(g.group)}</h2></div>
@@ -320,39 +391,39 @@ export async function renderNovelFree(root, params) {
             <strong>${escapeHtml(s.name)}${s.internal ? ' →' : ' ↗'}</strong>
             <span>${escapeHtml(s.about)}</span>
           </a>`).join('')}</div>
-      </section>`).join('')}
-    <section class="section">
-      <div class="section-head">
-        <h2 class="section-title">Classic novels (public domain)</h2>
-        <span class="section-sub">Full books from Project Gutenberg, free for everyone.</span>
-      </div>
-      <form id="classics-search" class="hero-actions" style="margin-bottom:12px">
-        <input name="q" class="list-input" maxlength="100" placeholder="Search classics (e.g. Austen, Frankenstein)…" value="${escapeHtml(q)}" aria-label="Search classic novels" />
-        <button class="btn-pow btn-pow--pink" type="submit">SEARCH</button>
-      </form>
-      <div id="classics">${skeletonGrid(6)}</div>
-    </section>`;
+      </section>`).join('')}`;
+  wireFilterPanel(root);
   root.querySelector('#classics-search').addEventListener('submit', (e) => {
     e.preventDefault();
-    const v = e.target.q.value.trim();
-    navigate(v ? `#/novels/free?q=${encodeURIComponent(v)}` : '#/novels/free');
+    navigate(href({ q: e.target.q.value.trim() }));
   });
+  for (const [id, , key] of filters) root.querySelector(`#${id}`).addEventListener('change', (e) => navigate(href({ [key]: e.target.value })));
+
+  readingList().then((shelf) => {
+    const slot = root.querySelector('#classics-shelf');
+    if (slot?.isConnected) slot.innerHTML = shelfHTML(shelf);
+  }).catch(() => {});
+
   const slot = root.querySelector('#classics');
   try {
-    const res = await apiGet(`/api/novels/classics?${new URLSearchParams({ q, page })}`);
+    const res = await apiGet(`/api/novels/classics?${new URLSearchParams({ q: state.q, topic: state.topic, era: state.era, lang: state.lang, page: state.page })}`);
     if (!slot.isConnected) return;
-    const pageHref = (p) => `#/novels/free?${new URLSearchParams({ ...(q ? { q } : {}), page: p })}`;
+    setResultCount(root, res.count ? `${res.count.toLocaleString()} books` : '');
     slot.innerHTML = res.data.length ? `
       <div class="card-grid">${res.data.map((b) => `
-        <a class="manga-card" href="${escapeHtml(b.readUrl)}" target="_blank" rel="noopener">
-          <div class="poster-wrap">${b.image ? `<img src="${escapeHtml(b.image)}" alt="${escapeHtml(b.title)}" loading="lazy" />` : ''}<span class="card-type">Read free ↗</span></div>
-          <div class="card-body"><div class="card-title">${escapeHtml(b.title)}</div><div class="card-meta">${escapeHtml(b.authors.join(', '))}</div></div>
+        <a class="manga-card" href="#/read/${Number(b.id)}">
+          <div class="poster-wrap">${b.image ? `<img src="${escapeHtml(b.image)}" alt="${escapeHtml(b.title)}" loading="lazy" />` : ''}<span class="card-type">Read here</span></div>
+          <div class="card-body">
+            <div class="card-title">${escapeHtml(b.title)}</div>
+            <div class="card-meta">${escapeHtml(b.authors.join(', ') || 'Unknown author')}</div>
+            ${b.subjects.length ? `<div class="card-meta">${escapeHtml(b.subjects.slice(0, 2).join(' · '))}</div>` : ''}
+          </div>
         </a>`).join('')}</div>
       <div class="pagination">
-        ${page > 1 ? `<a class="btn-pow btn-pow--sm" href="${pageHref(page - 1)}">◀ PREV</a>` : ''}
-        <span>PAGE ${page}</span>
-        ${res.hasNext ? `<a class="btn-pow btn-pow--sm" href="${pageHref(page + 1)}">NEXT ▶</a>` : ''}
-      </div>` : emptyHTML('No classics match that search.', '📜');
+        ${state.page > 1 ? `<a class="btn-pow btn-pow--sm" href="${href({ page: state.page - 1 })}">◀ PREV</a>` : ''}
+        <span>PAGE ${state.page}</span>
+        ${res.hasNext ? `<a class="btn-pow btn-pow--sm" href="${href({ page: state.page + 1 })}">NEXT ▶</a>` : ''}
+      </div>` : emptyHTML('No classics match that. Try another topic or search.', '📜');
   } catch {
     if (slot.isConnected) slot.innerHTML = errorHTML('Project Gutenberg’s catalog didn’t answer. Try again in a moment.');
   }

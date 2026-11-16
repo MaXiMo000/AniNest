@@ -29,7 +29,11 @@ mangaRouter.get('/search', asyncRoute(async (req, res) => {
   const demographic = ALLOWED_DEMOGRAPHIC.has(req.query.demographic) ? req.query.demographic : undefined;
   const status = ALLOWED_STATUS.has(req.query.status) ? req.query.status : undefined;
   const sort = ALLOWED_SORT.has(req.query.sort) ? req.query.sort : undefined;
-  res.json(await mangadex.mangaSearch({ q, tags, demographic, status, sort, page }));
+  // Original language: Japanese manga, Korean manhwa, Chinese manhua.
+  const origin = ['ja', 'ko', 'zh'].includes(req.query.origin) ? req.query.origin : undefined;
+  const yearRaw = Number(req.query.year);
+  const year = Number.isInteger(yearRaw) && yearRaw >= 1900 && yearRaw <= new Date().getUTCFullYear() + 1 ? yearRaw : undefined;
+  res.json(await mangadex.mangaSearch({ q, tags, demographic, status, sort, origin, year, page }));
 }));
 
 // MangaDex serves a "you can read this at mangadex.org" placeholder image
