@@ -2052,6 +2052,40 @@ test('light novels: catalog, reading list with volume progress, reviews, reports
   }
 });
 
+test('classics catalog: AniNest searches its own copy of the Gutenberg catalog', async () => {
+  const { setCatalog, parseCsv } = await import('../src/lib/classicsCatalog.js');
+  const rows = [];
+  parseCsv('a,"b, ""c""\nd",e\r\nf,,g', (r) => rows.push(r));
+  assert.deepEqual(rows, [['a', 'b, "c"\nd', 'e'], ['f', '', 'g']], 'quoted commas, quotes and newlines');
+
+  const csv = [
+    'Text#,Type,Issued,Title,Language,Authors,Subjects,LoCC,Bookshelves',
+    '84,Text,1993-10-01,"Frankenstein; or, The modern Prometheus",en,"Shelley, Mary Wollstonecraft, 1797-1851",Science fiction; Horror tales -- Fiction,PR,Gothic Fiction; Category: Classics of Literature',
+    '345,Text,1995-10-01,Dracula,en,"Stoker, Bram, 1847-1912; Someone, A, 1900-1980 [Illustrator]",Horror tales; Vampires -- Fiction,PR,Gothic Fiction',
+    '9001,Sound,2000-01-01,Dracula (audio),en,"Stoker, Bram, 1847-1912",Horror tales,PR,',
+    '800,Text,1997-01-01,"Le tour du monde\nen quatre-vingts jours",fr,"Verne, Jules, 1828-1905",Voyages,PQ,',
+    '5,Text,1975-12-01,The United States Constitution,en,United States,Constitutional law,KF,Politics',
+  ].join('\n');
+  setCatalog(csv, [345]);
+  try {
+    const anon = makeAgent();
+    const list = async (qs) => (await anon.get(`/api/novels/classics?${qs}`)).json;
+    const all = await list('');
+    assert.deepEqual(all.data.map((b) => b.id), [345, 84, 5], 'top downloads, then notable works, then the rest; audio books left out');
+    assert.equal(all.count, 3);
+    assert.deepEqual(all.data[0].authors, ['Stoker, Bram'], 'illustrators are not listed as authors');
+    assert.deepEqual([all.data[1].years[0], all.data[1].subjects, all.data[1].readUrl], ['1797–1851', ['Science fiction', 'Horror tales'], 'https://www.gutenberg.org/ebooks/84']);
+    assert.deepEqual((await list('q=shelley%20frank')).data.map((b) => b.id), [84], 'every word, in the title or the author');
+    assert.deepEqual((await list('topic=horror')).data.map((b) => b.id), [345, 84]);
+    assert.deepEqual((await list('era=before1800')).data.map((b) => b.id), [84], 'author alive before 1800');
+    assert.deepEqual((await list('era=1900s')).data.map((b) => b.id), [345], 'Stoker lived into the 1900s');
+    assert.deepEqual((await list('lang=fr')).data.map((b) => b.title), ['Le tour du monde: en quatre-vingts jours']);
+    assert.deepEqual([(await list('page=2')).data.length, all.hasNext], [0, false]);
+  } finally {
+    setCatalog(null);
+  }
+});
+
 test('classics reader: chapters, copyright guard, progress that has to be read in order, XP and badge', async () => {
   const { setClassicsFetcher, clearBooks } = await import('../src/lib/classics.js');
   const para = (n) => Array.from({ length: 200 }, (_, i) => `word${n}${i}`).join(' ');

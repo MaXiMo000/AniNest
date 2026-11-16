@@ -8,6 +8,7 @@ import { anilistNovelSearch, anilistNovelById } from '../lib/anilist.js';
 import { GENRE_NAMES } from '../lib/vibeParser.js';
 import { httpUrl } from './favorites.js';
 import { catalogEntry, getBook } from '../lib/classics.js';
+import { searchCatalog } from '../lib/classicsCatalog.js';
 
 // Light novels: catalog from AniList (format NOVEL, ids are AniList ids),
 // a reading list with volume progress, reviews, and public-domain classics
@@ -46,9 +47,10 @@ novelsRouter.get('/search', asyncRoute(async (req, res) => {
 
 novelsRouter.get('/genres', (_req, res) => res.json({ data: GENRE_NAMES }));
 
-// Public-domain classics: Gutendex search (or its most-downloaded list),
-// limited to books out of copyright with a plain-text edition, so every
-// result opens in the reader (#/read/:id).
+// Public-domain classics, searched in AniNest's own copy of the Project
+// Gutenberg catalog (lib/classicsCatalog.js). Until that has loaded, Gutendex
+// answers instead. Each result opens in the reader (#/read/:id), which checks
+// the book's copyright status before serving it.
 const CLASSIC_TOPICS = {
   adventure: 'adventure', scifi: 'science fiction', fantasy: 'fantasy', mystery: 'detective', horror: 'horror',
   romance: 'love stories', children: 'children', humor: 'humor', poetry: 'poetry', gothic: 'gothic',
@@ -70,6 +72,15 @@ novelsRouter.get('/classics', asyncRoute(async (req, res) => {
   if (q) params.set('search', q);
   if (topic) params.set('topic', CLASSIC_TOPICS[topic]);
   for (const [k, v] of Object.entries(CLASSIC_ERAS[era] || {})) params.set(k, String(v));
+  const local = searchCatalog({
+    q, lang, page, topic: CLASSIC_TOPICS[topic] || '',
+    yearStart: CLASSIC_ERAS[era]?.author_year_start ?? null,
+    yearEnd: CLASSIC_ERAS[era]?.author_year_end ?? null,
+  });
+  if (local) {
+    res.set('Cache-Control', 'public, max-age=600');
+    return res.json({ ...local, data: local.data.map((b) => ({ ...b, readUrl: b.sourceUrl })) });
+  }
   const data = await cached(`novels:classics:${q.toLowerCase()}:${topic}:${era}:${lang}:${page}`, 60 * 60 * 1000, async () => {
     const upstream = await sources.gutendex(`https://gutendex.com/books/?${params}`);
     if (!upstream.ok) throw Object.assign(new Error('Gutendex unavailable'), { status: 502 });

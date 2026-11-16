@@ -8,6 +8,7 @@ import { startWatchSourceChecks } from './lib/watchSourceHealth.js';
 import { startDigests } from './lib/digest.js';
 import { startPredictionReminders } from './lib/predictions.js';
 import { startCacheWarmup } from './lib/cacheWarmup.js';
+import { startCatalog } from './lib/classicsCatalog.js';
 
 const PORT = process.env.PORT || 8787;
 const app = createApp();
@@ -22,6 +23,7 @@ startWatchSourceChecks();
 startDigests();
 startPredictionReminders();
 startCacheWarmup();
+startCatalog();
 
 const server = app.listen(PORT, () => {
   logger.info(`AniNest backend listening on http://localhost:${PORT}`);
