@@ -11,6 +11,7 @@ import { logger } from './logger.js';
 const CATALOG_URL = 'https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz';
 const TOP_URL = 'https://www.gutenberg.org/browse/scores/top';
 const REFRESH_MS = 24 * 60 * 60 * 1000;
+const RETRY_MS = 15 * 60 * 1000;
 const PAGE_SIZE = 32;
 // Bookshelves that mark well-known works; they rank right after the current
 // most-downloaded books.
@@ -166,9 +167,16 @@ export async function refreshCatalog() {
 }
 
 // Load now and then daily; a failed load keeps the previous copy, and until
-// the first load finishes the classics route falls back to Gutendex.
+// the first load finishes the classics route falls back to Gutendex. A failed
+// load is retried after RETRY_MS, since gutenberg.org has maintenance windows.
 export function startCatalog() {
-  const run = () => refreshCatalog().catch((err) => logger.warn({ err }, 'classics catalog load failed'));
+  let timer;
+  const run = () => refreshCatalog()
+    .then(() => { timer = setTimeout(run, REFRESH_MS); })
+    .catch((err) => {
+      logger.warn({ err }, 'classics catalog load failed');
+      timer = setTimeout(run, RETRY_MS);
+    })
+    .finally(() => timer?.unref());
   run();
-  setInterval(run, REFRESH_MS).unref();
 }
