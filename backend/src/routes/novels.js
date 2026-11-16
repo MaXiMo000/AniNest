@@ -25,10 +25,10 @@ const idOf = (raw) => {
   return Number.isInteger(id) && id > 0 && id < 1e9 ? id : null;
 };
 
-let sources = { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url) };
+let sources = { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }) };
 // Test hook: the suite never calls AniList or Gutendex.
 export function setNovelSources(s) {
-  sources = s ? { ...sources, ...s } : { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url) };
+  sources = s ? { ...sources, ...s } : { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }) };
 }
 
 const SORTS = { popular: 'POPULARITY_DESC', score: 'SCORE_DESC', trending: 'TRENDING_DESC', newest: 'START_DATE_DESC' };

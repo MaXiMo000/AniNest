@@ -12,10 +12,17 @@ const MAX_PART_WORDS = 9000;     // longer chapters are split so a part loads qu
 const PAGE_WORDS = 4000;         // used when no chapter headings are found
 const CACHE_BOOKS = 6;           // parsed books kept in memory; at most ~60 MB
 
-let fetcher = (url) => fetch(url, { headers: { 'User-Agent': 'AniNest/1.0 (+https://github.com/MaXiMo000/AniNest)' } });
+const META_TIMEOUT_MS = 6000;    // Gutendex sometimes hangs; gutenberg.org is tried next
+const TEXT_TIMEOUT_MS = 25000;
+
+const realFetch = (url, ms = TEXT_TIMEOUT_MS) => fetch(url, {
+  headers: { 'User-Agent': 'AniNest/1.0 (+https://github.com/MaXiMo000/AniNest)' },
+  signal: AbortSignal.timeout(ms),
+});
+let fetcher = realFetch;
 // Test hook: the suite never calls Gutendex or gutenberg.org.
 export function setClassicsFetcher(fn) {
-  fetcher = fn || ((url) => fetch(url));
+  fetcher = fn || realFetch;
 }
 
 const NUMBER_WORDS = 'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|last|the\\s+\\w+';
@@ -139,13 +146,51 @@ export function catalogEntry(b) {
   };
 }
 
+// gutenberg.org's own RDF record, reshaped like a Gutendex record so
+// catalogEntry reads both. Used when Gutendex is down.
+const decode = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+const tagValues = (xml, name) => [...xml.matchAll(new RegExp(`<${name}(?:\\s[^>]*)?>([^<]*)</${name}>`, 'g'))].map((m) => decode(m[1]).trim());
+const blocks = (xml, name) => [...xml.matchAll(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`, 'g'))].map((m) => m[1]);
+
+export function rdfRecord(id, xml) {
+  const files = [...xml.matchAll(/<pgterms:file rdf:about="([^"]+)"/g)].map((m) => decode(m[1]));
+  const text = files.find((u) => u.endsWith('.txt.utf-8')) || files.find((u) => /\.txt$/.test(u));
+  const cover = files.find((u) => u.endsWith('.cover.medium.jpg'));
+  const year = (v) => (v ? Number(v) : null);
+  return {
+    id,
+    title: tagValues(xml, 'dcterms:title')[0]?.replace(/\s+/g, ' ') || `Book ${id}`,
+    authors: blocks(xml, 'dcterms:creator').map((b) => ({
+      name: tagValues(b, 'pgterms:name')[0],
+      birth_year: year(tagValues(b, 'pgterms:birthdate')[0]),
+      death_year: year(tagValues(b, 'pgterms:deathdate')[0]),
+    })).filter((a) => a.name),
+    summaries: tagValues(xml, 'pgterms:marc520'),
+    subjects: blocks(xml, 'dcterms:subject').flatMap((b) => tagValues(b, 'rdf:value')),
+    download_count: Number(tagValues(xml, 'pgterms:downloads')[0]) || 0,
+    copyright: !/^public domain in the usa/i.test(tagValues(xml, 'dcterms:rights')[0] || ''),
+    formats: { ...(text ? { 'text/plain; charset=utf-8': text } : {}), ...(cover ? { 'image/jpeg': cover } : {}) },
+  };
+}
+
+async function loadRecord(id) {
+  try {
+    const res = await fetcher(`https://gutendex.com/books/${id}/`, META_TIMEOUT_MS);
+    if (res.status === 404) throw Object.assign(new Error('Book not found.'), { status: 404 });
+    if (res.ok) return await res.json();
+  } catch (err) {
+    if (err.status === 404) throw err;
+  }
+  const res = await fetcher(`https://www.gutenberg.org/cache/epub/${id}/pg${id}.rdf`, META_TIMEOUT_MS * 2);
+  if (res.status === 404) throw Object.assign(new Error('Book not found.'), { status: 404 });
+  if (!res.ok) throw Object.assign(new Error('Project Gutenberg unavailable'), { status: 502 });
+  return rdfRecord(id, await res.text());
+}
+
 const books = new Map(); // id -> Promise<{ meta, parts }>, most recent last
 
 async function loadBook(id) {
-  const metaRes = await fetcher(`https://gutendex.com/books/${id}/`);
-  if (metaRes.status === 404) throw Object.assign(new Error('Book not found.'), { status: 404 });
-  if (!metaRes.ok) throw Object.assign(new Error('Gutendex unavailable'), { status: 502 });
-  const record = await metaRes.json();
+  const record = await loadRecord(id);
   const meta = catalogEntry(record);
   if (!meta.readable) throw Object.assign(new Error('This book can’t be read here.'), { status: 404 });
 

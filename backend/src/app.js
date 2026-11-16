@@ -190,7 +190,7 @@ export function createApp() {
   app.use((err, req, res, _next) => {
     (req.log || logger).error({ err }, 'unhandled request error');
     const status = err.status && err.status < 500 ? err.status : 502;
-    res.status(status).json({ error: status < 500 ? err.message : 'Upstream anime data source is unavailable right now.' });
+    res.status(status).json({ error: status < 500 ? err.message : 'A data source AniNest relies on is unavailable right now. Try again in a moment.' });
   });
 
   return app;

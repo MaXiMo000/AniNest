@@ -2062,7 +2062,13 @@ test('classics reader: chapters, copyright guard, progress that has to be read i
     92101: { id: 92101, title: 'Test Classic', authors: [{ name: 'Writer, A', birth_year: 1800, death_year: 1870 }], copyright: false, formats: { 'text/plain; charset=utf-8': 'https://pg.test/92101.txt' }, download_count: 5 },
     92102: { id: 92102, title: 'Modern Book', authors: [], copyright: true, formats: { 'text/plain; charset=utf-8': 'https://pg.test/92102.txt' } },
   };
+  const rdf = (rights) => `<rdf:RDF><pgterms:ebook><dcterms:title>Fallback
+ Classic</dcterms:title><dcterms:creator><pgterms:agent><pgterms:name>Author, B</pgterms:name><pgterms:birthdate rdf:datatype="x">1820</pgterms:birthdate></pgterms:agent></dcterms:creator><dcterms:rights>${rights}</dcterms:rights><pgterms:file rdf:about="https://pg.test/92104.txt.utf-8"></pgterms:file></pgterms:ebook></rdf:RDF>`;
   setClassicsFetcher(async (url) => {
+    // Gutendex is down for these two; gutenberg.org's own record is used instead.
+    if (/gutendex.*\/(92104|92105)\//.test(url)) throw new Error('timeout');
+    if (url.endsWith('pg92104.rdf')) return { ok: true, status: 200, text: async () => rdf('Public domain in the USA.') };
+    if (url.endsWith('pg92105.rdf')) return { ok: true, status: 200, text: async () => rdf('Copyrighted. Read the copyright notice inside this book for details.') };
     const meta = url.match(/books\/(\d+)\//);
     if (meta) return books[meta[1]] ? { ok: true, status: 200, json: async () => books[meta[1]] } : { ok: false, status: 404 };
     return { ok: true, status: 200, text: async () => text };
@@ -2079,6 +2085,9 @@ test('classics reader: chapters, copyright guard, progress that has to be read i
     assert.equal((await anon.get('/api/novels/classics/92101/parts/3')).status, 404);
     assert.equal((await anon.get('/api/novels/classics/92102')).status, 404, 'books still in copyright are never served');
     assert.equal((await anon.get('/api/novels/classics/92103')).status, 404);
+    const fallback = (await anon.get('/api/novels/classics/92104')).json;
+    assert.deepEqual([fallback.data.title, fallback.data.authors[0], fallback.data.parts.length], ['Fallback Classic', 'Author, B', 3], 'readable while Gutendex is down');
+    assert.equal((await anon.get('/api/novels/classics/92105')).status, 404, 'the fallback keeps the copyright guard');
     assert.equal((await anon.post('/api/novels/classics/92101/progress', { csrf: true, body: { part: 0 } })).status, 401);
 
     const reader = await registeredAgent();
