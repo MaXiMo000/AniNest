@@ -2134,16 +2134,70 @@ test('classics reader: chapters, copyright guard, progress that has to be read i
     assert.equal((await go(2)).justFinished, false, 'only the first time');
     const shelf = (await reader.agent.get('/api/novels/classics/reading')).json;
     assert.deepEqual([shelf.finished, shelf.list[0].title, shelf.list[0].authors[0]], [1, 'Test Classic', 'Writer, A']);
+    assert.equal(shelf.streak, 1, 'reading today starts a streak');
+    assert.equal(done.firstToday, false, 'only the first chapter of the day counts as a new day');
 
     const profile = (await reader.agent.get(`/api/users/${reader.user.username}`)).json;
     assert.ok(profile.xp.breakdown.some((r) => r.id === 'classics' && r.xp === 40), 'a finished classic earns XP');
     assert.ok(profile.badges.some((b) => b.id === 'classics-bronze'), 'and the first Bookworm badge');
 
-    assert.equal((await reader.agent.get('/api/auth/export')).json.classic_reads.length, 1);
+    const exported = (await reader.agent.get('/api/auth/export')).json;
+    assert.deepEqual([exported.classic_reads.length, exported.classic_days.length], [1, 1]);
+
+    // Audiobook: only a LibriVox reading of this exact edition, only archive.org audio.
+    const { setNovelSources } = await import('../src/routes/novels.js');
+    let asked = '';
+    setNovelSources({
+      librivox: async (url) => {
+        asked = url;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            books: [
+              { url_text_source: 'http://www.gutenberg.org/etext/921010', url_librivox: 'https://librivox.org/wrong/', sections: [{ title: 'No', listen_url: 'https://archive.org/download/no/no.mp3' }] },
+              {
+                url_text_source: 'https://www.gutenberg.org/ebooks/92101', url_librivox: 'https://librivox.org/test-classic/', totaltime: '1:02:03',
+                sections: [
+                  { title: 'One', listen_url: 'http://www.archive.org/download/test/one_64kb.mp3', playtime: '600' },
+                  { title: 'Elsewhere', listen_url: 'https://evil.example/two.mp3', playtime: '600' },
+                ],
+              },
+            ],
+          }),
+        };
+      },
+    });
+    try {
+      const audio = (await anon.get('/api/novels/classics/92101/audio')).json.data;
+      assert.ok(asked.includes('title=%5ETest+Classic'), 'searched by the book title');
+      assert.equal(audio.librivoxUrl, 'https://librivox.org/test-classic/', 'not the edition whose number only starts the same');
+      assert.deepEqual(audio.sections, [{ title: 'One', url: 'https://www.archive.org/download/test/one_64kb.mp3', seconds: 600 }], 'https, archive.org only');
+    } finally {
+      setNovelSources(null);
+    }
+
+    // Share preview for a chapter and a quote.
+    const preview = await fetch(`${baseUrl}/api/share/classic/92101?part=2&quote=%3Cb%3EHello%3C%2Fb%3E`).then((r) => r.text());
+    assert.ok(preview.includes('#/read/92101?part=2'));
+    assert.ok(preview.includes('“&lt;b&gt;Hello&lt;/b&gt;”'), 'the quote is shown, escaped');
+    assert.equal((await anon.get('/api/share/manga/not-an-id')).status, 404);
   } finally {
     setClassicsFetcher(null);
     clearBooks();
   }
+});
+
+test('reading streaks count consecutive days, and trust the reader’s day only near the server’s', async () => {
+  const { streakFrom, readingDay } = await import('../src/lib/readingStreak.js');
+  assert.equal(streakFrom(['2026-11-18', '2026-11-17', '2026-11-15'], '2026-11-18'), 2);
+  assert.equal(streakFrom(['2026-11-17', '2026-11-16'], '2026-11-18'), 2, 'not lost until a whole day is missed');
+  assert.equal(streakFrom(['2026-11-16'], '2026-11-18'), 0);
+  assert.equal(streakFrom(['2026-02-28', '2026-03-01'], '2026-03-01'), 2, 'across a month end');
+  const now = Date.parse('2026-11-18T12:00:00Z');
+  assert.deepEqual(['2026-11-17', '2026-11-18', '2026-11-19'].map((d) => readingDay(d, now)), ['2026-11-17', '2026-11-18', '2026-11-19']);
+  assert.equal(readingDay('2026-11-25', now), '2026-11-18', 'a far-off day falls back to the server date');
+  assert.equal(readingDay('nonsense', now), '2026-11-18');
 });
 
 test('email template: HTML and text from one description, user text escaped', async () => {

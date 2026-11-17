@@ -43,7 +43,13 @@ Full stack with no framework on either side: a Vite + vanilla JS single-page app
 - Light novels from AniList: browse, detail pages, a reading list with volume progress, reviews and official reading links.
 - **Classics reader**: tens of thousands of public-domain books from Project Gutenberg, filtered by topic, era and language,
   read inside AniNest chapter by chapter, with text size and font settings and your place saved. Finishing a classic earns
-  XP and the Bookworm badges. Only books Gutenberg lists as out of copyright are served.
+  XP and the Bookworm badges, and reading on consecutive days builds a streak. Only books Gutenberg lists as out of
+  copyright are served.
+  - **Listen**: free LibriVox audiobooks recorded from the same edition, streamed from archive.org.
+  - **Quote cards**: select a passage to share it as an image with a link back to the chapter.
+  - **Offline**: save a whole book in the installed app and read it without a connection.
+  - **Anime and the classics**: anime made from public-domain books link to "Read the original" (Hellsing to *Dracula*,
+    Gankutsuou to *The Count of Monte Cristo*, Bungo Stray Dogs to the writers it names), and the reader links back.
 - Visual novels from VNDB, including complete official freeware.
 
 **Community and gamification**
@@ -78,7 +84,7 @@ Also: installable as a PWA, works on phones, and the site stays up when an upstr
 | Frontend | Vite, vanilla JS modules, hash router, hand-written CSS, `vite-plugin-pwa` |
 | Backend | Node 22+, Express, `zod`, `helmet`, `express-rate-limit`, `bcryptjs`, `pino` |
 | Database | SQLite through `@libsql/client`: a local file in development, [Turso](https://turso.tech) in production |
-| Data | [AniList](https://anilist.co), [Jikan](https://jikan.moe), [MangaDex](https://mangadex.org), [AnimeThemes](https://animethemes.moe), [trace.moe](https://trace.moe), YouTube Data API |
+| Data | [AniList](https://anilist.co), [Jikan](https://jikan.moe), [MangaDex](https://mangadex.org), [AnimeThemes](https://animethemes.moe), [trace.moe](https://trace.moe), [Project Gutenberg](https://www.gutenberg.org), [LibriVox](https://librivox.org), YouTube Data API |
 | Hosting | [Render](https://render.com) Blueprint (`render.yaml`): a static site plus a web service |
 
 ## Project structure
@@ -129,7 +135,7 @@ The frontend unit tests cover the games' pure logic (answer matching, seeded dec
 The browser tests play every game in Chromium against a mocked API (`frontend/e2e/mockApi.js`), so they need no backend. Run
 `npx playwright install chromium` once first.
 
-94 backend integration tests run against a real, temporary database, using only Node's built-in `node:test` and `fetch`. They cover the
+The backend integration tests run against a real, temporary database, using only Node's built-in `node:test` and `fetch`. They cover the
 auth lifecycle, CSRF, validation, SQL-injection and XSS attempts, rate limits, per-account isolation, favorites, reviews, manga,
 free-episode submission and review, the import title parser and matcher, admin gating, XP, game-run checks, notifications and the
 persistent cache. Live third-party APIs are deliberately not called, so the suite stays deterministic and doesn't use up shared quotas.
@@ -158,4 +164,5 @@ See [DEPLOY.md](DEPLOY.md). In short: create a Turso database, then create a Ren
 
 AniNest links to and embeds only official sources: trailers and free episodes from official, licensed YouTube channels,
 and "where to watch/read" links to licensed platforms. Anime data comes from AniList and MyAnimeList (via Jikan), manga data from
-MangaDex, themes from AnimeThemes and scene search from trace.moe. The games are built from that same data and reproduce no character art.
+MangaDex, themes from AnimeThemes and scene search from trace.moe. Public-domain books come from Project Gutenberg and their
+audiobooks from LibriVox volunteers. The games are built from that same data and reproduce no character art.

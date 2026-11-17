@@ -2941,3 +2941,20 @@ label.btn-pow { cursor: pointer; }
 @media (max-width: 640px) {
   .filter-panel[open] > .filter-summary { display: inline-block; background: var(--bg2); }
 }
+
+/* Anime <-> public-domain classics (lib/classicLinks.js) */
+.classic-link-row { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.classic-link { display: flex; gap: 12px; align-items: center; padding: 10px; background: var(--panel); color: var(--text); text-decoration: none; border: var(--border-w) solid var(--ink); border-radius: 14px; box-shadow: 4px 4px 0 var(--ink); transition: transform 0.12s; }
+.classic-link:hover { transform: translate(-2px, -2px); }
+.classic-link img { width: 52px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; border: 2px solid var(--ink); background: var(--ink); flex: none; }
+.classic-link span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.classic-link strong { color: var(--text-yellow); line-height: 1.2; }
+.classic-link small { color: var(--muted); font-weight: 700; }
+.reader-anime { font-weight: 700; }
+.reader-anime .muted-note { display: block; font-weight: 600; }
+.reader-audio { display: grid; gap: 8px; margin: 12px 0; padding: 12px; background: var(--panel); border: var(--border-w) solid var(--ink); border-radius: 14px; }
+.reader-audio[hidden] { display: none; }
+.reader-audio audio { width: 100%; }
+.reader-quote-btn { position: fixed; z-index: 50; box-shadow: 3px 3px 0 var(--ink); }
+.reader-quote-btn[hidden] { display: none; }
+.reader-tip { text-align: center; }

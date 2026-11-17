@@ -5,6 +5,7 @@ import { mangaImg } from '../lib/mangaImage.js';
 import { MangaReviews } from '../lib/reviewsApi.js';
 import { createReviewsUi } from '../lib/reviewsUi.js';
 import { navigate } from '../lib/router.js';
+import { shareButtonHTML, wireShare } from '../lib/share.js';
 
 // The manga analog of details.js's watchBoxHTML fallback branch. There's no
 // reliable API mapping an arbitrary manga to its official MANGA Plus/VIZ/
@@ -67,6 +68,7 @@ export async function renderMangaDetail(root, id) {
           </div>
           <div class="hero-actions">
             <button class="btn-pow btn-pow--pink" id="manga-fav-toggle">${MangaFavorites.has(m.id) ? '💖 FAVORITED' : '🤍 ADD TO FAVORITES'}</button>
+            ${shareButtonHTML()}
           </div>
           ${readStatusHTML(m.id)}
         </div>
@@ -87,6 +89,7 @@ export async function renderMangaDetail(root, id) {
     `;
 
     mangaReviews.wire(root, m.id);
+    wireShare(root, { kind: 'manga', id: m.id, title: `${m.title} — AniNest` });
 
     root.querySelector('#manga-fav-toggle')?.addEventListener('click', async (e) => {
       const btn = e.target;

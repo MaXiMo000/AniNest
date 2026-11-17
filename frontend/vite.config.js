@@ -36,9 +36,9 @@ export default defineConfig({
       },
       // Default generateSW strategy: precache the built app shell (HTML/CSS/JS,
       // hashed filenames handled automatically) so the shell loads offline.
-      // No runtime caching is configured for /api/* on purpose - this is an
-      // offline SHELL, not an offline data cache, and serving stale anime
-      // data while looking live would be actively misleading.
+      // The only API data cached is public-domain book text, which never
+      // changes; anime and manga data stay network-only, since stale data
+      // that looks live would be misleading.
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg}'],
         // The plain registerSW.js script (see injectRegister above) never
@@ -50,6 +50,22 @@ export default defineConfig({
         // Push alert handlers (public/push-sw.js), used when the server has
         // VAPID keys and the user turns alerts on from the notifications page.
         importScripts: ['push-sw.js'],
+        runtimeCaching: [
+          {
+            // Chapters: fixed text, so served from the cache once fetched
+            // (the reader's "Offline" button fetches every chapter).
+            urlPattern: ({ url }) => /\/api\/novels\/classics\/\d+\/parts\/\d+$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: { cacheName: 'aninest-classics-text', expiration: { maxEntries: 3000, maxAgeSeconds: 90 * 24 * 60 * 60 } },
+          },
+          {
+            // A book's chapter list: from the network when online (it carries
+            // your saved place), from the cache when offline.
+            urlPattern: ({ url }) => /\/api\/novels\/classics\/\d+$/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: { cacheName: 'aninest-classics-books', networkTimeoutSeconds: 8, expiration: { maxEntries: 100, maxAgeSeconds: 90 * 24 * 60 * 60 } },
+          },
+        ],
       },
     }),
   ],

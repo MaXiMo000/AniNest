@@ -8,7 +8,8 @@ import { anilistNovelSearch, anilistNovelById } from '../lib/anilist.js';
 import { GENRE_NAMES } from '../lib/vibeParser.js';
 import { httpUrl } from './favorites.js';
 import { catalogEntry, getBook } from '../lib/classics.js';
-import { searchCatalog } from '../lib/classicsCatalog.js';
+import { searchCatalog, catalogBook } from '../lib/classicsCatalog.js';
+import { readingDay, streakFrom } from '../lib/readingStreak.js';
 
 // Light novels: catalog from AniList (format NOVEL, ids are AniList ids),
 // a reading list with volume progress, reviews, and public-domain classics
@@ -26,10 +27,10 @@ const idOf = (raw) => {
   return Number.isInteger(id) && id > 0 && id < 1e9 ? id : null;
 };
 
-let sources = { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }) };
+let sources = { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }), librivox: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }) };
 // Test hook: the suite never calls AniList or Gutendex.
 export function setNovelSources(s) {
-  sources = s ? { ...sources, ...s } : { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }) };
+  sources = s ? { ...sources, ...s } : { search: anilistNovelSearch, byId: anilistNovelById, gutendex: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }), librivox: (url) => fetch(url, { signal: AbortSignal.timeout(15000) }) };
 }
 
 const SORTS = { popular: 'POPULARITY_DESC', score: 'SCORE_DESC', trending: 'TRENDING_DESC', newest: 'START_DATE_DESC' };
@@ -108,8 +109,13 @@ novelsRouter.get('/classics/reading', requireAuth, asyncRoute(async (req, res) =
     id: Number(r.book_id), title: r.title, authors: r.authors ? r.authors.split('|') : [], image: r.image,
     part: Number(r.part), maxPart: Number(r.max_part), parts: Number(r.parts), finishedAt: r.finished_at, updatedAt: r.updated_at,
   }));
-  res.json({ list, finished: list.filter((b) => b.finishedAt).length });
+  res.json({ list, finished: list.filter((b) => b.finishedAt).length, streak: await streakOf(req.user.id, readingDay(req.query.day)) });
 }));
+
+async function streakOf(userId, today) {
+  const rows = await db.execute({ sql: 'SELECT day FROM classic_days WHERE user_id = ? ORDER BY day DESC LIMIT 400', args: [userId] });
+  return streakFrom(rows.rows.map((r) => r.day), today);
+}
 
 const bookId = (raw) => {
   const id = idOf(raw);
@@ -145,7 +151,7 @@ novelsRouter.get('/classics/:id/parts/:n', asyncRoute(async (req, res) => {
   res.json({ index: n, title: parts[n].title, words: parts[n].words, paragraphs: parts[n].paragraphs });
 }));
 
-const progressSchema = z.object({ part: z.number().int().min(0).max(5000) });
+const progressSchema = z.object({ part: z.number().int().min(0).max(5000), day: z.string().max(10).optional() });
 
 // Saves where you are. max_part moves forward only one part at a time, and
 // the book counts as finished when that reaches the last part.
@@ -166,7 +172,43 @@ novelsRouter.post('/classics/:id/progress', requireAuth, asyncRoute(async (req, 
             finished_at = excluded.finished_at, updated_at = datetime('now')`,
     args: [req.user.id, id, meta.title.slice(0, 300), meta.authors.join('|').slice(0, 300), meta.image, part, maxPart, parts.length, finishedAt],
   });
-  res.json({ mine: { part, maxPart, finishedAt }, justFinished: Boolean(finishedAt && !prev?.finishedAt) });
+  const today = readingDay(parsed.data.day);
+  const fresh = await db.execute({ sql: 'INSERT OR IGNORE INTO classic_days (user_id, day) VALUES (?, ?)', args: [req.user.id, today] });
+  res.json({
+    mine: { part, maxPart, finishedAt },
+    justFinished: Boolean(finishedAt && !prev?.finishedAt),
+    streak: await streakOf(req.user.id, today),
+    firstToday: fresh.rowsAffected > 0,
+  });
+}));
+
+// A free LibriVox audiobook recorded from this exact Gutenberg edition
+// (LibriVox records which text each reading used). Audio streams from
+// archive.org; null when there is no matching recording.
+const GUTENBERG_SOURCE = /gutenberg\.org\/(?:ebooks|etext|files)\/(\d+)(?:\D|$)/;
+const ARCHIVE_AUDIO = /^https:\/\/(?:www\.)?archive\.org\/download\/[^?#]+\.mp3$/i;
+
+novelsRouter.get('/classics/:id/audio', asyncRoute(async (req, res) => {
+  const id = bookId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'Invalid book id.' });
+  const data = await cached(`novels:classics:audio:${id}`, 24 * 60 * 60 * 1000, async () => {
+    const title = catalogBook(id)?.title || (await getBook(id)).meta.title;
+    const lead = title.split(/[;:,(]/)[0].trim();
+    if (!lead) return null;
+    const params = new URLSearchParams({ title: `^${lead}`, format: 'json', extended: '1', limit: '50' });
+    const upstream = await sources.librivox(`https://librivox.org/api/feed/audiobooks/?${params}`);
+    if (upstream.status === 404) return null; // LibriVox's answer for "no matches"
+    if (!upstream.ok) throw Object.assign(new Error('LibriVox unavailable'), { status: 502 });
+    const match = ((await upstream.json()).books || []).find((b) => Number(GUTENBERG_SOURCE.exec(b.url_text_source || '')?.[1]) === id);
+    if (!match) return null;
+    const sections = (match.sections || [])
+      .map((s) => ({ title: String(s.title || '').slice(0, 200), url: String(s.listen_url || '').replace(/^http:/, 'https:'), seconds: Number(s.playtime) || 0 }))
+      .filter((s) => ARCHIVE_AUDIO.test(s.url));
+    if (!sections.length) return null;
+    return { librivoxUrl: match.url_librivox, totalTime: match.totaltime || null, sections };
+  });
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.json({ data });
 }));
 
 novelsRouter.delete('/classics/:id/progress', requireAuth, asyncRoute(async (req, res) => {

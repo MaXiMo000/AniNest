@@ -3,6 +3,8 @@ import { db } from '../lib/db.js';
 import * as animeSource from '../lib/animeSource.js';
 import { logger } from '../lib/logger.js';
 import { anilistNovelById } from '../lib/anilist.js';
+import { mangaById } from '../lib/mangadex.js';
+import { catalogBook } from '../lib/classicsCatalog.js';
 
 // Link-preview pages. The SPA uses hash routes (#/anime/123), and link
 // crawlers (WhatsApp, Discord, X...) never see anything after the #, so a
@@ -104,6 +106,42 @@ shareRouter.get('/list/:id', async (req, res) => {
     title: `${l.name} — a list by ${l.username} on AniNest`,
     description: clip(l.description || `${count} anime, picked by ${l.username}.`, 200),
     image: l.image || null,
+    hash,
+  }));
+});
+
+const MANGADEX_COVER = /^https:\/\/uploads\.mangadex\.org\/covers\/([0-9a-f-]{36})\/([0-9a-f-]{36}\.[a-z]+?)(?:\.\d+\.jpg)?$/i;
+
+shareRouter.get('/manga/:id', async (req, res) => {
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(404).json({ error: 'Not found.' });
+  const hash = `#/manga/${id}`;
+  try {
+    const { data: m } = await mangaById(id);
+    // MangaDex refuses hotlinked covers, so the preview uses AniNest's cover proxy.
+    const cover = MANGADEX_COVER.exec(m.coverImage || '');
+    const image = cover ? `${origin()}/api/manga/cover/${cover[1]}/${cover[2]}` : null;
+    send(res, page({ title: `${m.title} (manga) — AniNest`, description: clip(m.description || 'Track it, review it and find where to read it officially.', 200), image, hash }));
+  } catch (err) {
+    if (!err.status) logger.warn({ err, id }, 'share preview: manga lookup failed');
+    send(res, page({ title: 'AniNest', description: 'Your anime & manga home base.', hash }));
+  }
+});
+
+// A public-domain classic in the reader. ?part=N shares a chapter, and
+// ?quote= a short passage (shown as the preview text).
+shareRouter.get('/classic/:id', (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Not found.' });
+  const part = Number(req.query.part);
+  const hash = `#/read/${id}${Number.isInteger(part) && part > 0 && part < 10000 ? `?part=${part}` : ''}`;
+  const b = catalogBook(id);
+  const quote = typeof req.query.quote === 'string' ? clip(req.query.quote, 220) : '';
+  const by = b?.authors.length ? ` by ${b.authors.join(', ')}` : '';
+  send(res, page({
+    title: b ? `${b.title}${by} — read free on AniNest` : 'A free classic on AniNest',
+    description: quote ? `“${quote}”` : 'A public-domain classic, free to read chapter by chapter on AniNest.',
+    image: b?.image || null,
     hash,
   }));
 });

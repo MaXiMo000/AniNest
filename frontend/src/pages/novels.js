@@ -6,6 +6,7 @@ import { createReviewsUi } from '../lib/reviewsUi.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
 import { filterPanelHTML, selectHTML, setResultCount, wireFilterPanel } from '../lib/filters.js';
 import { readingList } from '../lib/classicsProgress.js';
+import { animeToPageHTML } from '../lib/classicLinks.js';
 
 // Light novels (backend/src/routes/novels.js): browse (#/novels), one novel
 // (#/novel/:id), your reading list (#/novel-list) and free legal reading
@@ -314,7 +315,7 @@ const CLASSIC_ERAS = [['', 'Any Era'], ['before1800', 'Before 1800'], ['1800s', 
 const CLASSIC_LANGS = [['en', 'English'], ['fr', 'French'], ['de', 'German'], ['es', 'Spanish'], ['it', 'Italian'], ['pt', 'Portuguese'], ['ja', 'Japanese']];
 const BOOKWORM_STEPS = [[1, 'First Chapter Closed'], [5, 'Bookworm'], [15, 'Library Legend']];
 
-function shelfHTML({ list, finished, local }) {
+function shelfHTML({ list, finished, local, streak = 0 }) {
   const reading = list.filter((b) => !b.finishedAt).slice(0, 8);
   const next = BOOKWORM_STEPS.find(([n]) => finished < n);
   const goal = local
@@ -325,7 +326,7 @@ function shelfHTML({ list, finished, local }) {
     <section class="section">
       <div class="section-head">
         <h2 class="section-title">📖 Continue Reading</h2>
-        <span class="section-sub">${goal}</span>
+        <span class="section-sub">${streak > 1 ? `🔥 ${streak}-day reading streak · ` : ''}${goal}</span>
       </div>
       ${reading.length ? `<div class="card-grid">${reading.map((b) => {
     const pct = Math.round(((b.part + 1) / b.parts) * 100);
@@ -383,6 +384,7 @@ export async function renderNovelFree(root, params) {
       ${filterPanelHTML(filters.map(([id, label, key, opts]) => selectHTML(id, label, opts, state[key])).join(''), active, '#/novels/free')}
       <div id="classics">${skeletonGrid(6)}</div>
     </section>
+    ${state.q || state.topic || state.era || state.page > 1 ? '' : animeToPageHTML()}
     ${FREE_SITES.map((g) => `
       <section class="section">
         <div class="section-head"><h2 class="section-title">${escapeHtml(g.group)}</h2></div>

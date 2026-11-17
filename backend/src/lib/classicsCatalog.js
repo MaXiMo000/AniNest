@@ -135,6 +135,12 @@ export function searchCatalog({ q = '', topic = '', yearStart = null, yearEnd = 
   };
 }
 
+// One book's list entry, or null (not in the catalog, or not loaded yet).
+export function catalogBook(id) {
+  const b = catalog?.books.find((x) => x.id === Number(id));
+  return b ? cardEntry(b) : null;
+}
+
 export function setCatalog(csvText, topIds) {
   catalog = csvText == null ? null : { books: buildCatalog(csvText, topIds), loadedAt: Date.now() };
 }

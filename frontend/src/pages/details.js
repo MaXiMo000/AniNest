@@ -9,6 +9,7 @@ import { WatchSources } from '../lib/watchSourcesApi.js';
 import { freeWatchSectionHTML, wireFreeWatch } from '../lib/freeWatch.js';
 import { loadEpisodeGuide } from '../lib/episodeGuide.js';
 import { loadContinuation } from '../lib/continuation.js';
+import { readOriginalHTML } from '../lib/classicLinks.js';
 import { shareButtonHTML, wireShare } from '../lib/share.js';
 import { addToListButtonHTML, wireAddToList } from './lists.js';
 import { apiGet } from '../lib/http.js';
@@ -336,6 +337,7 @@ export async function renderDetails(root, id) {
       </div>
 
       <div id="continuation-slot"></div>
+      ${readOriginalHTML(a.mal_id)}
 
       ${charactersSectionHTML(characters)}
 

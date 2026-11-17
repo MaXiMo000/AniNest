@@ -665,6 +665,12 @@ await db.executeMultiple(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, book_id)
   );
+  -- Days with at least one chapter read, for reading streaks (lib/readingStreak.js).
+  CREATE TABLE IF NOT EXISTS classic_days (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    PRIMARY KEY (user_id, day)
+  );
 `);
 
 // Email verification (lib/accountMail.js). Accounts from before this start
