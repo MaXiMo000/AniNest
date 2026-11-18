@@ -29,7 +29,7 @@ In the Render dashboard choose **New -> Blueprint** and select this repository. 
 | Variable | Service | Required | Value |
 |---|---|---|---|
 | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` | backend | yes | from step 1 |
-| `ADMIN_USERNAMES` | backend | no | comma-separated usernames to make admins (see step 4) |
+| `ADMIN_USER_IDS` | backend | no | comma-separated user ids to make admins — preferred (see step 4) |
 | `YOUTUBE_API_KEY` | backend | no | enables the admin page's channel import and search (see step 5) |
 | `TURNSTILE_SECRET_KEY` | backend | no | Cloudflare Turnstile secret, for a bot check on registration |
 | `VITE_TURNSTILE_SITE_KEY` | frontend | no | the matching Turnstile site key |
@@ -53,11 +53,21 @@ your services different URLs:
 
 ## 4. Make yourself an admin
 
-The admin role is applied at every boot from `ADMIN_USERNAMES`, and only to accounts that already exist:
+The admin role is reconciled from configuration on every boot: listed accounts are made admins and any account no longer
+listed has it removed. Prefer `ADMIN_USER_IDS` (numeric ids) over `ADMIN_USERNAMES`: a username in the list that nobody has
+registered yet would make whoever registers it an admin, while an id can't be claimed that way.
 
 1. Register your account on the live site.
-2. Set `ADMIN_USERNAMES` on the backend to your username. Changing a variable restarts the service.
-3. Log in again. **Watch-Source Curation** now appears in the **More** menu (`#/admin/watch-sources`).
+2. Find your user id. In the [Turso](https://turso.tech) dashboard, open your database's shell and run:
+   ```sql
+   SELECT id, username FROM users WHERE username = 'yourusername';
+   ```
+3. Set `ADMIN_USER_IDS` on the backend to that id (comma-separated for more than one). Changing a variable restarts the
+   service. Leave `ADMIN_USERNAMES` unset.
+4. Log in again. **Watch-Source Curation** now appears in the **More** menu (`#/admin/watch-sources`).
+
+`ADMIN_USERNAMES` still works the same way if you'd rather use names, but then remove any name nobody has registered yet —
+the backend logs a warning naming them at boot.
 
 ## 5. YouTube Data API key (optional)
 
