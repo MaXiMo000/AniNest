@@ -216,6 +216,11 @@ test('GET sets a CSRF cookie and exposes the matching token via response header'
   assert.equal(agent.getCsrfToken(), agent.jar.get('aninest_csrf'));
 });
 
+test('account-sensitive responses are not cacheable', async () => {
+  const res = await fetch(`${baseUrl}/api/auth/me`);
+  assert.equal(res.headers.get('cache-control'), 'no-store', '/api/auth/* must be no-store');
+});
+
 test('mutating request without CSRF header is rejected', async () => {
   const agent = makeAgent();
   await agent.get('/api/health'); // picks up the CSRF cookie, but we won't send it back
@@ -1976,9 +1981,12 @@ test('custom lists: create, add, note, reorder, share, privacy, delete', async (
   assert.deepEqual([seen.name, seen.owner, seen.mine, seen.items.length], ['Comfort shows', owner.user.username, false, 2]);
   const theirs = (await anon.get(`/api/lists/user/${owner.user.username}`)).json.lists;
   assert.deepEqual(theirs.map((l) => [l.name, l.count, l.covers]), [['Comfort shows', 2, ['https://img.example/1.jpg']]]);
-  const preview = await fetch(`${baseUrl}/api/share/list/${id}`).then((r) => r.text());
+  const previewRes = await fetch(`${baseUrl}/api/share/list/${id}`);
+  const preview = await previewRes.text();
   assert.match(preview, /Comfort shows — a list by/);
   assert.match(preview, /og:image" content="https:\/\/img.example\/1.jpg"/);
+  // The API-served HTML carries a locked-down CSP so it can never run script.
+  assert.match(previewRes.headers.get('content-security-policy') || '', /default-src 'none'/, 'share HTML has a restrictive CSP');
 
   await post(owner, '/api/auth/privacy', { private: true });
   assert.equal((await anon.get(`/api/lists/${id}`)).status, 404, 'a private profile hides its lists');

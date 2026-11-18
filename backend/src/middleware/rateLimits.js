@@ -28,6 +28,18 @@ export const authLimiter = () => rateLimit({
   message: { error: 'Too many attempts. Try again in a few minutes.' },
 });
 
+// The crash-report sink is public and unauthenticated (by design — most real
+// frontend errors happen to logged-out visitors). A dedicated, tighter budget
+// keeps someone from flooding the logs through it, without eating into the
+// general budget a normal browsing session needs.
+export const clientErrorLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.CLIENT_ERROR_RATE_LIMIT) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many reports.' },
+});
+
 // Screenshot search uploads up to 5 MB per request and forwards it to
 // trace.moe, whose free quota is per calling IP - ours, shared by every
 // visitor. A few searches a minute is plenty for a person.

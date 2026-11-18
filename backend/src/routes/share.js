@@ -48,7 +48,14 @@ function page({ title, description, image, hash }) {
 }
 
 function send(res, html) {
-  res.set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+  res.set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'public, max-age=3600',
+    // These pages only carry static text and a redirect; nothing should ever
+    // load or execute from them. A locked-down CSP is a backstop so that even
+    // a future escaping slip here can't become script execution.
+    'Content-Security-Policy': "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  });
   res.send(html);
 }
 

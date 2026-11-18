@@ -18,6 +18,8 @@ possible, and a fix will be released before any details are made public.
 - Every write is validated, every SQL value is a bound parameter, and every user-owned row is checked against the signed-in user.
 - CORS allows only the site's own origin; security headers and a strict Content-Security-Policy are set on every page.
 - Submitted video links are reduced to a video id and embedded only from official players; no raw URL is stored or embedded.
+- Admin access is granted only from server configuration and reconciled on every deploy — it can't be claimed through the app, and removing someone from the configuration revokes it.
+- Account, session and one-time-secret responses are marked non-cacheable, and the preview pages the API serves carry their own locked-down Content-Security-Policy.
 - Ranked game rounds are dealt and scored on the server.
 - Errors returned to visitors are generic; details go only to the server log.
 - Development and test runs cannot reach the production database, and secrets live only in environment settings.

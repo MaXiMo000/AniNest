@@ -21,6 +21,15 @@ import { throttleKey, lockedFor, recordFailure, clearFailures } from '../lib/log
 
 export const authRouter = Router();
 
+// Everything here is account-sensitive — the signed-in user object, the data
+// export, and one-time secrets (a fresh TOTP secret, recovery codes). None of
+// it should sit in a browser or shared/proxy cache, so no response under
+// /api/auth is cacheable.
+authRouter.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 const isProd = process.env.NODE_ENV === 'production';
 const cookieOpts = () => ({
   httpOnly: true,

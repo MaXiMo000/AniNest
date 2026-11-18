@@ -9,7 +9,7 @@ import { logger } from './lib/logger.js';
 import { tidewatchMetrics } from './lib/tidewatch-metrics.js';
 import { attachUser } from './middleware/session.js';
 import { ensureCsrfCookie, verifyCsrf } from './middleware/csrf.js';
-import { generalLimiter, authLimiter, screenshotLimiter } from './middleware/rateLimits.js';
+import { generalLimiter, authLimiter, screenshotLimiter, clientErrorLimiter } from './middleware/rateLimits.js';
 import { db } from './lib/db.js';
 import { authRouter } from './routes/auth.js';
 import { favoritesRouter } from './routes/favorites.js';
@@ -149,7 +149,7 @@ export function createApp() {
   app.use('/api/anime', animeRouter);
   app.use('/api/reviews', reviewsRouter);
   app.use('/api/users', usersRouter);
-  app.use('/api/client-errors', clientErrorsRouter);
+  app.use('/api/client-errors', clientErrorLimiter, clientErrorsRouter);
   app.use('/api/games', gamesRouter);
   app.use('/api/recommendations', recommendationsRouter);
   app.use('/api/studios', studiosRouter);

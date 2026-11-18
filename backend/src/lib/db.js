@@ -829,24 +829,39 @@ try {
 const splitList = (raw) => (raw || '').split(',').map((s) => s.trim()).filter(Boolean);
 const adminUsernames = splitList(process.env.ADMIN_USERNAMES);
 const adminIds = splitList(process.env.ADMIN_USER_IDS).map(Number).filter((n) => Number.isInteger(n) && n > 0);
-if (adminUsernames.length) {
-  const placeholders = adminUsernames.map(() => '?').join(',');
-  await db.execute({
-    sql: `UPDATE users SET is_admin = 1 WHERE username IN (${placeholders})`,
-    args: adminUsernames,
-  });
-  const found = await db.execute({ sql: `SELECT username FROM users WHERE username IN (${placeholders})`, args: adminUsernames });
-  const existing = new Set(found.rows.map((r) => r.username));
-  const missing = adminUsernames.filter((u) => !existing.has(u));
-  if (missing.length) {
-    logger.warn({ missing }, 'ADMIN_USERNAMES lists names nobody has registered; whoever registers them becomes admin on the next boot. Remove them or use ADMIN_USER_IDS.');
+// The env lists are the single source of truth for who is an admin, and they
+// are reconciled on every boot: listed accounts are granted is_admin, and any
+// account that still has it but is no longer listed has it revoked. Without
+// that revoke step, removing someone from the list left them an admin forever.
+// Usernames match case-insensitively, the same way login resolves them, so a
+// capitalisation slip can't silently drop (or, via a look-alike, widen) admin.
+// When neither list is set, nothing is touched — an empty config is "no change",
+// never "demote every admin", so a misconfigured deploy can't wipe admin access.
+if (adminUsernames.length || adminIds.length) {
+  const clauses = [];
+  const args = [];
+  if (adminUsernames.length) {
+    clauses.push(`username COLLATE NOCASE IN (${adminUsernames.map(() => '?').join(',')})`);
+    args.push(...adminUsernames);
   }
-}
-if (adminIds.length) {
-  await db.execute({
-    sql: `UPDATE users SET is_admin = 1 WHERE id IN (${adminIds.map(() => '?').join(',')})`,
-    args: adminIds,
-  });
+  if (adminIds.length) {
+    clauses.push(`id IN (${adminIds.map(() => '?').join(',')})`);
+    args.push(...adminIds);
+  }
+  const isAdmin = clauses.join(' OR ');
+  await db.batch([
+    { sql: `UPDATE users SET is_admin = 1 WHERE (${isAdmin}) AND is_admin = 0`, args },
+    { sql: `UPDATE users SET is_admin = 0 WHERE is_admin = 1 AND NOT (${isAdmin})`, args },
+  ], 'write');
+  if (adminUsernames.length) {
+    const ph = adminUsernames.map(() => '?').join(',');
+    const found = await db.execute({ sql: `SELECT username FROM users WHERE username COLLATE NOCASE IN (${ph})`, args: adminUsernames });
+    const existing = new Set(found.rows.map((r) => r.username.toLowerCase()));
+    const missing = adminUsernames.filter((u) => !existing.has(u.toLowerCase()));
+    if (missing.length) {
+      logger.warn({ missing }, 'ADMIN_USERNAMES lists names nobody has registered; whoever registers them becomes admin on the next boot. Remove them or use ADMIN_USER_IDS.');
+    }
+  }
 }
 
 export default db;
