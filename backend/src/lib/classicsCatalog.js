@@ -1,5 +1,6 @@
 import { gunzipSync } from 'node:zlib';
 import { logger } from './logger.js';
+import { GUTENBERG_MIRROR, coverUrl } from './classics.js';
 
 // AniNest's own copy of the Project Gutenberg catalog, so classics search
 // and filters don't depend on a third-party API. Project Gutenberg publishes
@@ -8,7 +9,11 @@ import { logger } from './logger.js';
 // The whole catalog is kept in memory (~75k rows, tens of MB); it can move
 // into SQLite with full-text search if the instance gets tight on memory.
 
-const CATALOG_URL = 'https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz';
+// The main site first, then Gutenberg's own file server (see classics.js).
+const CATALOG_URLS = [
+  'https://www.gutenberg.org/cache/epub/feeds/pg_catalog.csv.gz',
+  `${GUTENBERG_MIRROR}/cache/epub/feeds/pg_catalog.csv.gz`,
+];
 const TOP_URL = 'https://www.gutenberg.org/browse/scores/top';
 const REFRESH_MS = 24 * 60 * 60 * 1000;
 const RETRY_MS = 15 * 60 * 1000;
@@ -104,7 +109,7 @@ function cardEntry(b) {
     title: b.title,
     authors: b.authors.map((a) => a.name),
     years: b.authors.map((a) => [a.born, a.died].filter((y) => y != null).join('–')).filter(Boolean),
-    image: `https://www.gutenberg.org/cache/epub/${b.id}/pg${b.id}.cover.medium.jpg`,
+    image: coverUrl(b.id),
     summary: null,
     subjects: b.subjects,
     downloads: 0,
@@ -165,7 +170,11 @@ async function topIds() {
 }
 
 export async function refreshCatalog() {
-  const res = await get(CATALOG_URL);
+  let res;
+  for (const url of CATALOG_URLS) {
+    res = await get(url).catch((err) => ({ ok: false, status: err.name }));
+    if (res.ok) break;
+  }
   if (!res.ok) throw new Error(`catalog download failed: ${res.status}`);
   const csv = gunzipSync(Buffer.from(await res.arrayBuffer())).toString('utf8');
   setCatalog(csv, await topIds());

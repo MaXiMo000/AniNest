@@ -2103,10 +2103,15 @@ test('classics reader: chapters, copyright guard, progress that has to be read i
   const books = {
     92101: { id: 92101, title: 'Test Classic', authors: [{ name: 'Writer, A', birth_year: 1800, death_year: 1870 }], copyright: false, formats: { 'text/plain; charset=utf-8': 'https://pg.test/92101.txt' }, download_count: 5 },
     92102: { id: 92102, title: 'Modern Book', authors: [], copyright: true, formats: { 'text/plain; charset=utf-8': 'https://pg.test/92102.txt' } },
+    92106: { id: 92106, title: 'Mirror Classic', authors: [], copyright: false, formats: { 'text/plain; charset=utf-8': 'https://pg.test/down.txt', 'image/jpeg': 'https://www.gutenberg.org/cache/epub/92106/pg92106.cover.medium.jpg' } },
   };
+  const fetched = [];
   const rdf = (rights) => `<rdf:RDF><pgterms:ebook><dcterms:title>Fallback
  Classic</dcterms:title><dcterms:creator><pgterms:agent><pgterms:name>Author, B</pgterms:name><pgterms:birthdate rdf:datatype="x">1820</pgterms:birthdate></pgterms:agent></dcterms:creator><dcterms:rights>${rights}</dcterms:rights><pgterms:file rdf:about="https://pg.test/92104.txt.utf-8"></pgterms:file></pgterms:ebook></rdf:RDF>`;
   setClassicsFetcher(async (url) => {
+    fetched.push(url);
+    // 92106: its text host and www.gutenberg.org are both down; only Gutenberg's file server answers.
+    if (url === 'https://pg.test/down.txt' || url === 'https://www.gutenberg.org/cache/epub/92106/pg92106.txt') return { ok: false, status: 503 };
     // Gutendex is down for these two; gutenberg.org's own record is used instead.
     if (/gutendex.*\/(92104|92105)\//.test(url)) throw new Error('timeout');
     if (url.endsWith('pg92104.rdf')) return { ok: true, status: 200, text: async () => rdf('Public domain in the USA.') };
@@ -2130,6 +2135,10 @@ test('classics reader: chapters, copyright guard, progress that has to be read i
     const fallback = (await anon.get('/api/novels/classics/92104')).json;
     assert.deepEqual([fallback.data.title, fallback.data.authors[0], fallback.data.parts.length], ['Fallback Classic', 'Author, B', 3], 'readable while Gutendex is down');
     assert.equal((await anon.get('/api/novels/classics/92105')).status, 404, 'the fallback keeps the copyright guard');
+    const mirrored = (await anon.get('/api/novels/classics/92106')).json.data;
+    assert.equal(mirrored.parts.length, 3, 'read from Gutenberg’s file server while the main site is down');
+    assert.ok(fetched.includes('https://gutenberg.pglaf.org/cache/epub/92106/pg92106.txt'));
+    assert.equal(mirrored.image, 'https://gutenberg.pglaf.org/cache/epub/92106/pg92106.cover.medium.jpg', 'covers come from the file server');
     assert.equal((await anon.post('/api/novels/classics/92101/progress', { csrf: true, body: { part: 0 } })).status, 401);
 
     const reader = await registeredAgent();
@@ -3029,7 +3038,7 @@ test('ics writer: escaping, CRLF, UTC times, and folding at 75 bytes without spl
 
 test('calendar feed: link needs auth, token is the credential, rotation revokes, only Watching shows appear', async () => {
   const { setAiringFetcher } = await import('../src/lib/calendar.js');
-  const asked = [];
+  const fetched = [];
   setAiringFetcher(async (malIds, from, to) => {
     asked.push({ malIds, from, to });
     return malIds.map((id, i) => ({ mal_id: id, title: `Show ${id}`, duration: 24, episode: i + 3, airingAt: from + 86400 * (i + 1) }));
@@ -3224,7 +3233,7 @@ test('vibe search v2: the AI reader handles words the rules miss, and falls back
     episodes: 24, format: 'TV', status: 'FINISHED', startDate: { year: 1998 }, coverImage: {}, ...extra,
   });
   const calls = [];
-  const asked = [];
+  const fetched = [];
   setVibeSources({ vibe: async (filters) => { calls.push(filters); return [media(92501)]; }, like: async () => null });
   const empty = { genres: [], tags: [], excludeGenres: [], excludeTags: [], minEpisodes: null, maxEpisodes: null, formats: [], yearFrom: null, yearTo: null, status: null, like: null };
   let answer = { ...empty, genres: ['Sci-Fi'], tags: ['Space'], yearTo: 2005 };
@@ -3299,7 +3308,7 @@ test('taste match: genre profile, agreement on shared shows, weighting by overla
 
 test('taste match API: auth, not yourself, genres filled in once, null for short lists', async () => {
   const { setGenreLookup } = await import('../src/lib/favoriteGenres.js');
-  const asked = [];
+  const fetched = [];
   setGenreLookup(async (ids) => { asked.push(...ids); return new Map(ids.map((id) => [id, ['Fantasy']])); });
   try {
     const mkUser = async (malIds) => {

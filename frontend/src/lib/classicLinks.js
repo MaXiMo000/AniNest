@@ -38,7 +38,8 @@ export const CLASSIC_LINKS = [
 export const booksForAnime = (malId) => CLASSIC_LINKS.filter((l) => l.anime.some(([id]) => id === Number(malId)));
 export const animeForBook = (bookId) => CLASSIC_LINKS.filter((l) => l.books.some(([id]) => id === Number(bookId)));
 
-const cover = (id) => `https://www.gutenberg.org/cache/epub/${id}/pg${id}.cover.medium.jpg`;
+// Covers from Project Gutenberg's own file server (backend/src/lib/classics.js coverUrl).
+const cover = (id) => `https://gutenberg.pglaf.org/cache/epub/${id}/pg${id}.cover.medium.jpg`;
 
 // "Read the original" section for an anime page; '' when there is none.
 export function readOriginalHTML(malId) {

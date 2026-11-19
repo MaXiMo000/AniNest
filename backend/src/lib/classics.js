@@ -126,6 +126,31 @@ export function parseBook(raw) {
   return parts.filter((p) => p.paragraphs.length).map((p) => ({ ...p, words: words(p.paragraphs.join(' ')) }));
 }
 
+// Project Gutenberg's own file server (run by its foundation, PGLAF) carries
+// the same files as www.gutenberg.org and stays up through the main site's
+// maintenance windows, so every file is tried there when the main site fails.
+// Covers always come from it: an <img> can't fall back to a second host.
+export const GUTENBERG_MIRROR = 'https://gutenberg.pglaf.org';
+const GUTENBERG_HOSTS = ['https://www.gutenberg.org', GUTENBERG_MIRROR];
+export const coverUrl = (id) => `${GUTENBERG_MIRROR}/cache/epub/${Number(id)}/pg${Number(id)}.cover.medium.jpg`;
+
+// The first host that answers `path` successfully; otherwise the last answer
+// (so a 404 still reads as "not found"), or the last error if none answered.
+async function fromGutenberg(path, ms) {
+  let last;
+  let error;
+  for (const host of GUTENBERG_HOSTS) {
+    try {
+      last = await fetcher(`${host}${path}`, ms);
+      if (last.ok) return last;
+    } catch (err) {
+      error = err;
+    }
+  }
+  if (last) return last;
+  throw error;
+}
+
 const textUrl = (formats = {}) => {
   const key = Object.keys(formats).find((k) => k.startsWith('text/plain') && !String(formats[k]).endsWith('.zip'));
   return key ? formats[key] : null;
@@ -137,7 +162,7 @@ export function catalogEntry(b) {
     title: b.title,
     authors: (b.authors || []).map((a) => a.name),
     years: (b.authors || []).map((a) => [a.birth_year, a.death_year].filter(Boolean).join('–')).filter(Boolean),
-    image: b.formats?.['image/jpeg'] || null,
+    image: b.formats?.['image/jpeg'] ? coverUrl(b.id) : null,
     summary: (b.summaries || [])[0]?.replace(/\s*\(This is an automatically generated summary\.\)\s*$/, '') || null,
     subjects: (b.subjects || []).map((s) => s.split(' -- ')[0]).filter((s, i, a) => a.indexOf(s) === i).slice(0, 6),
     downloads: b.download_count || 0,
@@ -181,7 +206,7 @@ async function loadRecord(id) {
   } catch (err) {
     if (err.status === 404) throw err;
   }
-  const res = await fetcher(`https://www.gutenberg.org/cache/epub/${id}/pg${id}.rdf`, META_TIMEOUT_MS * 2);
+  const res = await fromGutenberg(`/cache/epub/${id}/pg${id}.rdf`, META_TIMEOUT_MS * 2);
   if (res.status === 404) throw Object.assign(new Error('Book not found.'), { status: 404 });
   if (!res.ok) throw Object.assign(new Error('Project Gutenberg unavailable'), { status: 502 });
   return rdfRecord(id, await res.text());
@@ -194,8 +219,11 @@ async function loadBook(id) {
   const meta = catalogEntry(record);
   if (!meta.readable) throw Object.assign(new Error('This book can’t be read here.'), { status: 404 });
 
-  const textRes = await fetcher(textUrl(record.formats));
-  if (!textRes.ok) throw Object.assign(new Error('Book text unavailable'), { status: 502 });
+  // The edition Gutendex names first; the same text from Gutenberg's file
+  // server when that host fails.
+  let textRes = await fetcher(textUrl(record.formats)).catch(() => null);
+  if (!textRes?.ok) textRes = await fromGutenberg(`/cache/epub/${id}/pg${id}.txt`).catch(() => null);
+  if (!textRes?.ok) throw Object.assign(new Error('Book text unavailable'), { status: 502 });
   const raw = await textRes.text();
   if (raw.length > MAX_BYTES) throw Object.assign(new Error('This book is too long to read here.'), { status: 404 });
   const parts = parseBook(raw);
