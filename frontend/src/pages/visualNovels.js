@@ -1,4 +1,5 @@
 import { apiGet } from '../lib/http.js';
+import { novelTabsHTML } from '../lib/novelTabs.js';
 import { navigate } from '../lib/router.js';
 import { escapeHtml, emptyHTML, errorHTML, skeletonGrid, skeletonDetail, wireRetry } from '../lib/ui.js';
 
@@ -9,12 +10,7 @@ import { escapeHtml, emptyHTML, errorHTML, skeletonGrid, skeletonDetail, wireRet
 
 const SORTS = [['popular', '🔥 Popular'], ['rating', '⭐ Top Rated'], ['newest', '🆕 Newest']];
 
-const tabsHTML = (active) => `
-  <div class="vibe-examples" role="tablist" style="margin-bottom:12px">
-    <a class="chip" href="#/novels">📚 Light Novels</a>
-    <a class="chip${active === 'all' ? ' active' : ''}" href="#/vn">🎮 Visual Novels</a>
-    <a class="chip${active === 'free' ? ' active' : ''}" href="#/vn?free=1">🆓 Free to Play</a>
-  </div>`;
+const tabsHTML = novelTabsHTML;
 
 function vnCardHTML(v) {
   const meta = [v.released?.slice(0, 4), v.hours ? `~${v.hours}h` : null].filter(Boolean).join(' · ');
@@ -37,7 +33,7 @@ export async function renderVnBrowse(root, params) {
     q: params.get('q') || '', sort: params.get('sort') || 'popular', free: params.get('free') === '1',
     page: Math.max(1, Number(params.get('page')) || 1),
   };
-  document.title = `${state.free ? 'Free Visual Novels' : 'Visual Novels'} — AniNest`;
+  document.title = `${state.free ? 'Free Games' : 'Visual Novels'} — AniNest`;
   const href = (patch) => {
     const next = { ...state, page: 1, ...patch };
     const p = new URLSearchParams();
@@ -49,12 +45,12 @@ export async function renderVnBrowse(root, params) {
   };
   root.innerHTML = `
     <div class="section-head">
-      <h1 class="section-title">🎮 ${state.free ? 'Free Visual Novels' : 'Visual Novels'}</h1>
+      <h1 class="section-title">🎮 ${state.free ? 'Free Games' : 'Visual Novels'}</h1>
       <span class="section-sub">${state.free
     ? 'Complete, official visual novels you can play for free, legally.'
     : 'Story-driven games from the people behind your favorite anime. All-ages titles only.'}</span>
     </div>
-    ${tabsHTML(state.free ? 'free' : 'all')}
+    ${tabsHTML(state.free ? 'freevn' : 'vn')}
     <form id="vn-search" class="hero-actions" style="margin-bottom:10px">
       <input name="q" class="list-input" maxlength="100" placeholder="Search visual novels…" value="${escapeHtml(state.q)}" aria-label="Search visual novels" />
       <button class="btn-pow btn-pow--pink" type="submit">SEARCH</button>

@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost } from '../lib/http.js';
 import { Auth } from '../lib/authStore.js';
+import { novelTabsHTML } from '../lib/novelTabs.js';
 import { navigate } from '../lib/router.js';
 import { escapeHtml, emptyHTML, errorHTML, skeletonGrid, showToast, wireRetry, READ_STATUSES, skeletonDetail } from '../lib/ui.js';
 import { createReviewsUi } from '../lib/reviewsUi.js';
@@ -21,13 +22,7 @@ const NovelReviews = {
 };
 const novelReviews = createReviewsUi(NovelReviews);
 
-const tabsHTML = (active) => `
-  <div class="vibe-examples" role="tablist" style="margin-bottom:12px">
-    <a class="chip${active === 'browse' ? ' active' : ''}" href="#/novels">📚 Browse</a>
-    <a class="chip${active === 'free' ? ' active' : ''}" href="#/novels/free">🆓 Read Free</a>
-    <a class="chip" href="#/vn">🎮 Visual Novels</a>
-    ${Auth.get().user ? `<a class="chip${active === 'list' ? ' active' : ''}" href="#/novel-list">📌 My Novels</a>` : ''}
-  </div>`;
+const tabsHTML = novelTabsHTML;
 
 function novelCardHTML(n, extra = '') {
   const meta = [n.status, n.year, n.volumes ? `${n.volumes} vol` : null].filter(Boolean).join(' · ');
@@ -68,7 +63,7 @@ export async function renderNovelBrowse(root, params) {
       <h1 class="section-title">📚 Light Novels</h1>
       <span class="section-sub">The stories behind your favorite anime, and plenty that haven't been adapted yet.</span>
     </div>
-    ${tabsHTML('browse')}
+    ${tabsHTML('light')}
     <form id="novel-search" class="hero-actions" style="margin-bottom:10px">
       <input name="q" class="list-input" maxlength="100" placeholder="Search light novels…" value="${escapeHtml(state.q)}" aria-label="Search light novels" />
       <button class="btn-pow btn-pow--pink" type="submit">SEARCH</button>
@@ -344,7 +339,7 @@ function shelfHTML({ list, finished, local, streak = 0 }) {
 }
 
 export async function renderNovelFree(root, params) {
-  document.title = 'Read Novels Free — AniNest';
+  document.title = 'Classics — AniNest';
   const state = {
     q: params.get('q') || '', topic: params.get('topic') || '', era: params.get('era') || '', lang: params.get('lang') || 'en',
     page: Math.max(1, Number(params.get('page')) || 1),
@@ -367,14 +362,14 @@ export async function renderNovelFree(root, params) {
 
   root.innerHTML = `
     <div class="section-head">
-      <h1 class="section-title">🆓 Read Novels Free</h1>
+      <h1 class="section-title">📜 Classics</h1>
       <span class="section-sub">Public-domain classics read right here, plus legal places to read for free.</span>
     </div>
-    ${tabsHTML('free')}
+    ${tabsHTML('classics')}
     <div id="classics-shelf"></div>
     <section class="section">
       <div class="section-head">
-        <h2 class="section-title">📜 Classics, Read Here</h2>
+        <h2 class="section-title">🔎 Find a Classic</h2>
         <span class="section-sub">Out-of-copyright books from Project Gutenberg, chapter by chapter, with your place saved.</span>
       </div>
       <form id="classics-search" class="hero-actions" style="margin-bottom:12px">
