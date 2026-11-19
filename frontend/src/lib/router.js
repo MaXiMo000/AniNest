@@ -70,6 +70,10 @@ async function dispatch() {
     if (match) {
       const namedParams = {};
       r.paramNames.forEach((name, i) => { namedParams[name] = decodeURIComponent(match[i + 1]); });
+      // A link built from a missing value (#/manga/undefined, #/anime/NaN) is
+      // a broken link, not a page to fetch: show the not-found page instead of
+      // a misleading "the API is rate-limited, retry" error.
+      if (Object.values(namedParams).some((v) => /^(undefined|null|nan)$/i.test(v.trim()))) break;
       const root = document.createElement('div');
       outlet.replaceChildren(root);
       await r.handler({ params, path: namedParams, root });

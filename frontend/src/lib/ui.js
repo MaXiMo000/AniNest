@@ -274,10 +274,12 @@ export function wireCardEvents(container, { onOpen } = {}) {
       });
       return;
     }
-    const card = e.target.closest('.anime-card');
-    if (card) {
+    // Only cards that carry an anime id, and never on top of a real link
+    // inside the card (same reason as wireMangaCardEvents below).
+    const card = e.target.closest('.anime-card[data-id]');
+    if (card && Number(card.dataset.id) > 0 && !e.target.closest('a[href]')) {
       if (onOpen) onOpen(Number(card.dataset.id));
-      else window.location.hash = `#/anime/${card.dataset.id}`;
+      else window.location.hash = `#/anime/${Number(card.dataset.id)}`;
     }
   });
 }
@@ -319,10 +321,13 @@ export function wireMangaCardEvents(container, { onOpen } = {}) {
       });
       return;
     }
-    const card = e.target.closest('.manga-card');
-    if (card) {
+    // Only real manga cards: novel, classic and visual-novel cards reuse the
+    // .manga-card look but are plain links, and opening them here as well
+    // pushed a stray #/manga/undefined into history (Back landed on it).
+    const card = e.target.closest('.manga-card[data-manga-id]');
+    if (card && card.dataset.mangaId && !e.target.closest('a[href]')) {
       if (onOpen) onOpen(card.dataset.mangaId);
-      else window.location.hash = `#/manga/${card.dataset.mangaId}`;
+      else window.location.hash = `#/manga/${encodeURIComponent(card.dataset.mangaId)}`;
     }
   });
 }
