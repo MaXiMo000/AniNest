@@ -21,7 +21,7 @@ test('past seasons can be picked, and load that season\'s bracket', async ({ pag
   await page.goto('/#/tournament');
   await expect(page.locator('h1.section-title')).toContainText('Summer 2026');
   await page.locator('#season-picker .pow-select-trigger').click();
-  await page.locator('#season-picker li', { hasText: 'Spring 2026' }).click();
+  await page.getByRole('option', { name: 'Spring 2026' }).click();
   await expect(page).toHaveURL(/season=SPRING&year=2026/);
   await expect(page.locator('h1.section-title')).toContainText('Spring 2026');
   expect(archiveHit).toBe(true);

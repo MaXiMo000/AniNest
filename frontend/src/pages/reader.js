@@ -221,7 +221,7 @@ export async function renderReader(root, id, params) {
           <button class="chip" data-font-toggle aria-label="Switch font">${prefs.font === 'serif' ? 'Sans' : 'Serif'}</button>
           <button class="chip" data-audio aria-expanded="false" aria-controls="reader-audio">🎧 Listen</button>
           ${canSaveOffline() || offline ? `<button class="chip" data-offline ${offline ? 'disabled' : ''} aria-label="Save this book for offline reading">${offline ? '✅ Offline' : '⬇️ Offline'}</button>` : ''}
-          <button class="chip" data-share-chapter aria-label="Share this chapter">📤</button>
+          <button class="chip" data-share-chapter aria-label="Share this chapter">📤 Share</button>
         </div>
         <div class="reader-progress" role="progressbar" aria-label="Progress through the book" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}">
           <span style="width:${percent}%"></span>
